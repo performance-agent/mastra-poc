@@ -1,0 +1,11 @@
+model Group {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  photoUrl    String?
+
+  workspaces WorkspaceGroup[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+}
