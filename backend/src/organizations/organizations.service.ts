@@ -33,14 +33,6 @@ export class OrganizationsService {
   remove(id: string) {
     return this.prismaService.organization.delete({
       where: { id },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        photoUrl: true,
-        createdAt: true,
-        updatedAt: true,
-      },
     });
   }
 }

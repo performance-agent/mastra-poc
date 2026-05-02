@@ -6,12 +6,16 @@ import { mastra } from './mastra';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaService } from './prisma/prisma.service';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { WorkspacesModule } from './workspaces/workspaces.module';
+import { GroupsModule } from './groups/groups.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
     MastraModule.register({ mastra }),
     OrganizationsModule,
+    WorkspacesModule,
+    GroupsModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],
