@@ -28,6 +28,7 @@
     "@mastra/nestjs": "^0.1.0",
     "@mastra/observability": "^1.11.0",
     "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "mastra": "^1.7.3",
