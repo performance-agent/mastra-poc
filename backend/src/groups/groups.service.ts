@@ -6,14 +6,19 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class GroupsService {
   constructor(private readonly prismaService: PrismaService) {}
-  create(createGroupDto: CreateGroupDto) {
+  create(workspaceId: string, createGroupDto: CreateGroupDto) {
     return this.prismaService.group.create({
-      data: createGroupDto,
+      data: {
+        ...createGroupDto,
+        workspaceId,
+      },
     });
   }
 
-  findAll() {
-    return this.prismaService.group.findMany();
+  findAll(workspaceId: string) {
+    return this.prismaService.group.findMany({
+      where: { workspaceId },
+    });
   }
 
   findOne(id: string) {

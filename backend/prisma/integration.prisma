@@ -5,16 +5,17 @@ model Integration {
 
   github GithubIntegration?
 
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  group     Group    @relation(fields: [groupId], references: [id])
-  groupId   String
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
 
   @@index([provider])
   @@index([status])
 }
 
 enum IntegrationStatus {
+  PENDING
   ACTIVE
   DISABLED
   REVOKED

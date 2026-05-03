@@ -11,31 +11,34 @@ import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 
-@Controller('groups')
+@Controller()
 export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
 
-  @Post()
-  create(@Body() createGroupDto: CreateGroupDto) {
-    return this.groupsService.create(createGroupDto);
+  @Post('workspaces/:workspaceId/groups')
+  create(
+    @Param('workspaceId') workspaceId: string,
+    @Body() createGroupDto: CreateGroupDto,
+  ) {
+    return this.groupsService.create(workspaceId, createGroupDto);
   }
 
-  @Get()
-  findAll() {
-    return this.groupsService.findAll();
+  @Get('workspaces/:workspaceId/groups')
+  findAll(@Param('workspaceId') workspaceId: string) {
+    return this.groupsService.findAll(workspaceId);
   }
 
-  @Get(':id')
+  @Get('groups/:id')
   findOne(@Param('id') id: string) {
     return this.groupsService.findOne(id);
   }
 
-  @Patch(':id')
+  @Patch('groups/:id')
   update(@Param('id') id: string, @Body() updateGroupDto: UpdateGroupDto) {
     return this.groupsService.update(id, updateGroupDto);
   }
 
-  @Delete(':id')
+  @Delete('groups/:id')
   remove(@Param('id') id: string) {
     return this.groupsService.remove(id);
   }

@@ -3,22 +3,27 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { App } from '@octokit/app';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetupGithubDto } from './dto/setup-github.dto';
+import { Octokit } from 'octokit';
+import { createAppAuth } from '@octokit/auth-app';
 
 @Injectable()
 export class GithubService {
-  private readonly app: App;
+  constructor(private readonly prismaService: PrismaService) {}
 
-  constructor(private readonly prismaService: PrismaService) {
-    this.app = new App({
-      appId: process.env.GITHUB_APP_ID || '',
-      privateKey: process.env.GITHUB_PRIVATE_KEY || '',
+  private createInstallationClient(installationId: string) {
+    return new Octokit({
+      authStrategy: createAppAuth,
+      auth: {
+        appId: process.env.GITHUB_APP_ID || '',
+        privateKey: process.env.GITHUB_PRIVATE_KEY || '',
+        installationId,
+      },
     });
   }
 
-  setup(setupGithubDto: SetupGithubDto) {
+  setup(organizationId: string, setupGithubDto: SetupGithubDto) {
     this.verifySetupPassword(setupGithubDto.password);
 
     if (setupGithubDto.setupAction !== 'install') {
@@ -31,9 +36,7 @@ export class GithubService {
       data: {
         provider: 'GITHUB',
         status: 'ACTIVE',
-        group: {
-          connect: { id: setupGithubDto.groupId },
-        },
+        organizationId,
         github: {
           create: {
             installationId: setupGithubDto.installationId,
@@ -44,6 +47,43 @@ export class GithubService {
         github: true,
       },
     });
+  }
+
+  async getRepositories(organizationId: string) {
+    const integration = await this.prismaService.integration.findFirst({
+      where: {
+        organizationId,
+        provider: 'GITHUB',
+        status: 'PENDING',
+      },
+      include: {
+        github: true,
+      },
+    });
+
+    if (!integration || !integration.github) {
+      throw new BadRequestException(
+        'GitHub integration not found for this organization',
+      );
+    }
+
+    const github = this.createInstallationClient(
+      integration.github.installationId,
+    );
+
+    const { data } = await github.rest.apps.listReposAccessibleToInstallation({
+      per_page: 100,
+    });
+
+    return data.repositories.map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      owner: repo.owner.login,
+      private: repo.private,
+      defaultBranch: repo.default_branch,
+      htmlUrl: repo.html_url,
+    }));
   }
 
   private verifySetupPassword(password: string) {

@@ -5,10 +5,6 @@ export class CreateGroupDto {
   @IsString()
   name!: string;
 
-  @IsNotEmpty()
-  @IsString()
-  workspaceId!: string;
-
   @IsOptional()
   @IsString()
   description?: string;
