@@ -4,8 +4,12 @@ model Group {
   description String?
   photoUrl    String?
 
-  workspaces WorkspaceGroup[]
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  integrations Integration[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([workspaceId])
 }

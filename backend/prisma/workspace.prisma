@@ -4,20 +4,13 @@ model Workspace {
   description String?
   photoUrl    String?
 
-  organizations OrganizationWorkspace[]
-  groups        WorkspaceGroup[]
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  groups Group[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
-}
 
-model WorkspaceGroup {
-  workspaceId String
-  groupId     String
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
-
-  @@id([workspaceId, groupId])
-  @@index([groupId])
+  @@index([organizationId])
 }

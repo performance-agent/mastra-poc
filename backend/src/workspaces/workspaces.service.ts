@@ -9,38 +9,21 @@ export class WorkspacesService {
   async create(organizationId: string, createWorkspaceDto: CreateWorkspaceDto) {
     await this.ensureOrganizationExists(organizationId);
 
-    const workspace = await this.prismaService.workspace.create({
+    return this.prismaService.workspace.create({
       data: {
         ...createWorkspaceDto,
-        organizations: {
-          create: {
-            organization: {
-              connect: { id: organizationId },
-            },
-          },
-        },
-      },
-      include: {
-        organizations: {
-          include: {
-            organization: true,
-          },
+        organization: {
+          connect: { id: organizationId },
         },
       },
     });
-
-    return {
-      ...workspace,
-      organizations: undefined,
-      organization: workspace.organizations[0].organization,
-    };
   }
 
   async findAll(organizationId: string) {
     await this.ensureOrganizationExists(organizationId);
 
     return this.prismaService.workspace.findMany({
-      where: { organizations: { some: { organizationId } } },
+      where: { organization: { id: organizationId } },
     });
   }
 

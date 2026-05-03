@@ -8,6 +8,7 @@ import { PrismaService } from './prisma/prisma.service';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { GroupsModule } from './groups/groups.module';
+import { GithubModule } from './integrations/github/github.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { GroupsModule } from './groups/groups.module';
     WorkspacesModule,
     GroupsModule,
     MastraModule.register({ mastra }),
+    GithubModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

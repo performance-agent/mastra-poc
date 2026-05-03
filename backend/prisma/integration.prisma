@@ -1,0 +1,26 @@
+model Integration {
+  id       String              @id @default(cuid())
+  provider IntegrationProvider
+  status   IntegrationStatus
+
+  github GithubIntegration?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  group     Group?   @relation(fields: [groupId], references: [id])
+  groupId   String?
+
+  @@index([provider])
+  @@index([status])
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  DISABLED
+  REVOKED
+}
+
+enum IntegrationProvider {
+  GITHUB
+  JIRA
+}
