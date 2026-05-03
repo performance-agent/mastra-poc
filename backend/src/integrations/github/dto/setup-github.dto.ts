@@ -7,6 +7,10 @@ export class SetupGithubDto {
 
   @IsNotEmpty()
   @IsString()
+  groupId!: string;
+
+  @IsNotEmpty()
+  @IsString()
   setupAction!: string;
 
   @IsNotEmpty()
