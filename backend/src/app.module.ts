@@ -12,10 +12,10 @@ import { GroupsModule } from './groups/groups.module';
 @Module({
   imports: [
     ConfigModule.forRoot(),
-    MastraModule.register({ mastra }),
     OrganizationsModule,
     WorkspacesModule,
     GroupsModule,
+    MastraModule.register({ mastra }),
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],
