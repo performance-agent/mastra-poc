@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { App } from '@octokit/app';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SetupGithubDto } from './dto/setup-github.dto';
 
 @Injectable()
 export class GithubService {
@@ -13,19 +14,27 @@ export class GithubService {
     });
   }
 
-  setup(installationId: string, setupAction: string) {
-    if (setupAction === 'install') {
+  setup(setupGithubDto: SetupGithubDto) {
+    this.verifySetupPassword(setupGithubDto.password);
+
+    if (setupGithubDto.setupAction === 'install') {
       return this.prismaService.integration.create({
         data: {
           provider: 'GITHUB',
           status: 'ACTIVE',
           github: {
             create: {
-              installationId,
+              ...setupGithubDto,
             },
           },
         },
       });
+    }
+  }
+
+  private verifySetupPassword(password: string) {
+    if (password !== process.env.SETUP_PASSWORD) {
+      throw new UnauthorizedException('Invalid setup password');
     }
   }
 }
