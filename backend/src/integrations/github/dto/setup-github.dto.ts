@@ -8,8 +8,4 @@ export class SetupGithubDto {
   @IsNotEmpty()
   @IsString()
   setupAction!: string;
-
-  @IsNotEmpty()
-  @IsString()
-  password!: string;
 }

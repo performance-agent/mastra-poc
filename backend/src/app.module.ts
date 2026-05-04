@@ -9,6 +9,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { GroupsModule } from './groups/groups.module';
 import { GithubModule } from './integrations/github/github.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { GithubModule } from './integrations/github/github.module';
     GroupsModule,
     GithubModule,
     MastraModule.register({ mastra }),
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

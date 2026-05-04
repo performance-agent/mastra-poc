@@ -17,6 +17,15 @@ export class OrganizationsService {
     return this.prismaService.organization.findMany();
   }
 
+  findOptions() {
+    return this.prismaService.organization.findMany({
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+  }
+
   findOne(id: string) {
     return this.prismaService.organization.findUnique({
       where: { id },

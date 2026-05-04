@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetupGithubDto } from './dto/setup-github.dto';
 import { Octokit } from 'octokit';
@@ -24,8 +20,6 @@ export class GithubService {
   }
 
   setup(organizationId: string, setupGithubDto: SetupGithubDto) {
-    this.verifySetupPassword(setupGithubDto.password);
-
     if (setupGithubDto.setupAction !== 'install') {
       throw new BadRequestException(
         `Unsupported GitHub setup action: ${setupGithubDto.setupAction}`,
@@ -84,11 +78,5 @@ export class GithubService {
       defaultBranch: repo.default_branch,
       htmlUrl: repo.html_url,
     }));
-  }
-
-  private verifySetupPassword(password: string) {
-    if (password !== process.env.SETUP_PASSWORD) {
-      throw new UnauthorizedException('Invalid setup password');
-    }
   }
 }
