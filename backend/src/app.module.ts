@@ -10,6 +10,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
 import { GroupsModule } from './groups/groups.module';
 import { GithubModule } from './integrations/github/github.module';
 import { UsersModule } from './users/users.module';
+import { MembersModule } from './members/members.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module';
     GithubModule,
     MastraModule.register({ mastra }),
     UsersModule,
+    MembersModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],
