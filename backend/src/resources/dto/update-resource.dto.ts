@@ -1,4 +1,11 @@
-import { PartialType } from '@nestjs/swagger';
-import { CreateResourceDto } from './create-resource.dto';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class UpdateResourceDto extends PartialType(CreateResourceDto) {}
+export class UpdateResourceDto {
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
