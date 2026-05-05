@@ -11,6 +11,7 @@ import { GroupsModule } from './groups/groups.module';
 import { GithubModule } from './integrations/github/github.module';
 import { UsersModule } from './users/users.module';
 import { MembersModule } from './members/members.module';
+import { ResourcesModule } from './resources/resources.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { MembersModule } from './members/members.module';
     MastraModule.register({ mastra }),
     UsersModule,
     MembersModule,
+    ResourcesModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],

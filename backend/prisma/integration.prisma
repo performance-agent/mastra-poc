@@ -5,10 +5,11 @@ model Integration {
 
   github GithubIntegration?
 
-  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  organizationId String
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+  organization         Organization          @relation(fields: [organizationId], references: [id])
+  organizationId       String
+  integrationResources IntegrationResource[]
 
   @@index([provider])
   @@index([status])
@@ -24,4 +25,14 @@ enum IntegrationStatus {
 enum IntegrationProvider {
   GITHUB
   JIRA
+}
+
+model IntegrationProviderLink {
+  id         String @id @default(cuid())
+  installUrl String
+
+  provider IntegrationProvider @unique
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }

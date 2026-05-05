@@ -1,8 +1,11 @@
 model User {
   id          String       @id @default(cuid())
-  firebaseUid String      @unique
+  firebaseUid String       @unique
   name        String
   email       String       @unique
   photoUrl    String?
   memberships Membership[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }

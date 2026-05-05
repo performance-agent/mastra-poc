@@ -4,3 +4,16 @@ model GithubIntegration {
 
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 }
+
+model GithubRepository {
+  resourceId    String   @id
+  fullName      String
+  defaultBranch String?
+  htmlUrl       String?
+  isPrivate     Boolean?
+
+  resource IntegrationResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}

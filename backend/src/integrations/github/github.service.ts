@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetupGithubDto } from './dto/setup-github.dto';
 import { Octokit } from 'octokit';
@@ -19,64 +23,72 @@ export class GithubService {
     });
   }
 
-  setup(organizationId: string, setupGithubDto: SetupGithubDto) {
+  async setup(organizationId: string, setupGithubDto: SetupGithubDto) {
     if (setupGithubDto.setupAction !== 'install') {
       throw new BadRequestException(
         `Unsupported GitHub setup action: ${setupGithubDto.setupAction}`,
       );
     }
 
-    return this.prismaService.integration.create({
-      data: {
-        provider: 'GITHUB',
-        status: 'ACTIVE',
-        organizationId,
-        github: {
-          create: {
-            installationId: setupGithubDto.installationId,
-          },
-        },
-      },
-      include: {
-        github: true,
-      },
-    });
-  }
+    const github = this.createInstallationClient(setupGithubDto.installationId);
 
-  async getRepositories(organizationId: string) {
-    const integration = await this.prismaService.integration.findFirst({
-      where: {
-        organizationId,
-        provider: 'GITHUB',
-        status: 'PENDING',
-      },
-      include: {
-        github: true,
-      },
-    });
-
-    if (!integration || !integration.github) {
-      throw new BadRequestException(
-        'GitHub integration not found for this organization',
-      );
-    }
-
-    const github = this.createInstallationClient(
-      integration.github.installationId,
+    const data = await github.paginate(
+      github.rest.apps.listReposAccessibleToInstallation,
+      { per_page: 100 },
     );
 
-    const { data } = await github.rest.apps.listReposAccessibleToInstallation({
-      per_page: 100,
-    });
+    const repositories = new Map(
+      data.map((repo) => [repo.id.toString(), repo]),
+    );
 
-    return data.repositories.map((repo) => ({
-      id: repo.id,
-      name: repo.name,
-      fullName: repo.full_name,
-      owner: repo.owner.login,
-      private: repo.private,
-      defaultBranch: repo.default_branch,
-      htmlUrl: repo.html_url,
-    }));
+    return this.prismaService.$transaction(async (tx) => {
+      const integration = await tx.integration.create({
+        data: {
+          provider: 'GITHUB',
+          status: 'ACTIVE',
+          organizationId,
+          github: {
+            create: {
+              installationId: setupGithubDto.installationId,
+            },
+          },
+        },
+        include: {
+          github: true,
+        },
+      });
+
+      const resources = await tx.integrationResource.createManyAndReturn({
+        data: data.map((repo) => ({
+          integrationId: integration.id,
+          name: repo.name,
+          type: 'REPOSITORY',
+          externalId: repo.id.toString(),
+        })),
+        select: { id: true, externalId: true },
+      });
+
+      await tx.githubRepository.createMany({
+        data: resources.map((resource) => {
+          const repo = repositories.get(resource.externalId);
+
+          if (!repo) {
+            throw new InternalServerErrorException(
+              `Repository not found for resource ${resource.id}`,
+            );
+          }
+
+          return {
+            resourceId: resource.id,
+            fullName: repo.full_name,
+            defaultBranch: repo.default_branch,
+            htmlUrl: repo.html_url,
+            isPrivate: repo.private,
+          };
+        }),
+      });
+
+      return integration;
+    });
   }
 }
