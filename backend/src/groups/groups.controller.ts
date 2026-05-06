@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Put,
 } from '@nestjs/common';
 import { GroupsService } from './groups.service';
 import { CreateGroupDto } from './dto/create-group.dto';
@@ -41,5 +42,21 @@ export class GroupsController {
   @Delete('groups/:id')
   remove(@Param('id') id: string) {
     return this.groupsService.remove(id);
+  }
+
+  @Put('groups/:id/resources/:resourceId')
+  assignResource(
+    @Param('id') id: string,
+    @Param('resourceId') resourceId: string,
+  ) {
+    return this.groupsService.assignResource(id, resourceId);
+  }
+
+  @Delete('groups/:id/resources/:resourceId')
+  removeResource(
+    @Param('id') id: string,
+    @Param('resourceId') resourceId: string,
+  ) {
+    return this.groupsService.removeResource(id, resourceId);
   }
 }

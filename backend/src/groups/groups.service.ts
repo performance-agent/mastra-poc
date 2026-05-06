@@ -39,4 +39,32 @@ export class GroupsService {
       where: { id },
     });
   }
+
+  assignResource(id: string, resourceId: string) {
+    return this.prismaService.integrationResourceAssignment.upsert({
+      where: {
+        resourceId_groupId: {
+          resourceId,
+          groupId: id,
+        },
+      },
+      update: {},
+      create: {
+        resourceId,
+        groupId: id,
+        workspaceId: null,
+      },
+    });
+  }
+
+  removeResource(id: string, resourceId: string) {
+    return this.prismaService.integrationResourceAssignment.delete({
+      where: {
+        resourceId_groupId: {
+          resourceId,
+          groupId: id,
+        },
+      },
+    });
+  }
 }

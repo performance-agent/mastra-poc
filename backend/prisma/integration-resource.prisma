@@ -32,4 +32,9 @@ model IntegrationResourceAssignment {
   group       Group?              @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([resourceId, workspaceId])
+  @@unique([resourceId, groupId])
+  @@index([workspaceId])
+  @@index([groupId])
 }

@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Put,
 } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
@@ -44,5 +45,21 @@ export class WorkspacesController {
   @Delete('workspaces/:id')
   remove(@Param('id') id: string) {
     return this.workspacesService.remove(id);
+  }
+
+  @Put('workspaces/:id/resources/:resourceId')
+  assignResource(
+    @Param('id') id: string,
+    @Param('resourceId') resourceId: string,
+  ) {
+    return this.workspacesService.assignResource(id, resourceId);
+  }
+
+  @Delete('workspaces/:id/resources/:resourceId')
+  removeResource(
+    @Param('id') id: string,
+    @Param('resourceId') resourceId: string,
+  ) {
+    return this.workspacesService.removeResource(id, resourceId);
   }
 }

@@ -56,4 +56,32 @@ export class WorkspacesService {
       );
     }
   }
+
+  assignResource(id: string, resourceId: string) {
+    return this.prismaService.integrationResourceAssignment.upsert({
+      where: {
+        resourceId_workspaceId: {
+          resourceId,
+          workspaceId: id,
+        },
+      },
+      update: {},
+      create: {
+        resourceId,
+        workspaceId: id,
+        groupId: null,
+      },
+    });
+  }
+
+  removeResource(id: string, resourceId: string) {
+    return this.prismaService.integrationResourceAssignment.delete({
+      where: {
+        resourceId_workspaceId: {
+          resourceId,
+          workspaceId: id,
+        },
+      },
+    });
+  }
 }
