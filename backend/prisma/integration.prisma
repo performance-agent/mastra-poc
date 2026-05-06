@@ -26,13 +26,3 @@ enum IntegrationProvider {
   GITHUB
   JIRA
 }
-
-model IntegrationProviderLink {
-  id         String @id @default(cuid())
-  installUrl String
-
-  provider IntegrationProvider @unique
-
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-}
