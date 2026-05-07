@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Body,
   Patch,
   Param,
@@ -9,42 +8,33 @@ import {
   Put,
 } from '@nestjs/common';
 import { GroupsService } from './groups.service';
-import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
+import { SetMemberDto } from '../members/dto/set-member.dto';
+import { MembersService } from '../members/members.service';
 
-@Controller()
+@Controller('groups')
 export class GroupsController {
-  constructor(private readonly groupsService: GroupsService) {}
+  constructor(
+    private readonly groupsService: GroupsService,
+    private readonly membersService: MembersService,
+  ) {}
 
-  @Post('workspaces/:workspaceId/groups')
-  create(
-    @Param('workspaceId') workspaceId: string,
-    @Body() createGroupDto: CreateGroupDto,
-  ) {
-    return this.groupsService.create(workspaceId, createGroupDto);
-  }
-
-  @Get('workspaces/:workspaceId/groups')
-  findAll(@Param('workspaceId') workspaceId: string) {
-    return this.groupsService.findAll(workspaceId);
-  }
-
-  @Get('groups/:id')
+  @Get(':id')
   findOne(@Param('id') id: string) {
     return this.groupsService.findOne(id);
   }
 
-  @Patch('groups/:id')
+  @Patch(':id')
   update(@Param('id') id: string, @Body() updateGroupDto: UpdateGroupDto) {
     return this.groupsService.update(id, updateGroupDto);
   }
 
-  @Delete('groups/:id')
+  @Delete(':id')
   remove(@Param('id') id: string) {
     return this.groupsService.remove(id);
   }
 
-  @Put('groups/:id/resources/:resourceId')
+  @Put(':id/resources/:resourceId')
   assignResource(
     @Param('id') id: string,
     @Param('resourceId') resourceId: string,
@@ -52,11 +42,33 @@ export class GroupsController {
     return this.groupsService.assignResource(id, resourceId);
   }
 
-  @Delete('groups/:id/resources/:resourceId')
+  @Delete(':id/resources/:resourceId')
   removeResource(
     @Param('id') id: string,
     @Param('resourceId') resourceId: string,
   ) {
     return this.groupsService.removeResource(id, resourceId);
+  }
+
+  @Put(':id/members/:userId')
+  setGroupMember(
+    @Param('id') groupId: string,
+    @Param('userId') userId: string,
+    @Body() setMemberDto: SetMemberDto,
+  ) {
+    return this.membersService.setGroupMember(groupId, userId, setMemberDto);
+  }
+
+  @Get(':id/members')
+  findAllGroupMembers(@Param('id') groupId: string) {
+    return this.membersService.findAllGroupMembers(groupId);
+  }
+
+  @Delete(':id/members/:userId')
+  removeGroupMember(
+    @Param('id') groupId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.membersService.removeGroupMember(groupId, userId);
   }
 }

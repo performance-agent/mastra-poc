@@ -1,40 +1,34 @@
 import {
   Controller,
   Get,
-  Post,
   Body,
   Patch,
   Param,
   Delete,
   Put,
+  Post,
 } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
-import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
+import { CreateGroupDto } from '../groups/dto/create-group.dto';
+import { GroupsService } from '../groups/groups.service';
+import { SetMemberDto } from '../members/dto/set-member.dto';
+import { MembersService } from '../members/members.service';
 
-@Controller()
+@Controller('workspaces')
 export class WorkspacesController {
-  constructor(private readonly workspacesService: WorkspacesService) {}
+  constructor(
+    private readonly workspacesService: WorkspacesService,
+    private readonly groupsService: GroupsService,
+    private readonly membersService: MembersService,
+  ) {}
 
-  @Post('organizations/:organizationId/workspaces')
-  create(
-    @Param('organizationId') organizationId: string,
-    @Body() createWorkspaceDto: CreateWorkspaceDto,
-  ) {
-    return this.workspacesService.create(organizationId, createWorkspaceDto);
-  }
-
-  @Get('organizations/:organizationId/workspaces')
-  findAll(@Param('organizationId') organizationId: string) {
-    return this.workspacesService.findAll(organizationId);
-  }
-
-  @Get('workspaces/:id')
+  @Get(':id')
   findOne(@Param('id') id: string) {
     return this.workspacesService.findOne(id);
   }
 
-  @Patch('workspaces/:id')
+  @Patch(':id')
   update(
     @Param('id') id: string,
     @Body() updateWorkspaceDto: UpdateWorkspaceDto,
@@ -42,12 +36,12 @@ export class WorkspacesController {
     return this.workspacesService.update(id, updateWorkspaceDto);
   }
 
-  @Delete('workspaces/:id')
+  @Delete(':id')
   remove(@Param('id') id: string) {
     return this.workspacesService.remove(id);
   }
 
-  @Put('workspaces/:id/resources/:resourceId')
+  @Put(':id/resources/:resourceId')
   assignResource(
     @Param('id') id: string,
     @Param('resourceId') resourceId: string,
@@ -55,11 +49,50 @@ export class WorkspacesController {
     return this.workspacesService.assignResource(id, resourceId);
   }
 
-  @Delete('workspaces/:id/resources/:resourceId')
+  @Delete(':id/resources/:resourceId')
   removeResource(
     @Param('id') id: string,
     @Param('resourceId') resourceId: string,
   ) {
     return this.workspacesService.removeResource(id, resourceId);
+  }
+
+  @Post(':id/groups')
+  createGroup(
+    @Param('id') workspaceId: string,
+    @Body() createGroupDto: CreateGroupDto,
+  ) {
+    return this.groupsService.create(workspaceId, createGroupDto);
+  }
+
+  @Get(':id/groups')
+  findAll(@Param('id') workspaceId: string) {
+    return this.groupsService.findAll(workspaceId);
+  }
+
+  @Put(':id/members/:userId')
+  setWorkspaceMember(
+    @Param('id') workspaceId: string,
+    @Param('userId') userId: string,
+    @Body() setMemberDto: SetMemberDto,
+  ) {
+    return this.membersService.setWorkspaceMember(
+      workspaceId,
+      userId,
+      setMemberDto,
+    );
+  }
+
+  @Get(':id/members')
+  findAllWorkspaceMembers(@Param('id') workspaceId: string) {
+    return this.membersService.findAllWorkspaceMembers(workspaceId);
+  }
+
+  @Delete(':id/members/:userId')
+  removeWorkspaceMember(
+    @Param('id') workspaceId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.membersService.removeWorkspaceMember(workspaceId, userId);
   }
 }
