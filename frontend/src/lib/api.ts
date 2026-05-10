@@ -9,7 +9,7 @@ import type {
   Role,
 } from "./types";
 
-const BASE = "/api";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   statusCode: number;
@@ -24,7 +24,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -99,6 +99,7 @@ export const api = {
 
   // Integrations
   listIntegrations: () => request<Integration[]>("/integrations"),
+  listOrgIntegrations: (id: string) => request<Integration[]>(`/organizations/${id}/integrations`),
   setupGithub: (orgId: string, body: Record<string, unknown>) =>
     request<unknown>(`/organizations/${orgId}/integrations/github/setup`, {
       method: "POST",
@@ -121,6 +122,7 @@ export const api = {
     request<void>(`/workspaces/${id}/members/${userId}`, { method: "DELETE" }),
 
   // Workspace resource assignments
+  listWorkspaceResources: (id: string) => request<Resource[]>(`/workspaces/${id}/resources`),
   assignWorkspaceResource: (workspaceId: string, resourceId: string) =>
     request<unknown>(`/workspaces/${workspaceId}/resources/${resourceId}`, { method: "PUT" }),
   unassignWorkspaceResource: (workspaceId: string, resourceId: string) =>
@@ -141,6 +143,7 @@ export const api = {
   removeGroupMember: (id: string, userId: string) =>
     request<void>(`/groups/${id}/members/${userId}`, { method: "DELETE" }),
 
+  listGroupResources: (id: string) => request<Resource[]>(`/groups/${id}/resources`),
   assignGroupResource: (groupId: string, resourceId: string) =>
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "PUT" }),
   unassignGroupResource: (groupId: string, resourceId: string) =>

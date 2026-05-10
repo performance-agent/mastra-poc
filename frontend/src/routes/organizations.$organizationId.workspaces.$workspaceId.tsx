@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -38,6 +38,7 @@ import type { Group, Role } from "@/lib/types";
 const tabSchema = z.object({
   tab: z.enum(["overview", "groups", "members", "resources"]).optional(),
 });
+type WorkspaceTab = NonNullable<z.infer<typeof tabSchema>["tab"]> | "overview";
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId",
@@ -54,9 +55,14 @@ export const Route = createFileRoute(
 
 function WorkspacePage() {
   const { organizationId, workspaceId } = Route.useParams();
+  const isNestedRoute = useRouterState({
+    select: (state) =>
+      state.location.pathname.replace(/\/$/, "") !==
+      `/organizations/${organizationId}/workspaces/${workspaceId}`,
+  });
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const tab = search.tab ?? "overview";
+  const tab = (search.tab ?? "overview") as WorkspaceTab;
   const setTab = (v: string) =>
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
@@ -80,9 +86,17 @@ function WorkspacePage() {
     queryKey: ["workspace", workspaceId, "members"],
     queryFn: () => api.listWorkspaceMembers(workspaceId),
   });
+  const resourcesQ = useQuery({
+    queryKey: ["workspace", workspaceId, "resources"],
+    queryFn: () => api.listWorkspaceResources(workspaceId),
+  });
 
   const ws = wsQ.data;
   const org = orgQ.data;
+
+  if (isNestedRoute) {
+    return <Outlet />;
+  }
 
   return (
     <AppShell>
@@ -118,10 +132,25 @@ function WorkspacePage() {
           />
 
           {tab === "overview" && (
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatCard icon={<Layers className="h-4 w-4" />} label="Groups" value={groupsQ.data?.length ?? 0} />
-              <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={membersQ.data?.length ?? 0} />
-              <StatCard icon={<Boxes className="h-4 w-4" />} label="Assigned resources" value="—" />
+            <div className="space-y-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <StatCard icon={<Layers className="h-4 w-4" />} label="Groups" value={groupsQ.data?.length ?? 0} />
+                <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={membersQ.data?.length ?? 0} />
+                <StatCard icon={<Boxes className="h-4 w-4" />} label="Assigned resources" value={resourcesQ.data?.length ?? 0} />
+              </div>
+
+              {(resourcesQ.data ?? []).length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground">
+                    Assigned resources
+                  </h2>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {(resourcesQ.data ?? []).slice(0, 4).map((resource) => (
+                      <ResourceCard key={resource.id} resource={resource} />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
           {tab === "groups" && (
@@ -175,7 +204,7 @@ function WorkspacePage() {
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
   return (
-    <Card className="flex items-center gap-3 rounded-xl p-4 shadow-card">
+    <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
         {icon}
       </div>
@@ -396,17 +425,48 @@ function WorkspaceResourcesTab({
   organizationId: string;
   workspaceId: string;
 }) {
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState<Record<string, "assign" | "unassign" | undefined>>({});
-  const q = useQuery({
+  const assignedQ = useQuery({
+    queryKey: ["workspace", workspaceId, "resources"],
+    queryFn: () => api.listWorkspaceResources(workspaceId),
+  });
+  const orgResourcesQ = useQuery({
     queryKey: ["organization", organizationId, "resources"],
     queryFn: () => api.listOrgResources(organizationId),
   });
-  const filtered = useMemo(() => {
-    const list = q.data ?? [];
+  const assignedIds = useMemo(
+    () => new Set((assignedQ.data ?? []).map((resource) => resource.id)),
+    [assignedQ.data],
+  );
+  const filteredAssigned = useMemo(() => {
+    const list = assignedQ.data ?? [];
     const s = search.trim().toLowerCase();
-    return s ? list.filter((r) => r.name.toLowerCase().includes(s)) : list;
-  }, [q.data, search]);
+    return s
+      ? list.filter(
+          (r) =>
+            r.name.toLowerCase().includes(s) ||
+            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+        )
+      : list;
+  }, [assignedQ.data, search]);
+  const availableToAssign = useMemo(() => {
+    const list = (orgResourcesQ.data ?? []).filter((resource) => !assignedIds.has(resource.id));
+    const s = search.trim().toLowerCase();
+    return s
+      ? list.filter(
+          (r) =>
+            r.name.toLowerCase().includes(s) ||
+            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+        )
+      : list;
+  }, [assignedIds, orgResourcesQ.data, search]);
+
+  const refreshResources = () => {
+    qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "resources"] });
+    qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] });
+  };
 
   const toggle = async (resourceId: string, action: "assign" | "unassign") => {
     setPending((p) => ({ ...p, [resourceId]: action }));
@@ -418,6 +478,7 @@ function WorkspaceResourcesTab({
         await api.unassignWorkspaceResource(workspaceId, resourceId);
         toast.success("Resource unassigned");
       }
+      refreshResources();
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -432,47 +493,80 @@ function WorkspaceResourcesTab({
           <SearchInput value={search} onChange={setSearch} placeholder="Search resources…" />
         </div>
         <p className="text-xs text-muted-foreground">
-          Assign organization resources to this workspace.
+          Search assigned resources and organization resources available to assign.
         </p>
       </div>
-      {q.isLoading ? (
+      {assignedQ.isLoading || orgResourcesQ.isLoading ? (
         <LoadingState />
-      ) : q.error ? (
-        <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={<Boxes className="h-4 w-4" />}
-          title="No resources to assign"
-          description="Connect an integration in the organization to bring in resources."
+      ) : assignedQ.error || orgResourcesQ.error ? (
+        <ErrorState
+          message={errorMessage(assignedQ.error ?? orgResourcesQ.error)}
+          onRetry={() => {
+            assignedQ.refetch();
+            orgResourcesQ.refetch();
+          }}
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((r) => (
-            <ResourceCard
-              key={r.id}
-              resource={r}
-              action={
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={pending[r.id] === "assign"}
-                    onClick={() => toggle(r.id, "assign")}
-                  >
-                    <Check className="mr-1 h-3 w-3" /> Assign
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={pending[r.id] === "unassign"}
-                    onClick={() => toggle(r.id, "unassign")}
-                  >
-                    Unassign
-                  </Button>
-                </div>
-              }
-            />
-          ))}
+        <div className="space-y-6">
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground">Assigned resources</h2>
+            {filteredAssigned.length === 0 ? (
+              <EmptyState
+                icon={<Boxes className="h-4 w-4" />}
+                title="No assigned resources"
+                description="Assign organization resources to make them available in this workspace."
+              />
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {filteredAssigned.map((r) => (
+                  <ResourceCard
+                    key={r.id}
+                    resource={r}
+                    action={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending[r.id] === "unassign"}
+                        onClick={() => toggle(r.id, "unassign")}
+                      >
+                        Unassign
+                      </Button>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground">Available to assign</h2>
+            {availableToAssign.length === 0 ? (
+              <EmptyState
+                icon={<Boxes className="h-4 w-4" />}
+                title="No resources available"
+                description="Connect an integration in the organization to bring in more resources."
+              />
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {availableToAssign.map((r) => (
+                  <ResourceCard
+                    key={r.id}
+                    resource={r}
+                    action={
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pending[r.id] === "assign"}
+                        onClick={() => toggle(r.id, "assign")}
+                      >
+                        <Check className="mr-1 h-3 w-3" /> Assign
+                      </Button>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>

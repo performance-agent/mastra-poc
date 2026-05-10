@@ -51,17 +51,34 @@ export interface Resource {
   name: string;
   description?: string | null;
   type?: string;
+  externalId?: string;
+  integrationId?: string;
   fullName?: string;
   defaultBranch?: string;
   private?: boolean;
   htmlUrl?: string;
+  githubRepository?: {
+    resourceId?: string;
+    fullName?: string;
+    defaultBranch?: string | null;
+    htmlUrl?: string | null;
+    isPrivate?: boolean | null;
+  } | null;
 }
 
 export interface Integration {
-  id: string;
-  name: string;
-  type: string;
+  id?: string;
+  name?: string;
+  type?: string;
+  provider?: "GITHUB" | "JIRA" | string;
+  organizationId?: string;
   description?: string;
   setupUrl?: string;
-  status?: "connected" | "available" | "error";
+  status?: "connected" | "available" | "error" | "PENDING" | "ACTIVE" | "DISABLED" | "REVOKED";
+  createdAt?: string;
+  updatedAt?: string;
+  github?: {
+    integrationId?: string;
+    installationId?: string;
+  } | null;
 }

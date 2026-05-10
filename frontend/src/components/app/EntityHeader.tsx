@@ -19,18 +19,18 @@ export function EntityHeader({
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex items-start gap-4 min-w-0">
+      <div className="flex min-w-0 items-start gap-4">
         <Avatar name={name} src={photoUrl} size="xl" />
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>
           {description && (
-            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>
           )}
           {meta && <div className="mt-2 text-xs text-muted-foreground">{meta}</div>}
         </div>
       </div>
       {(onEdit || onDelete) && (
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           {onEdit && (
             <Button variant="outline" size="sm" onClick={onEdit}>
               <Pencil className="mr-1.5 h-3.5 w-3.5" />

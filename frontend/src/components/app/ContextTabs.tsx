@@ -17,7 +17,7 @@ export function ContextTabs({
 }) {
   return (
     <div className="border-b border-border">
-      <div className="-mb-px flex gap-1 overflow-x-auto">
+      <div className="-mb-px flex min-h-11 gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((t) => {
           const active = t.value === value;
           return (
@@ -26,7 +26,7 @@ export function ContextTabs({
               type="button"
               onClick={() => onChange(t.value)}
               className={cn(
-                "relative whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors",
+                "relative flex shrink-0 items-center whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors",
                 active
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",

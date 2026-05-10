@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -20,7 +20,6 @@ import { MemberList } from "@/components/app/MemberList";
 import { UserPicker } from "@/components/app/UserPicker";
 import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
-import { StatusBadge } from "@/components/app/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -28,13 +27,13 @@ import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
-import type { Resource, Role, Workspace } from "@/lib/types";
+import type { Integration, Resource, Role, Workspace } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z
-    .enum(["overview", "workspaces", "members", "resources", "integrations"])
-    .optional(),
+  tab: z.string().optional(),
 });
+const organizationTabs = ["overview", "workspaces", "members", "resources", "integrations"] as const;
+type OrganizationTab = (typeof organizationTabs)[number];
 
 export const Route = createFileRoute("/organizations/$organizationId")({
   validateSearch: tabSchema,
@@ -49,9 +48,15 @@ export const Route = createFileRoute("/organizations/$organizationId")({
 
 function OrganizationPage() {
   const { organizationId } = Route.useParams();
+  const isNestedRoute = useRouterState({
+    select: (state) =>
+      state.location.pathname.replace(/\/$/, "") !== `/organizations/${organizationId}`,
+  });
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const tab = search.tab ?? "overview";
+  const tab = organizationTabs.includes(search.tab as OrganizationTab)
+    ? (search.tab as OrganizationTab)
+    : "overview";
   const setTab = (value: string) =>
     navigate({ search: { tab: value === "overview" ? undefined : (value as never) } });
 
@@ -75,11 +80,19 @@ function OrganizationPage() {
     queryKey: ["organization", organizationId, "resources"],
     queryFn: () => api.listOrgResources(organizationId),
   });
+  const orgIntegrationsQ = useQuery({
+    queryKey: ["organization", organizationId, "integrations"],
+    queryFn: () => api.listOrgIntegrations(organizationId),
+  });
 
   const refreshOrg = () => qc.invalidateQueries({ queryKey: ["organization", organizationId] });
   const refreshList = () => qc.invalidateQueries({ queryKey: ["organizations"] });
 
   const org = orgQ.data;
+
+  if (isNestedRoute) {
+    return <Outlet />;
+  }
 
   return (
     <AppShell>
@@ -119,7 +132,8 @@ function OrganizationPage() {
               workspaces={workspacesQ.data?.length ?? 0}
               members={membersQ.data?.length ?? 0}
               resources={resourcesQ.data?.length ?? 0}
-              recentResources={resourcesQ.data?.slice(0, 3) ?? []}
+              integrations={orgIntegrationsQ.data?.length ?? 0}
+              recentResources={resourcesQ.data?.slice(0, 4) ?? []}
             />
           )}
           {tab === "workspaces" && <WorkspacesTab organizationId={organizationId} />}
@@ -186,11 +200,13 @@ function OverviewTab({
   workspaces,
   members,
   resources,
+  integrations,
   recentResources,
 }: {
   workspaces: number;
   members: number;
   resources: number;
+  integrations: number;
   recentResources: Resource[];
 }) {
   return (
@@ -199,12 +215,12 @@ function OverviewTab({
         <StatCard icon={<FolderTree className="h-4 w-4" />} label="Workspaces" value={workspaces} />
         <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={members} />
         <StatCard icon={<Boxes className="h-4 w-4" />} label="Resources" value={resources} />
-        <StatCard icon={<Plug className="h-4 w-4" />} label="Integrations" value={resources > 0 ? "Connected" : "—"} />
+        <StatCard icon={<Plug className="h-4 w-4" />} label="Integrations" value={integrations > 0 ? "Connected" : "—"} />
       </div>
       {recentResources.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-muted-foreground">Recent resources</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-2">
             {recentResources.map((r) => (
               <ResourceCard key={r.id} resource={r} />
             ))}
@@ -477,7 +493,7 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
       ? list.filter(
           (r) =>
             r.name.toLowerCase().includes(s) ||
-            (r.fullName ?? "").toLowerCase().includes(s),
+            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
         )
       : list;
   }, [q.data, search]);
@@ -502,7 +518,7 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
           description="Connect an integration to bring in resources like GitHub repositories."
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 lg:grid-cols-2">
           {filtered.map((r) => (
             <ResourceCard key={r.id} resource={r} onEdit={() => setEditing(r)} />
           ))}
@@ -535,8 +551,133 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
   );
 }
 
+type IntegrationView = {
+  key: string;
+  name: string;
+  type: string;
+  description: string;
+  setupUrl?: string;
+  status: NonNullable<Integration["status"]> | "available";
+  isGithub: boolean;
+  isConnected: boolean;
+  installationId?: string;
+};
+
+function titleCaseProvider(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function normalizeIntegration(
+  integration: Integration,
+  index: number,
+  options?: { isConnected?: boolean; setupUrl?: string },
+): IntegrationView {
+  const rawType = integration.type ?? integration.provider ?? "integration";
+  const type = rawType.toString().toUpperCase();
+  const name = integration.name ?? (type === "GITHUB" ? "GitHub" : titleCaseProvider(type));
+  const status = integration.status ?? (options?.isConnected ? "ACTIVE" : "available");
+
+  return {
+    key: integration.id ?? integration.provider ?? integration.type ?? `integration-${index}`,
+    name,
+    type,
+    description:
+      integration.description ??
+      (type === "GITHUB"
+        ? "Connect a GitHub App installation to import repositories as resources."
+        : "Connect this integration to bring external resources into the workspace."),
+    setupUrl: integration.setupUrl ?? options?.setupUrl,
+    status,
+    isGithub: type.includes("GITHUB") || name.toLowerCase().includes("github"),
+    isConnected: options?.isConnected ?? false,
+    installationId: integration.github?.installationId,
+  };
+}
+
+function integrationStatusLabel(status: IntegrationView["status"]) {
+  const normalized = status.toString().toUpperCase();
+  if (normalized === "ACTIVE" || normalized === "CONNECTED") return "Connected";
+  if (normalized === "PENDING" || normalized === "AVAILABLE") return "Available";
+  if (normalized === "DISABLED") return "Disabled";
+  if (normalized === "REVOKED") return "Revoked";
+  if (normalized === "ERROR") return "Error";
+  return titleCaseProvider(normalized);
+}
+
+function integrationStatusClasses(status: IntegrationView["status"]) {
+  const normalized = status.toString().toUpperCase();
+  if (normalized === "ACTIVE" || normalized === "CONNECTED") {
+    return {
+      shell: "border-success/20 bg-success/10 text-success",
+      dot: "bg-success",
+    };
+  }
+  if (normalized === "PENDING") {
+    return {
+      shell: "border-warning/25 bg-warning/10 text-warning",
+      dot: "bg-warning",
+    };
+  }
+  if (["DISABLED", "REVOKED", "ERROR"].includes(normalized)) {
+    return {
+      shell: "border-destructive/20 bg-destructive/10 text-destructive",
+      dot: "bg-destructive",
+    };
+  }
+  return {
+    shell: "border-border bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground/70",
+  };
+}
+
+function IntegrationStatusBadge({ status }: { status: IntegrationView["status"] }) {
+  const classes = integrationStatusClasses(status);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${classes.shell}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${classes.dot}`} />
+      {integrationStatusLabel(status)}
+    </span>
+  );
+}
+
 function IntegrationsTab({ organizationId }: { organizationId: string }) {
-  const q = useQuery({ queryKey: ["integrations"], queryFn: api.listIntegrations });
+  const availableQ = useQuery({ queryKey: ["integrations"], queryFn: api.listIntegrations });
+  const connectedQ = useQuery({
+    queryKey: ["organization", organizationId, "integrations"],
+    queryFn: () => api.listOrgIntegrations(organizationId),
+  });
+  const availableSetupUrls = new Map(
+    (availableQ.data ?? []).map((integration) => [
+      (integration.provider ?? integration.type ?? "").toString().toUpperCase(),
+      integration.setupUrl,
+    ]),
+  );
+  const connectedIntegrations = (connectedQ.data ?? []).map((integration, index) =>
+    normalizeIntegration(integration, index, {
+      isConnected: true,
+      setupUrl: availableSetupUrls.get(
+        (integration.provider ?? integration.type ?? "").toString().toUpperCase(),
+      ),
+    }),
+  );
+  const connectedTypes = new Set(connectedIntegrations.map((integration) => integration.type));
+  const availableIntegrations = (availableQ.data ?? [])
+    .filter((integration) => {
+      const type = (integration.provider ?? integration.type ?? "").toString().toUpperCase();
+      return !connectedTypes.has(type);
+    })
+    .map((integration, index) => normalizeIntegration(integration, index));
+  const integrations = [...connectedIntegrations, ...availableIntegrations];
+  const isLoading = availableQ.isLoading || connectedQ.isLoading;
+  const error = availableQ.error ?? connectedQ.error;
 
   const handleGithubSetup = async (setupUrl?: string) => {
     if (setupUrl) {
@@ -567,39 +708,59 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
 
   return (
     <div className="space-y-4">
-      {q.isLoading ? (
+      {isLoading ? (
         <LoadingState />
-      ) : q.error ? (
-        <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />
-      ) : (q.data ?? []).length === 0 ? (
+      ) : error ? (
+        <ErrorState
+          message={errorMessage(error)}
+          onRetry={() => {
+            availableQ.refetch();
+            connectedQ.refetch();
+          }}
+        />
+      ) : integrations.length === 0 ? (
         <EmptyState
           icon={<Plug className="h-4 w-4" />}
           title="No integrations available"
           description="Integrations will appear here when they are configured on the server."
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {(q.data ?? []).map((i) => (
-            <Card key={i.id} className="flex items-start justify-between gap-3 rounded-xl p-4 shadow-card">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold">{i.name}</h3>
-                  <StatusBadge variant={i.status === "connected" ? "success" : "neutral"}>
-                    {i.status ?? "available"}
-                  </StatusBadge>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {integrations.map((integration) => (
+            <Card
+              key={integration.key}
+              className="flex flex-col gap-4 rounded-xl p-4 shadow-card sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Plug className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold">{integration.name}</h3>
+                    <p className="text-[11px] uppercase text-muted-foreground">
+                      {integration.type}
+                    </p>
+                  </div>
+                  <IntegrationStatusBadge status={integration.status} />
                 </div>
-                {i.description && (
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {i.description}
+                <p className="max-w-xl text-xs text-muted-foreground">
+                  {integration.description}
+                </p>
+                {integration.installationId && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Installation ID: {integration.installationId}
                   </p>
                 )}
-                <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {i.type}
-                </p>
               </div>
-              {i.type?.toLowerCase().includes("github") && (
-                <Button size="sm" variant="outline" onClick={() => handleGithubSetup(i.setupUrl)}>
-                  Setup
+              {integration.isGithub && integration.setupUrl && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full shrink-0 sm:w-auto"
+                  onClick={() => handleGithubSetup(integration.setupUrl)}
+                >
+                  {integration.isConnected ? "Manage" : "Setup"}
                 </Button>
               )}
             </Card>

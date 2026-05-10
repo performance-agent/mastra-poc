@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check } from "lucide-react";
+import { Plus, Boxes, Check, Users } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -20,6 +20,7 @@ import { UserPicker } from "@/components/app/UserPicker";
 import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -84,18 +85,47 @@ function GroupPage() {
     queryFn: () => api.listGroupMembers(groupId),
   });
   const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers });
-  const resQ = useQuery({
+  const groupResourcesQ = useQuery({
+    queryKey: ["group", groupId, "resources"],
+    queryFn: () => api.listGroupResources(groupId),
+  });
+  const orgResourcesQ = useQuery({
     queryKey: ["organization", organizationId, "resources"],
     queryFn: () => api.listOrgResources(organizationId),
   });
 
-  const filteredRes = useMemo(() => {
-    const list = resQ.data ?? [];
+  const assignedResourceIds = useMemo(
+    () => new Set((groupResourcesQ.data ?? []).map((resource) => resource.id)),
+    [groupResourcesQ.data],
+  );
+  const filteredAssignedResources = useMemo(() => {
+    const list = groupResourcesQ.data ?? [];
     const s = resSearch.trim().toLowerCase();
-    return s ? list.filter((r) => r.name.toLowerCase().includes(s)) : list;
-  }, [resQ.data, resSearch]);
+    return s
+      ? list.filter(
+          (r) =>
+            r.name.toLowerCase().includes(s) ||
+            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+        )
+      : list;
+  }, [groupResourcesQ.data, resSearch]);
+  const availableResources = useMemo(() => {
+    const list = (orgResourcesQ.data ?? []).filter((resource) => !assignedResourceIds.has(resource.id));
+    const s = resSearch.trim().toLowerCase();
+    return s
+      ? list.filter(
+          (r) =>
+            r.name.toLowerCase().includes(s) ||
+            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+        )
+      : list;
+  }, [assignedResourceIds, orgResourcesQ.data, resSearch]);
 
   const refreshMembers = () => qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
+  const refreshResources = () => {
+    qc.invalidateQueries({ queryKey: ["group", groupId, "resources"] });
+    qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] });
+  };
 
   const toggleResource = async (resourceId: string, action: "assign" | "unassign") => {
     setPending((p) => ({ ...p, [resourceId]: action }));
@@ -107,6 +137,7 @@ function GroupPage() {
         await api.unassignGroupResource(groupId, resourceId);
         toast.success("Resource unassigned");
       }
+      refreshResources();
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -153,8 +184,32 @@ function GroupPage() {
           />
 
           {tab === "overview" && (
-            <div className="rounded-xl border border-dashed border-border bg-surface p-8 text-center text-sm text-muted-foreground">
-              {membersQ.data?.length ?? 0} members in this group.
+            <div className="space-y-6">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <StatCard
+                  icon={<Users className="h-4 w-4" />}
+                  label="Members"
+                  value={membersQ.data?.length ?? 0}
+                />
+                <StatCard
+                  icon={<Boxes className="h-4 w-4" />}
+                  label="Assigned resources"
+                  value={groupResourcesQ.data?.length ?? 0}
+                />
+              </div>
+
+              {(groupResourcesQ.data ?? []).length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground">
+                    Assigned resources
+                  </h2>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {(groupResourcesQ.data ?? []).slice(0, 4).map((resource) => (
+                      <ResourceCard key={resource.id} resource={resource} />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -204,46 +259,80 @@ function GroupPage() {
                   <SearchInput value={resSearch} onChange={setResSearch} placeholder="Search resources…" />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Assign organization resources to this group.
+                  Search assigned resources and organization resources available to assign.
                 </p>
               </div>
-              {resQ.isLoading ? (
+              {groupResourcesQ.isLoading || orgResourcesQ.isLoading ? (
                 <LoadingState />
-              ) : resQ.error ? (
-                <ErrorState message={errorMessage(resQ.error)} onRetry={() => resQ.refetch()} />
-              ) : filteredRes.length === 0 ? (
-                <EmptyState
-                  icon={<Boxes className="h-4 w-4" />}
-                  title="No resources to assign"
+              ) : groupResourcesQ.error || orgResourcesQ.error ? (
+                <ErrorState
+                  message={errorMessage(groupResourcesQ.error ?? orgResourcesQ.error)}
+                  onRetry={() => {
+                    groupResourcesQ.refetch();
+                    orgResourcesQ.refetch();
+                  }}
                 />
               ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredRes.map((r) => (
-                    <ResourceCard
-                      key={r.id}
-                      resource={r}
-                      action={
-                        <div className="flex gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={pending[r.id] === "assign"}
-                            onClick={() => toggleResource(r.id, "assign")}
-                          >
-                            <Check className="mr-1 h-3 w-3" /> Assign
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={pending[r.id] === "unassign"}
-                            onClick={() => toggleResource(r.id, "unassign")}
-                          >
-                            Unassign
-                          </Button>
-                        </div>
-                      }
-                    />
-                  ))}
+                <div className="space-y-6">
+                  <section className="space-y-3">
+                    <h2 className="text-sm font-semibold text-muted-foreground">Assigned resources</h2>
+                    {filteredAssignedResources.length === 0 ? (
+                      <EmptyState
+                        icon={<Boxes className="h-4 w-4" />}
+                        title="No assigned resources"
+                        description="Assign organization resources to make them available in this group."
+                      />
+                    ) : (
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        {filteredAssignedResources.map((r) => (
+                          <ResourceCard
+                            key={r.id}
+                            resource={r}
+                            action={
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={pending[r.id] === "unassign"}
+                                onClick={() => toggleResource(r.id, "unassign")}
+                              >
+                                Unassign
+                              </Button>
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="space-y-3">
+                    <h2 className="text-sm font-semibold text-muted-foreground">Available to assign</h2>
+                    {availableResources.length === 0 ? (
+                      <EmptyState
+                        icon={<Boxes className="h-4 w-4" />}
+                        title="No resources available"
+                        description="Connect an integration in the organization to bring in more resources."
+                      />
+                    ) : (
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        {availableResources.map((r) => (
+                          <ResourceCard
+                            key={r.id}
+                            resource={r}
+                            action={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={pending[r.id] === "assign"}
+                                onClick={() => toggleResource(r.id, "assign")}
+                              >
+                                <Check className="mr-1 h-3 w-3" /> Assign
+                              </Button>
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
               )}
             </div>
@@ -332,5 +421,27 @@ function GroupPage() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        {icon}
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-lg font-semibold">{value}</div>
+      </div>
+    </Card>
   );
 }
