@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
+import { savePendingGithubSetup } from "@/lib/github-setup";
 import type { Integration, Resource, Role, Workspace } from "@/lib/types";
 
 const tabSchema = z.object({
@@ -679,31 +680,16 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
   const isLoading = availableQ.isLoading || connectedQ.isLoading;
   const error = availableQ.error ?? connectedQ.error;
 
-  const handleGithubSetup = async (setupUrl?: string) => {
+  const handleGithubSetup = (setupUrl?: string) => {
     if (setupUrl) {
-      window.open(setupUrl, "_blank", "noopener,noreferrer");
+      savePendingGithubSetup(organizationId);
+      window.location.assign(setupUrl);
       return;
     }
-    const params = new URLSearchParams(window.location.search);
-    const installation_id = params.get("installation_id") || params.get("installationId");
-    const setup_action = params.get("setup_action") || params.get("setupAction");
-    if (installation_id) {
-      try {
-        await api.setupGithub(organizationId, {
-          installation_id,
-          installationId: installation_id,
-          setup_action,
-          setupAction: setup_action,
-        });
-        toast.success("GitHub connected");
-      } catch (e) {
-        toast.error(errorMessage(e));
-      }
-    } else {
-      toast.message("No setup URL available", {
-        description: "This integration does not provide a setup link yet.",
-      });
-    }
+
+    toast.message("No setup URL available", {
+      description: "This integration does not provide a setup link yet.",
+    });
   };
 
   return (

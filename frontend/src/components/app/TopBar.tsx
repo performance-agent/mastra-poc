@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { HealthIndicator } from "./HealthIndicator";
-import { LogOut, Users } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
@@ -13,10 +13,10 @@ function initials(name?: string | null, email?: string | null) {
 }
 
 export function TopBar() {
-  const { backendUser, firebaseUser, signOut } = useAuth();
-  const displayName = backendUser?.name || firebaseUser?.displayName || firebaseUser?.email || "User";
-  const email = backendUser?.email || firebaseUser?.email || "";
-  const photoUrl = backendUser?.photoUrl || firebaseUser?.photoURL || undefined;
+  const { firebaseUser, signOut } = useAuth();
+  const displayName = firebaseUser?.displayName || firebaseUser?.email || "User";
+  const email = firebaseUser?.email || "";
+  const photoUrl = firebaseUser?.photoURL || undefined;
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur">
@@ -29,14 +29,6 @@ export function TopBar() {
         </Link>
         <div className="flex items-center gap-2">
           <HealthIndicator />
-          <Link
-            to="/users"
-            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            activeProps={{ className: "bg-accent text-foreground" }}
-          >
-            <Users className="h-3.5 w-3.5" />
-            Users
-          </Link>
           <div className="hidden items-center gap-2 rounded-md px-2 py-1 sm:flex">
             <Avatar className="h-7 w-7">
               <AvatarImage src={photoUrl} alt={displayName} />

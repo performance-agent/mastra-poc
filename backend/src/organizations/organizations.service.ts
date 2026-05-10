@@ -33,15 +33,6 @@ export class OrganizationsService {
     });
   }
 
-  findOptions() {
-    return this.prismaService.organization.findMany({
-      select: {
-        id: true,
-        name: true,
-      },
-    });
-  }
-
   findOne(id: string) {
     return this.prismaService.organization.findUnique({
       where: { id },

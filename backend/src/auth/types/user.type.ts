@@ -1,3 +1,5 @@
 import { DecodedIdToken } from 'firebase-admin/auth';
 
-export type User = DecodedIdToken;
+export type User = DecodedIdToken & {
+  id: string;
+};

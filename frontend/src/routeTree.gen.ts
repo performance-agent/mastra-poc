@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OrganizationsIndexRouteImport } from './routes/organizations.index'
 import { Route as OrganizationsOrganizationIdRouteImport } from './routes/organizations.$organizationId'
+import { Route as IntegrationsGithubSetupRouteImport } from './routes/integrations.github.setup'
 import { Route as OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteImport } from './routes/organizations.$organizationId.workspaces.$workspaceId'
 import { Route as OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRouteImport } from './routes/organizations.$organizationId.workspaces.$workspaceId.groups.$groupId'
 
@@ -43,6 +44,11 @@ const OrganizationsOrganizationIdRoute =
     path: '/organizations/$organizationId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const IntegrationsGithubSetupRoute = IntegrationsGithubSetupRouteImport.update({
+  id: '/integrations/github/setup',
+  path: '/integrations/github/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrganizationsOrganizationIdWorkspacesWorkspaceIdRoute =
   OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteImport.update({
     id: '/workspaces/$workspaceId',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/users': typeof UsersRoute
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations/': typeof OrganizationsIndexRoute
+  '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
   '/organizations/$organizationId/workspaces/$workspaceId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
   '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute
 }
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/users': typeof UsersRoute
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations': typeof OrganizationsIndexRoute
+  '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
   '/organizations/$organizationId/workspaces/$workspaceId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
   '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute
 }
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/users': typeof UsersRoute
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations/': typeof OrganizationsIndexRoute
+  '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
   '/organizations/$organizationId/workspaces/$workspaceId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
   '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute
 }
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/organizations/$organizationId'
     | '/organizations/'
+    | '/integrations/github/setup'
     | '/organizations/$organizationId/workspaces/$workspaceId'
     | '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
   fileRoutesByTo: FileRoutesByTo
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/organizations/$organizationId'
     | '/organizations'
+    | '/integrations/github/setup'
     | '/organizations/$organizationId/workspaces/$workspaceId'
     | '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
   id:
@@ -113,6 +124,7 @@ export interface FileRouteTypes {
     | '/users'
     | '/organizations/$organizationId'
     | '/organizations/'
+    | '/integrations/github/setup'
     | '/organizations/$organizationId/workspaces/$workspaceId'
     | '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
   fileRoutesById: FileRoutesById
@@ -123,6 +135,7 @@ export interface RootRouteChildren {
   UsersRoute: typeof UsersRoute
   OrganizationsOrganizationIdRoute: typeof OrganizationsOrganizationIdRouteWithChildren
   OrganizationsIndexRoute: typeof OrganizationsIndexRoute
+  IntegrationsGithubSetupRoute: typeof IntegrationsGithubSetupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -160,6 +173,13 @@ declare module '@tanstack/react-router' {
       path: '/organizations/$organizationId'
       fullPath: '/organizations/$organizationId'
       preLoaderRoute: typeof OrganizationsOrganizationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations/github/setup': {
+      id: '/integrations/github/setup'
+      path: '/integrations/github/setup'
+      fullPath: '/integrations/github/setup'
+      preLoaderRoute: typeof IntegrationsGithubSetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/organizations/$organizationId/workspaces/$workspaceId': {
@@ -216,6 +236,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrganizationsOrganizationIdRoute:
     OrganizationsOrganizationIdRouteWithChildren,
   OrganizationsIndexRoute: OrganizationsIndexRoute,
+  IntegrationsGithubSetupRoute: IntegrationsGithubSetupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -3,9 +3,10 @@ import { AuthService } from './auth.service';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth.guard';
 import { FirebaseModule } from '../firebase/firebase.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [FirebaseModule],
+  imports: [FirebaseModule, UsersModule],
   providers: [
     AuthService,
     {

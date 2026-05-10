@@ -39,17 +39,12 @@ export class OrganizationsController {
     @CurrentUser() user: User,
     @Body() createOrganizationDto: CreateOrganizationDto,
   ) {
-    return this.organizationsService.create(user.uid, createOrganizationDto);
+    return this.organizationsService.create(user.id, createOrganizationDto);
   }
 
   @Get()
   findAll(@CurrentUser() user: User) {
-    return this.organizationsService.findAll(user.uid);
-  }
-
-  @Get('options')
-  findOptions() {
-    return this.organizationsService.findOptions();
+    return this.organizationsService.findAll(user.id);
   }
 
   @RequireMembership({

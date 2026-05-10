@@ -103,8 +103,8 @@ export const api = {
   // Integrations
   listIntegrations: () => request<Integration[]>("/integrations"),
   listOrgIntegrations: (id: string) => request<Integration[]>(`/organizations/${id}/integrations`),
-  setupGithub: (orgId: string, body: Record<string, unknown>) =>
-    request<unknown>(`/organizations/${orgId}/integrations/github/setup`, {
+  setupGithub: (organizationId: string, body: Record<string, unknown>) =>
+    request<unknown>(`/organizations/${organizationId}/integrations/github/setup`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -154,8 +154,6 @@ export const api = {
 
   // Users
   listUsers: () => request<User[]>("/users"),
-  createUser: (body: Partial<User>) =>
-    request<User>("/users", { method: "POST", body: JSON.stringify(body) }),
   getUser: (id: string) => request<User>(`/users/${id}`),
   updateUser: (id: string, body: Partial<User>) =>
     request<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

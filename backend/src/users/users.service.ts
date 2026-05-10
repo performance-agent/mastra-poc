@@ -2,23 +2,26 @@ import { Injectable } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { User } from '../auth/types/user.type';
 
 @Injectable()
 export class UsersService {
   constructor(private readonly prismaService: PrismaService) {}
-  create(user: User, createUserDto: CreateUserDto) {
-    return this.prismaService.user.upsert({
-      where: {
-        email: user.email!,
+  create(createUserDto: CreateUserDto) {
+    return this.prismaService.user.create({
+      data: {
+        ...createUserDto,
+        memberships: {
+          create: {
+            organization: {
+              create: {
+                name: `${createUserDto.name}'s Organization`,
+                description: `Personal organization for ${createUserDto.name}`,
+              },
+            },
+            role: 'OWNER',
+          },
+        },
       },
-      create: {
-        firebaseUid: user.uid,
-        name: createUserDto.name,
-        email: user.email!,
-        photoUrl: createUserDto.photoUrl,
-      },
-      update: {},
     });
   }
 
@@ -30,6 +33,14 @@ export class UsersService {
     return this.prismaService.user.findUnique({
       where: {
         id,
+      },
+    });
+  }
+
+  findOneByFirebaseUid(firebaseUid: string) {
+    return this.prismaService.user.findUnique({
+      where: {
+        firebaseUid,
       },
     });
   }

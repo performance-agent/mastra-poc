@@ -10,12 +10,14 @@ import {
 import { FirebaseService } from '../firebase/firebase.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly firebaseService: FirebaseService,
-    private reflector: Reflector,
+    private readonly reflector: Reflector,
+    private readonly usersService: UsersService,
   ) {}
 
   async canActivate(context: ExecutionContext) {
@@ -36,8 +38,20 @@ export class AuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.firebaseService.verifyIdToken(token);
-      request['user'] = payload;
+      const decodedToken = await this.firebaseService.verifyIdToken(token);
+
+      let user = await this.usersService.findOneByFirebaseUid(decodedToken.uid);
+
+      if (!user) {
+        user = await this.usersService.create({
+          name: decodedToken.name,
+          email: decodedToken.email!,
+          firebaseUid: decodedToken.uid,
+          photoUrl: decodedToken.picture,
+        });
+      }
+
+      request['user'] = { ...decodedToken, id: user.id };
     } catch {
       throw new UnauthorizedException();
     }

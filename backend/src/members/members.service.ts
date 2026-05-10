@@ -43,6 +43,9 @@ export class MembersService {
           organizationId,
           userId,
         },
+        AND: {
+          OR: [{ role: 'VIEWER' }, { role: 'ADMIN' }],
+        },
       },
     });
   }
@@ -85,6 +88,9 @@ export class MembersService {
           workspaceId,
           userId,
         },
+        AND: {
+          OR: [{ role: 'VIEWER' }, { role: 'ADMIN' }],
+        },
       },
     });
   }
@@ -126,6 +132,9 @@ export class MembersService {
         userId_groupId: {
           groupId,
           userId,
+        },
+        AND: {
+          OR: [{ role: 'VIEWER' }, { role: 'ADMIN' }],
         },
       },
     });

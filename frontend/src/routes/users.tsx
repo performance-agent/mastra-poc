@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, UserPlus } from "lucide-react";
+import { Pencil, Trash2, UserPlus } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -33,7 +33,6 @@ export const Route = createFileRoute("/users")({
 function UsersPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
 
@@ -65,9 +64,6 @@ function UsersPage() {
             <div className="w-full sm:w-64">
               <SearchInput value={search} onChange={setSearch} placeholder="Search users…" />
             </div>
-            <Button onClick={() => setOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> New user
-            </Button>
           </div>
         </div>
 
@@ -79,8 +75,7 @@ function UsersPage() {
           <EmptyState
             icon={<UserPlus className="h-4 w-4" />}
             title="No users yet"
-            actionLabel="Create user"
-            onAction={() => setOpen(true)}
+            description="Users are created automatically when they register."
           />
         ) : (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -111,19 +106,8 @@ function UsersPage() {
       </div>
 
       <UserFormDialog
-        open={open}
-        onOpenChange={setOpen}
-        mode="create"
-        onSubmit={async (v) => {
-          await api.createUser(v);
-          toast.success("User created");
-          refresh();
-        }}
-      />
-      <UserFormDialog
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
-        mode="edit"
         initial={editing ?? undefined}
         onSubmit={async (v) => {
           if (!editing) return;
@@ -157,17 +141,14 @@ function UsersPage() {
 function UserFormDialog({
   open,
   onOpenChange,
-  mode,
   initial,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  mode: "create" | "edit";
   initial?: User;
   onSubmit: (values: Partial<User>) => Promise<void>;
 }) {
-  const [firebaseUid, setFirebaseUid] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
@@ -175,7 +156,6 @@ function UserFormDialog({
 
   useEffect(() => {
     if (open) {
-      setFirebaseUid(initial?.firebaseUid ?? "");
       setName(initial?.name ?? "");
       setEmail(initial?.email ?? "");
       setPhotoUrl(initial?.photoUrl ?? "");
@@ -186,18 +166,17 @@ function UserFormDialog({
     <FormModal
       open={open}
       onOpenChange={onOpenChange}
-      title={mode === "create" ? "New user" : "Edit user"}
-      submitLabel={mode === "create" ? "Create" : "Save"}
+      title="Edit user"
+      submitLabel="Save"
       submitting={submitting}
       onSubmit={async () => {
-        if (!name.trim() || !email.trim() || (mode === "create" && !firebaseUid.trim())) {
+        if (!name.trim() || !email.trim()) {
           toast.error("Fill all required fields");
           return;
         }
         setSubmitting(true);
         try {
           await onSubmit({
-            ...(mode === "create" ? { firebaseUid: firebaseUid.trim() } : {}),
             name: name.trim(),
             email: email.trim(),
             photoUrl: photoUrl.trim() || undefined,
@@ -210,12 +189,6 @@ function UserFormDialog({
         }
       }}
     >
-      {mode === "create" && (
-        <div className="space-y-1.5">
-          <Label htmlFor="u-fb">Firebase UID</Label>
-          <Input id="u-fb" value={firebaseUid} onChange={(e) => setFirebaseUid(e.target.value)} required />
-        </div>
-      )}
       <div className="space-y-1.5">
         <Label htmlFor="u-name">Name</Label>
         <Input id="u-name" value={name} onChange={(e) => setName(e.target.value)} required />

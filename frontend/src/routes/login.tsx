@@ -29,7 +29,7 @@ function authErrorMessage(error: unknown) {
 }
 
 function LoginPage() {
-  const { signIn, signUp, signInWithGoogle, syncError } = useAuth();
+  const { signIn, signUp, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -128,9 +128,9 @@ function LoginPage() {
                 />
               </div>
 
-              {error || syncError ? (
+              {error ? (
                 <p className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                  {error || syncError}
+                  {error}
                 </p>
               ) : null}
 
