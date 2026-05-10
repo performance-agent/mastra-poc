@@ -1,6 +1,10 @@
 import { MembershipRole } from '../../../generated/prisma/enums';
 
-export type ResourceType = 'organization' | 'workspace' | 'group';
+export type ResourceType =
+  | 'organization'
+  | 'workspace'
+  | 'group'
+  | 'integration';
 
 export type CanAccessResource = {
   userId: string;

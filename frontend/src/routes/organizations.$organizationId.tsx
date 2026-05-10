@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Building2, Users, FolderTree, Boxes, Plug } from "lucide-react";
+import { Plus, Building2, Users, FolderTree, Boxes, Plug, RefreshCw } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -553,6 +553,7 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
 }
 
 type IntegrationView = {
+  id?: string;
   key: string;
   name: string;
   type: string;
@@ -584,6 +585,7 @@ function normalizeIntegration(
   const status = integration.status ?? (options?.isConnected ? "ACTIVE" : "available");
 
   return {
+    id: integration.id,
     key: integration.id ?? integration.provider ?? integration.type ?? `integration-${index}`,
     name,
     type,
@@ -650,6 +652,8 @@ function IntegrationStatusBadge({ status }: { status: IntegrationView["status"] 
 }
 
 function IntegrationsTab({ organizationId }: { organizationId: string }) {
+  const qc = useQueryClient();
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const availableQ = useQuery({ queryKey: ["integrations"], queryFn: api.listIntegrations });
   const connectedQ = useQuery({
     queryKey: ["organization", organizationId, "integrations"],
@@ -690,6 +694,24 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     toast.message("No setup URL available", {
       description: "This integration does not provide a setup link yet.",
     });
+  };
+
+  const handleSyncIntegration = async (integration: IntegrationView) => {
+    if (!integration.id) return;
+
+    setSyncingId(integration.id);
+    try {
+      await api.syncIntegration(integration.id);
+      toast.success(`${integration.name} synced`);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["organization", organizationId, "integrations"] }),
+        qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] }),
+      ]);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setSyncingId(null);
+    }
   };
 
   return (
@@ -739,7 +761,22 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                   </p>
                 )}
               </div>
-              {integration.isGithub && integration.setupUrl && (
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
+                {integration.isConnected && integration.id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={() => handleSyncIntegration(integration)}
+                    disabled={syncingId === integration.id}
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${syncingId === integration.id ? "animate-spin" : ""}`}
+                    />
+                    Sync
+                  </Button>
+                )}
+                {integration.isGithub && integration.setupUrl && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -748,7 +785,8 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                 >
                   {integration.isConnected ? "Manage" : "Setup"}
                 </Button>
-              )}
+                )}
+              </div>
             </Card>
           ))}
         </div>

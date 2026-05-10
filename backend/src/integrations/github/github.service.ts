@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetupGithubDto } from './dto/setup-github.dto';
 import { Octokit } from 'octokit';
@@ -30,65 +26,122 @@ export class GithubService {
       );
     }
 
-    const github = this.createInstallationClient(setupGithubDto.installationId);
+    const integration = await this.prismaService.integration.create({
+      data: {
+        provider: 'GITHUB',
+        status: 'ACTIVE',
+        organizationId,
+        github: {
+          create: {
+            installationId: setupGithubDto.installationId,
+          },
+        },
+      },
+    });
 
-    const data = await github.paginate(
+    return this.sync(integration.id);
+  }
+
+  async sync(integrationId: string) {
+    const integration = await this.prismaService.integration.findUnique({
+      where: {
+        id: integrationId,
+      },
+      include: {
+        github: true,
+      },
+    });
+
+    if (!integration || !integration.github) {
+      throw new BadRequestException(`Integration not found: ${integrationId}`);
+    }
+
+    const github = this.createInstallationClient(
+      integration.github.installationId,
+    );
+
+    const repos = await github.paginate(
       github.rest.apps.listReposAccessibleToInstallation,
-      { per_page: 100 },
+      {
+        per_page: 100,
+      },
     );
 
-    const repositories = new Map(
-      data.map((repo) => [repo.id.toString(), repo]),
-    );
+    const externalIds = repos.map((repo) => repo.id.toString());
 
     return this.prismaService.$transaction(async (tx) => {
-      const integration = await tx.integration.create({
-        data: {
-          provider: 'GITHUB',
-          status: 'ACTIVE',
-          organizationId,
-          github: {
-            create: {
-              installationId: setupGithubDto.installationId,
+      await tx.integrationResource.deleteMany({
+        where: {
+          integrationId,
+          type: 'REPOSITORY',
+          externalId: {
+            notIn: externalIds,
+          },
+        },
+      });
+
+      for (const repo of repos) {
+        const externalId = repo.id.toString();
+
+        await tx.integrationResource.upsert({
+          where: {
+            integrationId_externalId: {
+              integrationId,
+              externalId,
             },
           },
+          create: {
+            integrationId,
+            name: repo.name,
+            type: 'REPOSITORY',
+            externalId,
+            githubRepository: {
+              create: {
+                fullName: repo.full_name,
+                defaultBranch: repo.default_branch,
+                htmlUrl: repo.html_url,
+                isPrivate: repo.private,
+              },
+            },
+          },
+          update: {
+            name: repo.name,
+            githubRepository: {
+              upsert: {
+                create: {
+                  fullName: repo.full_name,
+                  defaultBranch: repo.default_branch,
+                  htmlUrl: repo.html_url,
+                  isPrivate: repo.private,
+                },
+                update: {
+                  fullName: repo.full_name,
+                  defaultBranch: repo.default_branch,
+                  htmlUrl: repo.html_url,
+                  isPrivate: repo.private,
+                },
+              },
+            },
+          },
+        });
+      }
+
+      return tx.integration.findUnique({
+        where: {
+          id: integrationId,
         },
         include: {
           github: true,
+          integrationResources: {
+            include: {
+              githubRepository: true,
+            },
+            orderBy: {
+              name: 'asc',
+            },
+          },
         },
       });
-
-      const resources = await tx.integrationResource.createManyAndReturn({
-        data: data.map((repo) => ({
-          integrationId: integration.id,
-          name: repo.name,
-          type: 'REPOSITORY',
-          externalId: repo.id.toString(),
-        })),
-        select: { id: true, externalId: true },
-      });
-
-      await tx.githubRepository.createMany({
-        data: resources.map((resource) => {
-          const repo = repositories.get(resource.externalId);
-
-          if (!repo) {
-            throw new InternalServerErrorException(
-              `Repository not found for resource ${resource.id}`,
-            );
-          }
-
-          return {
-            resourceId: resource.id,
-            fullName: repo.full_name,
-            defaultBranch: repo.default_branch,
-            htmlUrl: repo.html_url,
-            isPrivate: repo.private,
-          };
-        }),
-      });
-
-      return integration;
     });
   }
 }

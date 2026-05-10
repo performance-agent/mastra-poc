@@ -17,6 +17,9 @@ export class AccessControlService {
       case 'group':
         return this.canAccessGroup(input);
 
+      case 'integration':
+        return this.canAccessIntegration(input);
+
       default:
         return false;
     }
@@ -125,6 +128,35 @@ export class AccessControlService {
             },
           },
         ],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return Boolean(membership);
+  }
+
+  private async canAccessIntegration(
+    input: CanAccessResource,
+  ): Promise<boolean> {
+    const membership = await this.prismaService.membership.findFirst({
+      where: {
+        userId: input.userId,
+        organization: {
+          integrations: {
+            some: {
+              id: input.resourceId,
+            },
+          },
+        },
+        ...(input.roles?.length
+          ? {
+              role: {
+                in: input.roles,
+              },
+            }
+          : {}),
       },
       select: {
         id: true,
