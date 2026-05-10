@@ -14,6 +14,7 @@ import { CreateGroupDto } from '../groups/dto/create-group.dto';
 import { GroupsService } from '../groups/groups.service';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
+import { ResourcesService } from '../resources/resources.service';
 
 @Controller('workspaces')
 export class WorkspacesController {
@@ -21,6 +22,7 @@ export class WorkspacesController {
     private readonly workspacesService: WorkspacesService,
     private readonly groupsService: GroupsService,
     private readonly membersService: MembersService,
+    private readonly resourcesService: ResourcesService,
   ) {}
 
   @Get(':id')
@@ -94,5 +96,10 @@ export class WorkspacesController {
     @Param('userId') userId: string,
   ) {
     return this.membersService.removeWorkspaceMember(workspaceId, userId);
+  }
+
+  @Get(':id/resources')
+  findAllResources(@Param('id') workspaceId: string) {
+    return this.resourcesService.findAllByWorkspace(workspaceId);
   }
 }

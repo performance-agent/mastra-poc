@@ -11,12 +11,14 @@ import { GroupsService } from './groups.service';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
+import { ResourcesService } from '../resources/resources.service';
 
 @Controller('groups')
 export class GroupsController {
   constructor(
     private readonly groupsService: GroupsService,
     private readonly membersService: MembersService,
+    private readonly resourcesService: ResourcesService,
   ) {}
 
   @Get(':id')
@@ -70,5 +72,10 @@ export class GroupsController {
     @Param('userId') userId: string,
   ) {
     return this.membersService.removeGroupMember(groupId, userId);
+  }
+
+  @Get(':id/resources')
+  findAllResources(@Param('id') groupId: string) {
+    return this.resourcesService.findAllByGroup(groupId);
   }
 }

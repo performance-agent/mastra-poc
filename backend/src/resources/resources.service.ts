@@ -5,11 +5,41 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class ResourcesService {
   constructor(private readonly prismaService: PrismaService) {}
-  findAll(organizationId: string) {
+  findAllByOrganization(organizationId: string) {
     return this.prismaService.integrationResource.findMany({
       where: {
         integration: {
           organizationId,
+        },
+      },
+      include: {
+        githubRepository: true,
+      },
+    });
+  }
+
+  findAllByWorkspace(workspaceId: string) {
+    return this.prismaService.integrationResource.findMany({
+      where: {
+        integrationResourceAssignments: {
+          some: {
+            workspaceId,
+          },
+        },
+      },
+      include: {
+        githubRepository: true,
+      },
+    });
+  }
+
+  findAllByGroup(groupId: string) {
+    return this.prismaService.integrationResource.findMany({
+      where: {
+        integrationResourceAssignments: {
+          some: {
+            groupId,
+          },
         },
       },
       include: {

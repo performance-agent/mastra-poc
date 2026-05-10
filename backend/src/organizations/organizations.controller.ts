@@ -18,6 +18,7 @@ import { MembersService } from '../members/members.service';
 import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
 import { GithubService } from '../integrations/github/github.service';
 import { ResourcesService } from '../resources/resources.service';
+import { IntegrationsService } from '../integrations/integrations.service';
 
 @Controller('organizations')
 export class OrganizationsController {
@@ -27,6 +28,7 @@ export class OrganizationsController {
     private readonly membersService: MembersService,
     private readonly githubService: GithubService,
     private readonly resourcesService: ResourcesService,
+    private readonly integrationsService: IntegrationsService,
   ) {}
 
   @Post()
@@ -111,6 +113,11 @@ export class OrganizationsController {
 
   @Get(':id/resources')
   findAllResources(@Param('id') organizationId: string) {
-    return this.resourcesService.findAll(organizationId);
+    return this.resourcesService.findAllByOrganization(organizationId);
+  }
+
+  @Get(':id/integrations')
+  findAllIntegrations(@Param('id') organizationId: string) {
+    return this.integrationsService.findAllByOrganization(organizationId);
   }
 }

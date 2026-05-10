@@ -6,6 +6,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { MembersService } from '../members/members.service';
 import { GithubService } from '../integrations/github/github.service';
 import { ResourcesService } from '../resources/resources.service';
+import { IntegrationsService } from '../integrations/integrations.service';
 
 @Module({
   controllers: [OrganizationsController],
@@ -16,6 +17,7 @@ import { ResourcesService } from '../resources/resources.service';
     MembersService,
     GithubService,
     ResourcesService,
+    IntegrationsService,
   ],
 })
 export class OrganizationsModule {}
