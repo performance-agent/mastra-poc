@@ -15,6 +15,7 @@ import { GroupsService } from '../groups/groups.service';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
+import { RequireMembership } from '../access-control/require-membership.decorator';
 
 @Controller('workspaces')
 export class WorkspacesController {
@@ -25,11 +26,21 @@ export class WorkspacesController {
     private readonly resourcesService: ResourcesService,
   ) {}
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.workspacesService.findOne(id);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -38,11 +49,21 @@ export class WorkspacesController {
     return this.workspacesService.update(id, updateWorkspaceDto);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER'],
+  })
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.workspacesService.remove(id);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Put(':id/resources/:resourceId')
   assignResource(
     @Param('id') id: string,
@@ -51,6 +72,11 @@ export class WorkspacesController {
     return this.workspacesService.assignResource(id, resourceId);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Delete(':id/resources/:resourceId')
   removeResource(
     @Param('id') id: string,
@@ -59,6 +85,11 @@ export class WorkspacesController {
     return this.workspacesService.removeResource(id, resourceId);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Post(':id/groups')
   createGroup(
     @Param('id') workspaceId: string,
@@ -67,11 +98,21 @@ export class WorkspacesController {
     return this.groupsService.create(workspaceId, createGroupDto);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/groups')
   findAll(@Param('id') workspaceId: string) {
     return this.groupsService.findAll(workspaceId);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Put(':id/members/:userId')
   setWorkspaceMember(
     @Param('id') workspaceId: string,
@@ -85,11 +126,21 @@ export class WorkspacesController {
     );
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/members')
   findAllWorkspaceMembers(@Param('id') workspaceId: string) {
     return this.membersService.findAllWorkspaceMembers(workspaceId);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Delete(':id/members/:userId')
   removeWorkspaceMember(
     @Param('id') workspaceId: string,
@@ -98,6 +149,11 @@ export class WorkspacesController {
     return this.membersService.removeWorkspaceMember(workspaceId, userId);
   }
 
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/resources')
   findAllResources(@Param('id') workspaceId: string) {
     return this.resourcesService.findAllByWorkspace(workspaceId);

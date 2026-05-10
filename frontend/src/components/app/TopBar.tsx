@@ -1,8 +1,23 @@
 import { Link } from "@tanstack/react-router";
 import { HealthIndicator } from "./HealthIndicator";
-import { Users } from "lucide-react";
+import { LogOut, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuth } from "@/lib/auth";
+
+function initials(name?: string | null, email?: string | null) {
+  const source = name || email || "User";
+  const parts = source.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
 
 export function TopBar() {
+  const { backendUser, firebaseUser, signOut } = useAuth();
+  const displayName = backendUser?.name || firebaseUser?.displayName || firebaseUser?.email || "User";
+  const email = backendUser?.email || firebaseUser?.email || "";
+  const photoUrl = backendUser?.photoUrl || firebaseUser?.photoURL || undefined;
+
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
@@ -22,6 +37,19 @@ export function TopBar() {
             <Users className="h-3.5 w-3.5" />
             Users
           </Link>
+          <div className="hidden items-center gap-2 rounded-md px-2 py-1 sm:flex">
+            <Avatar className="h-7 w-7">
+              <AvatarImage src={photoUrl} alt={displayName} />
+              <AvatarFallback className="text-xs">{initials(displayName, email)}</AvatarFallback>
+            </Avatar>
+            <div className="max-w-40 leading-tight">
+              <p className="truncate text-xs font-medium">{displayName}</p>
+              {email ? <p className="truncate text-[11px] text-muted-foreground">{email}</p> : null}
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" title="Sign out" aria-label="Sign out" onClick={signOut}>
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </header>

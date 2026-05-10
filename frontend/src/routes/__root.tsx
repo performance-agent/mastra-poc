@@ -4,12 +4,16 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useLocation,
+  useNavigate,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider, useAuth } from "@/lib/auth";
 
 import appCss from "../styles.css?url";
+import { useEffect } from "react";
 
 function NotFoundComponent() {
   return (
@@ -97,8 +101,66 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
       <Toaster />
     </QueryClientProvider>
   );
+}
+
+function AuthGate() {
+  const { firebaseUser, isLoading, syncError, signOut } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isLogin = location.pathname === "/login";
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!firebaseUser && !isLogin) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (firebaseUser && isLogin) {
+      navigate({ to: "/organizations", replace: true });
+    }
+  }, [firebaseUser, isLoading, isLogin, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="text-center">
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
+            PA
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">Loading session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (firebaseUser && syncError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-md text-center">
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
+            PA
+          </div>
+          <h1 className="mt-4 text-xl font-semibold">Account sync failed</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{syncError}</p>
+          <button
+            type="button"
+            onClick={signOut}
+            className="mt-6 inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if ((!firebaseUser && !isLogin) || (firebaseUser && isLogin)) return null;
+
+  return <Outlet />;
 }

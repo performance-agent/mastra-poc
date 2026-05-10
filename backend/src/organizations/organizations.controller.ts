@@ -19,6 +19,9 @@ import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
 import { GithubService } from '../integrations/github/github.service';
 import { ResourcesService } from '../resources/resources.service';
 import { IntegrationsService } from '../integrations/integrations.service';
+import { CurrentUser } from '../auth/decorators/user.decorator';
+import { type User } from '../auth/types/user.type';
+import { RequireMembership } from '../access-control/require-membership.decorator';
 
 @Controller('organizations')
 export class OrganizationsController {
@@ -32,13 +35,16 @@ export class OrganizationsController {
   ) {}
 
   @Post()
-  create(@Body() createOrganizationDto: CreateOrganizationDto) {
-    return this.organizationsService.create(createOrganizationDto);
+  create(
+    @CurrentUser() user: User,
+    @Body() createOrganizationDto: CreateOrganizationDto,
+  ) {
+    return this.organizationsService.create(user.uid, createOrganizationDto);
   }
 
   @Get()
-  findAll() {
-    return this.organizationsService.findAll();
+  findAll(@CurrentUser() user: User) {
+    return this.organizationsService.findAll(user.uid);
   }
 
   @Get('options')
@@ -46,11 +52,21 @@ export class OrganizationsController {
     return this.organizationsService.findOptions();
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.organizationsService.findOne(id);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -59,11 +75,21 @@ export class OrganizationsController {
     return this.organizationsService.update(id, updateOrganizationDto);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER'],
+  })
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.organizationsService.remove(id);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Post(':id/workspaces')
   createWorkspace(
     @Param('id') organizationId: string,
@@ -72,11 +98,21 @@ export class OrganizationsController {
     return this.workspacesService.create(organizationId, createWorkspaceDto);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/workspaces')
   findAllWorkspaces(@Param('id') organizationId: string) {
     return this.workspacesService.findAll(organizationId);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Put(':id/members/:userId')
   setOrganizationMember(
     @Param('id') organizationId: string,
@@ -90,11 +126,21 @@ export class OrganizationsController {
     );
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/members')
   findAllOrganizationMembers(@Param('id') organizationId: string) {
     return this.membersService.findAllOrganizationMembers(organizationId);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER'],
+  })
   @Delete(':id/members/:userId')
   removeOrganizationMember(
     @Param('id') organizationId: string,
@@ -103,6 +149,11 @@ export class OrganizationsController {
     return this.membersService.removeOrganizationMember(organizationId, userId);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Post(':id/integrations/github/setup')
   setup(
     @Param('id') organizationId: string,
@@ -111,11 +162,21 @@ export class OrganizationsController {
     return this.githubService.setup(organizationId, setupGithubDto);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/resources')
   findAllResources(@Param('id') organizationId: string) {
     return this.resourcesService.findAllByOrganization(organizationId);
   }
 
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/integrations')
   findAllIntegrations(@Param('id') organizationId: string) {
     return this.integrationsService.findAllByOrganization(organizationId);

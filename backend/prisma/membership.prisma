@@ -16,6 +16,7 @@ model Membership {
   @@unique([userId, workspaceId])
   @@unique([userId, groupId])
   @@index([userId])
+  @@index([userId, role])
   @@index([organizationId])
   @@index([workspaceId])
   @@index([groupId])

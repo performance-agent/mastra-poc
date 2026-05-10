@@ -7,14 +7,30 @@ import { PrismaService } from '../prisma/prisma.service';
 export class OrganizationsService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  create(createOrganizationDto: CreateOrganizationDto) {
+  create(userId: string, createOrganizationDto: CreateOrganizationDto) {
     return this.prismaService.organization.create({
-      data: createOrganizationDto,
+      data: {
+        ...createOrganizationDto,
+        memberships: {
+          create: {
+            userId,
+            role: 'OWNER',
+          },
+        },
+      },
     });
   }
 
-  findAll() {
-    return this.prismaService.organization.findMany();
+  findAll(userId: string) {
+    return this.prismaService.organization.findMany({
+      where: {
+        memberships: {
+          some: {
+            userId,
+          },
+        },
+      },
+    });
   }
 
   findOptions() {

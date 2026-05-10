@@ -1,23 +1,23 @@
 import { Module } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 import { OrganizationsController } from './organizations.controller';
-import { PrismaService } from '../prisma/prisma.service';
-import { WorkspacesService } from '../workspaces/workspaces.service';
-import { MembersService } from '../members/members.service';
-import { GithubService } from '../integrations/github/github.service';
-import { ResourcesService } from '../resources/resources.service';
-import { IntegrationsService } from '../integrations/integrations.service';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { MembersModule } from '../members/members.module';
+import { ResourcesModule } from '../resources/resources.module';
+import { IntegrationsModule } from '../integrations/integrations.module';
+import { GithubModule } from '../integrations/github/github.module';
 
 @Module({
-  controllers: [OrganizationsController],
-  providers: [
-    OrganizationsService,
-    PrismaService,
-    WorkspacesService,
-    MembersService,
-    GithubService,
-    ResourcesService,
-    IntegrationsService,
+  imports: [
+    OrganizationsModule,
+    WorkspacesModule,
+    MembersModule,
+    GithubModule,
+    ResourcesModule,
+    IntegrationsModule,
   ],
+  controllers: [OrganizationsController],
+  providers: [OrganizationsService],
+  exports: [OrganizationsService],
 })
 export class OrganizationsModule {}

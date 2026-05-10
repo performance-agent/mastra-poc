@@ -12,6 +12,7 @@ import { UpdateGroupDto } from './dto/update-group.dto';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
+import { RequireMembership } from '../access-control/require-membership.decorator';
 
 @Controller('groups')
 export class GroupsController {
@@ -21,21 +22,41 @@ export class GroupsController {
     private readonly resourcesService: ResourcesService,
   ) {}
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.groupsService.findOne(id);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateGroupDto: UpdateGroupDto) {
     return this.groupsService.update(id, updateGroupDto);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER'],
+  })
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.groupsService.remove(id);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Put(':id/resources/:resourceId')
   assignResource(
     @Param('id') id: string,
@@ -44,6 +65,11 @@ export class GroupsController {
     return this.groupsService.assignResource(id, resourceId);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Delete(':id/resources/:resourceId')
   removeResource(
     @Param('id') id: string,
@@ -52,6 +78,11 @@ export class GroupsController {
     return this.groupsService.removeResource(id, resourceId);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Put(':id/members/:userId')
   setGroupMember(
     @Param('id') groupId: string,
@@ -61,11 +92,21 @@ export class GroupsController {
     return this.membersService.setGroupMember(groupId, userId, setMemberDto);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/members')
   findAllGroupMembers(@Param('id') groupId: string) {
     return this.membersService.findAllGroupMembers(groupId);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Delete(':id/members/:userId')
   removeGroupMember(
     @Param('id') groupId: string,
@@ -74,6 +115,11 @@ export class GroupsController {
     return this.membersService.removeGroupMember(groupId, userId);
   }
 
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id/resources')
   findAllResources(@Param('id') groupId: string) {
     return this.resourcesService.findAllByGroup(groupId);
