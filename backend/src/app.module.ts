@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { MastraModule } from '@mastra/nestjs';
-import { mastra } from './mastra';
 import { ConfigModule } from '@nestjs/config';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
@@ -16,6 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AccessControlModule } from './access-control/access-control.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -32,7 +31,7 @@ import { AccessControlModule } from './access-control/access-control.module';
     FirebaseModule,
     PrismaModule,
     AccessControlModule,
-    MastraModule.register({ mastra }),
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

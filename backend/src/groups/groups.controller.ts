@@ -6,6 +6,7 @@ import {
   Param,
   Delete,
   Put,
+  Post,
 } from '@nestjs/common';
 import { GroupsService } from './groups.service';
 import { UpdateGroupDto } from './dto/update-group.dto';
@@ -13,6 +14,8 @@ import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
 import { RequireMembership } from '../access-control/require-membership.decorator';
+import { ReportsService } from '../reports/reports.service';
+import { CreateReportDto } from '../reports/dto/create-report.dto';
 
 @Controller('groups')
 export class GroupsController {
@@ -20,6 +23,7 @@ export class GroupsController {
     private readonly groupsService: GroupsService,
     private readonly membersService: MembersService,
     private readonly resourcesService: ResourcesService,
+    private readonly reportsService: ReportsService,
   ) {}
 
   @RequireMembership({
@@ -123,5 +127,28 @@ export class GroupsController {
   @Get(':id/resources')
   findAllResources(@Param('id') groupId: string) {
     return this.resourcesService.findAllByGroup(groupId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/reports')
+  createReport(
+    @Param('id') id: string,
+    @Body() createReportDto: CreateReportDto,
+  ) {
+    return this.reportsService.createGroupReportAsync(id, createReportDto);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  @Get(':id/reports')
+  findAllReports(@Param('id') id: string) {
+    return this.reportsService.findAllByGroup(id);
   }
 }

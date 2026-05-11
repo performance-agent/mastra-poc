@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check, Users } from "lucide-react";
+import { Plus, Boxes, Check, Users, FileText, RefreshCw } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -19,6 +19,7 @@ import { MemberList } from "@/components/app/MemberList";
 import { UserPicker } from "@/components/app/UserPicker";
 import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
+import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -32,11 +33,12 @@ import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
-import type { Role } from "@/lib/types";
+import type { GroupGithubActivityReport, PerformanceReport, Role } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z.enum(["overview", "members", "resources"]).optional(),
+  tab: z.enum(["overview", "members", "resources", "reports"]).optional(),
 });
+type GroupTab = "overview" | "members" | "resources" | "reports";
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId",
@@ -55,7 +57,7 @@ function GroupPage() {
   const { organizationId, workspaceId, groupId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const tab = search.tab ?? "overview";
+  const tab = ((search.tab as GroupTab | undefined) ?? "overview");
   const setTab = (v: string) =>
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
@@ -67,6 +69,9 @@ function GroupPage() {
   const [role, setRole] = useState<Role>("VIEWER");
   const [resSearch, setResSearch] = useState("");
   const [pending, setPending] = useState<Record<string, "assign" | "unassign" | undefined>>({});
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [isCreatingReport, setIsCreatingReport] = useState(false);
+  const [reportStartedAt, setReportStartedAt] = useState<string | null>(null);
 
   const orgQ = useQuery({
     queryKey: ["organization", organizationId],
@@ -92,6 +97,11 @@ function GroupPage() {
   const orgResourcesQ = useQuery({
     queryKey: ["organization", organizationId, "resources"],
     queryFn: () => api.listOrgResources(organizationId),
+  });
+  const reportsQ = useQuery({
+    queryKey: ["group", groupId, "reports"],
+    queryFn: () => api.listGroupReports(groupId),
+    refetchInterval: reportStartedAt ? 5000 : false,
   });
 
   const assignedResourceIds = useMemo(
@@ -120,6 +130,21 @@ function GroupPage() {
         )
       : list;
   }, [assignedResourceIds, orgResourcesQ.data, resSearch]);
+  const selectedReport = useMemo(() => {
+    const reports = reportsQ.data ?? [];
+    return reports.find((report) => report.id === selectedReportId) ?? reports[0] ?? null;
+  }, [reportsQ.data, selectedReportId]);
+
+  useEffect(() => {
+    if (!reportStartedAt) return;
+    const createdReport = (reportsQ.data ?? []).find(
+      (report) => report.createdAt && new Date(report.createdAt) >= new Date(reportStartedAt),
+    );
+    if (createdReport) {
+      setSelectedReportId(createdReport.id);
+      setReportStartedAt(null);
+    }
+  }, [reportStartedAt, reportsQ.data]);
 
   const refreshMembers = () => qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
   const refreshResources = () => {
@@ -142,6 +167,20 @@ function GroupPage() {
       toast.error(errorMessage(e));
     } finally {
       setPending((p) => ({ ...p, [resourceId]: undefined }));
+    }
+  };
+
+  const createReport = async () => {
+    setIsCreatingReport(true);
+    try {
+      await api.createGroupReport(groupId, { type: "GITHUB_ACTIVITY" });
+      setReportStartedAt(new Date().toISOString());
+      toast.success("Report generation started");
+      reportsQ.refetch();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setIsCreatingReport(false);
     }
   };
 
@@ -180,6 +219,7 @@ function GroupPage() {
               { value: "overview", label: "Overview" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
+              { value: "reports", label: "Reports", count: reportsQ.data?.length },
             ]}
           />
 
@@ -337,6 +377,21 @@ function GroupPage() {
               )}
             </div>
           )}
+
+          {tab === "reports" && (
+            <ReportsTab
+              reports={reportsQ.data ?? []}
+              selectedReport={selectedReport}
+              selectedReportId={selectedReportId}
+              isLoading={reportsQ.isLoading}
+              error={reportsQ.error}
+              isCreating={isCreatingReport}
+              isWaitingForReport={Boolean(reportStartedAt)}
+              onCreate={createReport}
+              onRefresh={() => reportsQ.refetch()}
+              onSelect={setSelectedReportId}
+            />
+          )}
         </div>
       )}
 
@@ -421,6 +476,103 @@ function GroupPage() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+function ReportsTab({
+  reports,
+  selectedReport,
+  selectedReportId,
+  isLoading,
+  error,
+  isCreating,
+  isWaitingForReport,
+  onCreate,
+  onRefresh,
+  onSelect,
+}: {
+  reports: Array<PerformanceReport<GroupGithubActivityReport>>;
+  selectedReport: PerformanceReport<GroupGithubActivityReport> | null;
+  selectedReportId: string | null;
+  isLoading: boolean;
+  error: unknown;
+  isCreating: boolean;
+  isWaitingForReport: boolean;
+  onCreate: () => Promise<void>;
+  onRefresh: () => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Generate a GitHub activity report for the resources assigned to this group.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={onRefresh}>
+            <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
+          </Button>
+          <Button onClick={onCreate} disabled={isCreating}>
+            <FileText className="mr-1.5 h-4 w-4" />
+            {isCreating ? "Starting..." : "Generate GitHub report"}
+          </Button>
+        </div>
+      </div>
+
+      {isWaitingForReport && (
+        <Card className="rounded-xl p-4 shadow-card">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            Report generation started. Refreshing until the new report is available.
+          </div>
+        </Card>
+      )}
+
+      {isLoading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorState message={errorMessage(error)} onRetry={onRefresh} />
+      ) : reports.length === 0 ? (
+        <EmptyState
+          icon={<FileText className="h-4 w-4" />}
+          title="No reports yet"
+          description="Generate a GitHub activity report to analyze the group's delivery signals."
+          actionLabel="Generate report"
+          onAction={onCreate}
+        />
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+          <Card className="h-fit rounded-xl p-2 shadow-card">
+            <div className="space-y-1">
+              {reports.map((report) => (
+                <button
+                  key={report.id}
+                  type="button"
+                  onClick={() => onSelect(report.id)}
+                  className={`w-full rounded-lg px-3 py-2 text-left transition-colors ${
+                    (selectedReportId ?? reports[0]?.id) === report.id
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  <div className="text-sm font-medium">GitHub activity</div>
+                  <div className="text-[11px]">
+                    {report.createdAt ? new Date(report.createdAt).toLocaleString() : "Generated report"}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {selectedReport ? (
+            <GroupGithubActivityReportRenderer report={selectedReport} />
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }
 

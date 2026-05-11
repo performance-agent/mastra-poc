@@ -36,9 +36,10 @@ import { toFormInitial } from "@/lib/form-helpers";
 import type { Group, Role } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z.enum(["overview", "groups", "members", "resources"]).optional(),
+  tab: z.string().optional(),
 });
-type WorkspaceTab = NonNullable<z.infer<typeof tabSchema>["tab"]> | "overview";
+const workspaceTabs = ["overview", "groups", "members", "resources"] as const;
+type WorkspaceTab = (typeof workspaceTabs)[number];
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId",
@@ -62,7 +63,9 @@ function WorkspacePage() {
   });
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const tab = (search.tab ?? "overview") as WorkspaceTab;
+  const tab = workspaceTabs.includes(search.tab as WorkspaceTab)
+    ? (search.tab as WorkspaceTab)
+    : "overview";
   const setTab = (v: string) =>
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 

@@ -4,7 +4,8 @@ export type ResourceType =
   | 'organization'
   | 'workspace'
   | 'group'
-  | 'integration';
+  | 'integration'
+  | 'report';
 
 export type CanAccessResource = {
   userId: string;

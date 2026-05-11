@@ -6,6 +6,8 @@ import type {
   Membership,
   Resource,
   Integration,
+  PerformanceReport,
+  GroupGithubActivityReport,
   Role,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
@@ -153,6 +155,15 @@ export const api = {
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "PUT" }),
   unassignGroupResource: (groupId: string, resourceId: string) =>
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "DELETE" }),
+  createGroupReport: (groupId: string, body: { type: "GITHUB_ACTIVITY" }) =>
+    request<{ status: "CREATING"; type: "GITHUB_ACTIVITY"; groupId: string }>(
+      `/groups/${groupId}/reports`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  listGroupReports: (groupId: string) =>
+    request<Array<PerformanceReport<GroupGithubActivityReport>>>(`/groups/${groupId}/reports`),
+  getReport: (id: string) =>
+    request<PerformanceReport<GroupGithubActivityReport>>(`/reports/${id}`),
 
   // Users
   listUsers: () => request<User[]>("/users"),

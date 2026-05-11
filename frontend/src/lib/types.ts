@@ -82,3 +82,91 @@ export interface Integration {
     installationId?: string;
   } | null;
 }
+
+export type PerformanceReportType = "GITHUB_ACTIVITY";
+
+export interface PerformanceReport<TData = unknown> {
+  id: string;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  groupId?: string | null;
+  type: PerformanceReportType;
+  data: TData;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface GroupGithubActivityReport {
+  summary: string;
+  health: {
+    score: number;
+    status: "GOOD" | "WATCH" | "RISK";
+    summary: string;
+  };
+  groupInsights: {
+    deliveryMomentum: ReportInsight;
+    collaboration: ReportInsight;
+    riskAndBottlenecks: {
+      status: "GOOD" | "WATCH" | "RISK";
+      summary: string;
+      risks: string[];
+    };
+    focus: ReportInsight;
+  };
+  people: Array<{
+    githubLogin: string;
+    contributionProfile:
+      | "DELIVERY_DRIVER"
+      | "REVIEWER"
+      | "MAINTAINER"
+      | "BLOCKED"
+      | "LOW_SIGNAL";
+    summary: string;
+    metrics: {
+      openedPullRequests: number;
+      mergedPullRequests: number;
+      openPullRequests: number;
+      stalePullRequests: number;
+      openedIssues: number;
+      closedIssues: number;
+      comments: number;
+      reviewComments: number;
+      commits: number;
+    };
+    strengths: string[];
+    risks: string[];
+    suggestedActions: string[];
+    notableItems: ReportWorkItem[];
+  }>;
+  notableWork: Array<ReportWorkItem & { status: string }>;
+  recommendations: Array<{
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    title: string;
+    description: string;
+    action: string;
+  }>;
+  rawSignals: {
+    repositoriesAnalyzed: number;
+    openPullRequests: number;
+    mergedPullRequests: number;
+    openIssues: number;
+    closedIssues: number;
+    stalePullRequests: number;
+    recentCommits: number;
+  };
+}
+
+interface ReportInsight {
+  status: "GOOD" | "WATCH" | "RISK";
+  summary: string;
+  signals: string[];
+}
+
+interface ReportWorkItem {
+  type: "PULL_REQUEST" | "ISSUE" | "COMMIT";
+  repository: string;
+  number: number | null;
+  title: string;
+  url: string;
+  reason: string;
+}

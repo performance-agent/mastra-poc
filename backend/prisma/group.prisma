@@ -11,6 +11,7 @@ model Group {
   updatedAt                      DateTime                        @default(now()) @updatedAt @db.Timestamptz(3)
   memberships                    Membership[]
   integrationResourceAssignments IntegrationResourceAssignment[]
+  performanceReports             PerformanceReport[]
 
   @@index([workspaceId])
 }

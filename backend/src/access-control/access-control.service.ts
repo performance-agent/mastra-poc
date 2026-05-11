@@ -20,6 +20,9 @@ export class AccessControlService {
       case 'integration':
         return this.canAccessIntegration(input);
 
+      case 'report':
+        return this.canAccessReport(input);
+
       default:
         return false;
     }
@@ -157,6 +160,98 @@ export class AccessControlService {
               },
             }
           : {}),
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return Boolean(membership);
+  }
+
+  private async canAccessReport(input: CanAccessResource): Promise<boolean> {
+    const membership = await this.prismaService.membership.findFirst({
+      where: {
+        userId: input.userId,
+        ...(input.roles?.length
+          ? {
+              role: {
+                in: input.roles,
+              },
+            }
+          : {}),
+        OR: [
+          {
+            organization: {
+              performanceReports: {
+                some: {
+                  id: input.resourceId,
+                },
+              },
+            },
+          },
+          {
+            workspace: {
+              performanceReports: {
+                some: {
+                  id: input.resourceId,
+                },
+              },
+            },
+          },
+          {
+            group: {
+              performanceReports: {
+                some: {
+                  id: input.resourceId,
+                },
+              },
+            },
+          },
+          {
+            organization: {
+              workspaces: {
+                some: {
+                  performanceReports: {
+                    some: {
+                      id: input.resourceId,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            organization: {
+              workspaces: {
+                some: {
+                  groups: {
+                    some: {
+                      performanceReports: {
+                        some: {
+                          id: input.resourceId,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            workspace: {
+              groups: {
+                some: {
+                  performanceReports: {
+                    some: {
+                      id: input.resourceId,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
