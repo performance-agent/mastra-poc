@@ -59,3 +59,76 @@ export type GithubCommitActivity = {
   date: string | null;
   url: string;
 };
+
+export type GithubRepositoryHistory = {
+  resourceId: string;
+  repository: GithubRepositoryActivity['repository'];
+  period: {
+    firstActivityAt: string | null;
+    lastActivityAt: string | null;
+  };
+  monthlyBuckets: GithubHistoryBucket[];
+  flowMetrics: {
+    pullRequestsOpened: number;
+    pullRequestsMerged: number;
+    pullRequestsClosedUnmerged: number;
+    pullRequestMergeRate: number | null;
+    averagePullRequestCycleTimeDays: number | null;
+    medianPullRequestCycleTimeDays: number | null;
+    issuesOpened: number;
+    issuesClosed: number;
+    issueCloseRate: number | null;
+  };
+  people: GithubHistoryPerson[];
+  notableWork: GithubHistoryWorkItem[];
+  rawSignals: {
+    pullRequestsAnalyzed: number;
+    issuesAnalyzed: number;
+    commitWeeksAnalyzed: number;
+    contributorStatsAvailable: boolean;
+    limits: {
+      maxPullRequests: number;
+      maxIssues: number;
+      maxPeople: number;
+      maxNotableWork: number;
+      maxBuckets: number;
+    };
+  };
+};
+
+export type GithubHistoryBucket = {
+  period: string;
+  commits: number;
+  pullRequestsOpened: number;
+  pullRequestsMerged: number;
+  pullRequestsClosed: number;
+  issuesOpened: number;
+  issuesClosed: number;
+};
+
+export type GithubHistoryPerson = {
+  githubLogin: string;
+  commits: number;
+  openedPullRequests: number;
+  mergedPullRequests: number;
+  closedIssues: number;
+  comments: number;
+  reviewComments: number;
+  firstActivityAt: string | null;
+  lastActivityAt: string | null;
+};
+
+export type GithubHistoryWorkItem = {
+  type: 'PULL_REQUEST' | 'ISSUE';
+  repository: string;
+  number: number;
+  title: string;
+  url: string;
+  author: string | null;
+  createdAt: string;
+  closedAt: string | null;
+  mergedAt?: string | null;
+  comments: number;
+  reviewComments?: number;
+  reason: string;
+};

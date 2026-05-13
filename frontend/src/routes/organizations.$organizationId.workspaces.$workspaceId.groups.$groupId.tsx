@@ -20,6 +20,7 @@ import { UserPicker } from "@/components/app/UserPicker";
 import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
+import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -33,7 +34,13 @@ import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
-import type { GroupGithubActivityReport, PerformanceReport, Role } from "@/lib/types";
+import type {
+  GroupGithubActivityReport,
+  GroupGithubHistoryReport,
+  PerformanceReport,
+  PerformanceReportType,
+  Role,
+} from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.enum(["overview", "members", "resources", "reports"]).optional(),
@@ -170,10 +177,10 @@ function GroupPage() {
     }
   };
 
-  const createReport = async () => {
+  const createReport = async (type: PerformanceReportType) => {
     setIsCreatingReport(true);
     try {
-      await api.createGroupReport(groupId, { type: "GITHUB_ACTIVITY" });
+      await api.createGroupReport(groupId, { type });
       setReportStartedAt(new Date().toISOString());
       toast.success("Report generation started");
       reportsQ.refetch();
@@ -491,14 +498,14 @@ function ReportsTab({
   onRefresh,
   onSelect,
 }: {
-  reports: Array<PerformanceReport<GroupGithubActivityReport>>;
-  selectedReport: PerformanceReport<GroupGithubActivityReport> | null;
+  reports: Array<PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport>>;
+  selectedReport: PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport> | null;
   selectedReportId: string | null;
   isLoading: boolean;
   error: unknown;
   isCreating: boolean;
   isWaitingForReport: boolean;
-  onCreate: () => Promise<void>;
+  onCreate: (type: PerformanceReportType) => Promise<void>;
   onRefresh: () => void;
   onSelect: (id: string) => void;
 }) {
@@ -508,16 +515,20 @@ function ReportsTab({
         <div>
           <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Generate a GitHub activity report for the resources assigned to this group.
+            Generate an activity snapshot or a full GitHub history report for this group.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={onRefresh}>
             <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
           </Button>
-          <Button onClick={onCreate} disabled={isCreating}>
+          <Button onClick={() => onCreate("GITHUB_ACTIVITY")} disabled={isCreating}>
             <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "Generate GitHub report"}
+            {isCreating ? "Starting..." : "Activity report"}
+          </Button>
+          <Button onClick={() => onCreate("GITHUB_HISTORY")} disabled={isCreating}>
+            <FileText className="mr-1.5 h-4 w-4" />
+            {isCreating ? "Starting..." : "History report"}
           </Button>
         </div>
       </div>
@@ -536,13 +547,13 @@ function ReportsTab({
       ) : error ? (
         <ErrorState message={errorMessage(error)} onRetry={onRefresh} />
       ) : reports.length === 0 ? (
-        <EmptyState
-          icon={<FileText className="h-4 w-4" />}
-          title="No reports yet"
-          description="Generate a GitHub activity report to analyze the group's delivery signals."
-          actionLabel="Generate report"
-          onAction={onCreate}
-        />
+          <EmptyState
+            icon={<FileText className="h-4 w-4" />}
+            title="No reports yet"
+            description="Generate a GitHub report to analyze the group's delivery signals."
+            actionLabel="Generate activity report"
+            onAction={() => onCreate("GITHUB_ACTIVITY")}
+          />
       ) : (
         <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
           <Card className="h-fit rounded-xl p-2 shadow-card">
@@ -558,7 +569,9 @@ function ReportsTab({
                       : "text-muted-foreground hover:bg-accent hover:text-foreground"
                   }`}
                 >
-                  <div className="text-sm font-medium">GitHub activity</div>
+                  <div className="text-sm font-medium">
+                    {report.type === "GITHUB_HISTORY" ? "GitHub history" : "GitHub activity"}
+                  </div>
                   <div className="text-[11px]">
                     {report.createdAt ? new Date(report.createdAt).toLocaleString() : "Generated report"}
                   </div>
@@ -568,7 +581,15 @@ function ReportsTab({
           </Card>
 
           {selectedReport ? (
-            <GroupGithubActivityReportRenderer report={selectedReport} />
+            selectedReport.type === "GITHUB_HISTORY" ? (
+              <GroupGithubHistoryReportRenderer
+                report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
+              />
+            ) : (
+              <GroupGithubActivityReportRenderer
+                report={selectedReport as PerformanceReport<GroupGithubActivityReport>}
+              />
+            )
           ) : null}
         </div>
       )}

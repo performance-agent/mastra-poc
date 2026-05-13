@@ -7,8 +7,13 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { GithubService } from '../integrations/github/github.service';
-import { GithubRepositoryActivity } from '../integrations/github/types/github.types';
+import {
+  GithubHistoryWorkItem,
+  GithubRepositoryActivity,
+  GithubRepositoryHistory,
+} from '../integrations/github/types/github.types';
 import { groupGithubActivityReportSchema } from '../mastra/schemas/group-github-activity-report.schema';
+import { groupGithubHistoryReportSchema } from '../mastra/schemas/group-github-history-report.schema';
 import { mastra } from '../mastra';
 
 @Injectable()
@@ -24,10 +29,16 @@ export class ReportsService {
     'groupGithubActivityReportAgent',
   );
 
+  private readonly groupGithubHistoryReportAgent = mastra.getAgent(
+    'groupGithubHistoryReportAgent',
+  );
+
   createGroupReport(groupId: string, createReportDto: CreateReportDto) {
     switch (createReportDto.type) {
       case 'GITHUB_ACTIVITY':
-        return this.createGroupGithubReport(groupId);
+        return this.createGroupGithubActivityReport(groupId);
+      case 'GITHUB_HISTORY':
+        return this.createGroupGithubHistoryReport(groupId);
       default:
         throw new BadRequestException('Unsupported report type');
     }
@@ -50,48 +61,9 @@ export class ReportsService {
     };
   }
 
-  private async createGroupGithubReport(groupId: string) {
-    const group = await this.prismaService.group.findUnique({
-      where: {
-        id: groupId,
-      },
-      include: {
-        integrationResourceAssignments: {
-          include: {
-            resource: {
-              include: {
-                integration: {
-                  include: {
-                    github: true,
-                  },
-                },
-                githubRepository: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!group) {
-      throw new NotFoundException('Group not found');
-    }
-
-    const githubRepositoryResources = group.integrationResourceAssignments
-      .map((assignment) => assignment.resource)
-      .filter(
-        (resource) =>
-          resource.integration.provider === 'GITHUB' &&
-          resource.type === 'REPOSITORY' &&
-          resource.integration.github &&
-          resource.githubRepository,
-      );
-
-    if (!githubRepositoryResources.length) {
-      throw new BadRequestException(
-        'This group has no GitHub repositories assigned',
-      );
-    }
+  private async createGroupGithubActivityReport(groupId: string) {
+    const { group, githubRepositoryResources } =
+      await this.getGroupGithubRepositoryResources(groupId);
 
     const repositoryActivities = await Promise.all(
       githubRepositoryResources.map((resource) =>
@@ -139,6 +111,104 @@ ${JSON.stringify(reportInput)}
     });
 
     return savedReport;
+  }
+
+  private async createGroupGithubHistoryReport(groupId: string) {
+    const { group, githubRepositoryResources } =
+      await this.getGroupGithubRepositoryResources(groupId);
+
+    const repositoryHistories = await Promise.all(
+      githubRepositoryResources.map((resource) =>
+        this.githubService.getRepositoryHistory(resource.id),
+      ),
+    );
+
+    const reportInput = this.buildGroupGithubHistoryReportInput({
+      group: {
+        id: group.id,
+        name: group.name,
+      },
+      repositoryHistories,
+    });
+
+    const result = await this.groupGithubHistoryReportAgent.generate(
+      [
+        {
+          role: 'user',
+          content: `
+Generate a structured group GitHub history performance report using this input.
+
+Return only valid structured data matching the schema.
+
+Input:
+${JSON.stringify(reportInput)}
+`,
+        },
+      ],
+      {
+        structuredOutput: {
+          schema: groupGithubHistoryReportSchema,
+        },
+      },
+    );
+
+    const reportData = result.object;
+
+    const savedReport = await this.prismaService.performanceReport.create({
+      data: {
+        groupId,
+        type: 'GITHUB_HISTORY',
+        data: reportData,
+      },
+    });
+
+    return savedReport;
+  }
+
+  private async getGroupGithubRepositoryResources(groupId: string) {
+    const group = await this.prismaService.group.findUnique({
+      where: {
+        id: groupId,
+      },
+      include: {
+        integrationResourceAssignments: {
+          include: {
+            resource: {
+              include: {
+                integration: {
+                  include: {
+                    github: true,
+                  },
+                },
+                githubRepository: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    const githubRepositoryResources = group.integrationResourceAssignments
+      .map((assignment) => assignment.resource)
+      .filter(
+        (resource) =>
+          resource.integration.provider === 'GITHUB' &&
+          resource.type === 'REPOSITORY' &&
+          resource.integration.github &&
+          resource.githubRepository,
+      );
+
+    if (!githubRepositoryResources.length) {
+      throw new BadRequestException(
+        'This group has no GitHub repositories assigned',
+      );
+    }
+
+    return { group, githubRepositoryResources };
   }
 
   findOne(id: string) {
@@ -319,6 +389,177 @@ ${JSON.stringify(reportInput)}
         totalRecentCommits,
         totalStalePullRequests,
         people: Array.from(peopleMap.values()),
+      },
+    };
+  }
+
+  private buildGroupGithubHistoryReportInput(input: {
+    group: {
+      id: string;
+      name: string;
+    };
+    repositoryHistories: GithubRepositoryHistory[];
+  }) {
+    const now = new Date();
+    const peopleMap = new Map<
+      string,
+      {
+        githubLogin: string;
+        commits: number;
+        openedPullRequests: number;
+        mergedPullRequests: number;
+        closedIssues: number;
+        comments: number;
+        reviewComments: number;
+        repositories: string[];
+        firstActivityAt: string | null;
+        lastActivityAt: string | null;
+      }
+    >();
+
+    let pullRequestsAnalyzed = 0;
+    let pullRequestsMerged = 0;
+    let pullRequestsClosedUnmerged = 0;
+    let issuesAnalyzed = 0;
+    let issuesClosed = 0;
+    let commitWeeksAnalyzed = 0;
+    const activityDates: string[] = [];
+    const notableWork: GithubHistoryWorkItem[] = [];
+
+    const ensurePerson = (githubLogin: string) => {
+      if (!peopleMap.has(githubLogin)) {
+        peopleMap.set(githubLogin, {
+          githubLogin,
+          commits: 0,
+          openedPullRequests: 0,
+          mergedPullRequests: 0,
+          closedIssues: 0,
+          comments: 0,
+          reviewComments: 0,
+          repositories: [],
+          firstActivityAt: null,
+          lastActivityAt: null,
+        });
+      }
+
+      return peopleMap.get(githubLogin)!;
+    };
+
+    const registerDate = (
+      current: string | null,
+      candidate: string | null,
+      compare: 'min' | 'max',
+    ) => {
+      if (!candidate) {
+        return current;
+      }
+
+      if (!current) {
+        return candidate;
+      }
+
+      const currentTime = new Date(current).getTime();
+      const candidateTime = new Date(candidate).getTime();
+
+      return compare === 'min'
+        ? candidateTime < currentTime
+          ? candidate
+          : current
+        : candidateTime > currentTime
+          ? candidate
+          : current;
+    };
+
+    for (const repositoryHistory of input.repositoryHistories) {
+      const repositoryName = repositoryHistory.repository.fullName;
+
+      if (repositoryHistory.period.firstActivityAt) {
+        activityDates.push(repositoryHistory.period.firstActivityAt);
+      }
+
+      if (repositoryHistory.period.lastActivityAt) {
+        activityDates.push(repositoryHistory.period.lastActivityAt);
+      }
+
+      pullRequestsAnalyzed += repositoryHistory.rawSignals.pullRequestsAnalyzed;
+      pullRequestsMerged += repositoryHistory.flowMetrics.pullRequestsMerged;
+      pullRequestsClosedUnmerged +=
+        repositoryHistory.flowMetrics.pullRequestsClosedUnmerged;
+      issuesAnalyzed += repositoryHistory.rawSignals.issuesAnalyzed;
+      issuesClosed += repositoryHistory.flowMetrics.issuesClosed;
+      commitWeeksAnalyzed += repositoryHistory.rawSignals.commitWeeksAnalyzed;
+      notableWork.push(...repositoryHistory.notableWork);
+
+      for (const personSignal of repositoryHistory.people) {
+        const person = ensurePerson(personSignal.githubLogin);
+
+        person.commits += personSignal.commits;
+        person.openedPullRequests += personSignal.openedPullRequests;
+        person.mergedPullRequests += personSignal.mergedPullRequests;
+        person.closedIssues += personSignal.closedIssues;
+        person.comments += personSignal.comments;
+        person.reviewComments += personSignal.reviewComments;
+        person.firstActivityAt = registerDate(
+          person.firstActivityAt,
+          personSignal.firstActivityAt,
+          'min',
+        );
+        person.lastActivityAt = registerDate(
+          person.lastActivityAt,
+          personSignal.lastActivityAt,
+          'max',
+        );
+
+        if (!person.repositories.includes(repositoryName)) {
+          person.repositories.push(repositoryName);
+        }
+      }
+    }
+
+    const firstActivityAt = activityDates.length
+      ? new Date(
+          Math.min(...activityDates.map((date) => new Date(date).getTime())),
+        ).toISOString()
+      : null;
+
+    const lastActivityAt = activityDates.length
+      ? new Date(
+          Math.max(...activityDates.map((date) => new Date(date).getTime())),
+        ).toISOString()
+      : null;
+
+    return {
+      group: input.group,
+      generatedAt: now.toISOString(),
+      repositories: input.repositoryHistories,
+      computedSignals: {
+        repositoriesAnalyzed: input.repositoryHistories.length,
+        firstActivityAt,
+        lastActivityAt,
+        pullRequestsAnalyzed,
+        pullRequestsMerged,
+        pullRequestsClosedUnmerged,
+        issuesAnalyzed,
+        issuesClosed,
+        commitWeeksAnalyzed,
+        people: Array.from(peopleMap.values())
+          .sort(
+            (a, b) =>
+              b.commits +
+              b.openedPullRequests * 4 +
+              b.mergedPullRequests * 6 +
+              b.closedIssues * 2 +
+              b.comments +
+              b.reviewComments * 2 -
+              (a.commits +
+                a.openedPullRequests * 4 +
+                a.mergedPullRequests * 6 +
+                a.closedIssues * 2 +
+                a.comments +
+                a.reviewComments * 2),
+          )
+          .slice(0, 20),
+        notableWork: notableWork.slice(0, 50),
       },
     };
   }

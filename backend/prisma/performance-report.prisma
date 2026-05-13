@@ -26,4 +26,5 @@ model PerformanceReport {
 
 enum PerformanceReportType {
   GITHUB_ACTIVITY
+  GITHUB_HISTORY
 }

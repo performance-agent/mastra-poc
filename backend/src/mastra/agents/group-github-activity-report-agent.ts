@@ -33,5 +33,5 @@ Important rules:
 
   // Usá el mismo formato/model que tengas en weather-agent.ts.
   // Si tu weather-agent usa model: "openai/gpt-4o-mini", dejalo así.
-  model: 'openai/gpt-5-mini',
+  model: 'openai/gpt-5-nano',
 });

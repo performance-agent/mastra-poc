@@ -83,7 +83,7 @@ export interface Integration {
   } | null;
 }
 
-export type PerformanceReportType = "GITHUB_ACTIVITY";
+export type PerformanceReportType = "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface PerformanceReport<TData = unknown> {
   id: string;
@@ -153,6 +153,72 @@ export interface GroupGithubActivityReport {
     closedIssues: number;
     stalePullRequests: number;
     recentCommits: number;
+  };
+}
+
+export interface GroupGithubHistoryReport {
+  summary: string;
+  health: {
+    score: number;
+    status: "GOOD" | "WATCH" | "RISK";
+    summary: string;
+  };
+  historicalInsights: {
+    deliveryFlow: ReportInsight;
+    collaboration: ReportInsight;
+    ownership: ReportInsight;
+    riskAndLessons: {
+      status: "GOOD" | "WATCH" | "RISK";
+      summary: string;
+      risks: string[];
+      lessons: string[];
+    };
+  };
+  projectStages: Array<{
+    label: string;
+    period: string;
+    summary: string;
+    signals: string[];
+  }>;
+  people: Array<{
+    githubLogin: string;
+    contributionProfile:
+      | "DELIVERY_DRIVER"
+      | "REVIEWER"
+      | "MAINTAINER"
+      | "SPECIALIST"
+      | "LOW_SIGNAL";
+    summary: string;
+    metrics: {
+      commits: number;
+      openedPullRequests: number;
+      mergedPullRequests: number;
+      closedIssues: number;
+      comments: number;
+      reviewComments: number;
+    };
+    strengths: string[];
+    risks: string[];
+    suggestedActions: string[];
+    notableItems: ReportWorkItem[];
+  }>;
+  notableWork: Array<ReportWorkItem & { status: string }>;
+  recommendations: Array<{
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    title: string;
+    description: string;
+    action: string;
+  }>;
+  rawSignals: {
+    repositoriesAnalyzed: number;
+    firstActivityAt: string | null;
+    lastActivityAt: string | null;
+    pullRequestsAnalyzed: number;
+    pullRequestsMerged: number;
+    pullRequestsClosedUnmerged: number;
+    issuesAnalyzed: number;
+    issuesClosed: number;
+    commitWeeksAnalyzed: number;
   };
 }
 
