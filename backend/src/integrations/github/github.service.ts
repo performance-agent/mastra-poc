@@ -21,6 +21,7 @@ import {
 const HISTORY_LIMITS = {
   maxPullRequests: 1000,
   maxIssues: 1000,
+  maxCommits: 1000,
   maxPeople: 10,
   maxNotableWork: 15,
   maxBuckets: 24,
@@ -275,10 +276,16 @@ export class GithubService {
     const context = await this.getGithubRepositoryContext(resourceId);
     const { github, owner, repo, resource, githubRepository } = context;
 
-    const [pullRequests, issues, commitActivity, contributorStats] =
+    const [pullRequests, issues, commits, commitActivity, contributorStats] =
       await Promise.all([
         this.listPullRequestsForHistory(github, owner, repo),
         this.listIssuesForHistory(github, owner, repo),
+        this.listCommitsForHistory(
+          github,
+          owner,
+          repo,
+          githubRepository.defaultBranch,
+        ),
         this.getCommitActivityStats(github, owner, repo),
         this.getContributorStats(github, owner, repo),
       ]);
@@ -364,32 +371,55 @@ export class GithubService {
       }
     };
 
-    for (const week of commitActivity) {
-      const weekStart = new Date((week.week ?? 0) * 1000).toISOString();
-      const bucket = ensureBucket(weekStart);
+    if (commits.length) {
+      for (const commit of commits) {
+        const mappedCommit = this.mapCommit(commit);
+        const commitDate = mappedCommit.date;
+        const bucket = ensureBucket(commitDate);
+        const githubLogin =
+          mappedCommit.githubLogin ??
+          mappedCommit.authorEmail ??
+          mappedCommit.authorName;
+        const person = ensurePerson(githubLogin);
 
-      if (bucket) {
-        bucket.commits += week.total ?? 0;
-      }
-
-      if ((week.total ?? 0) > 0) {
-        activityDates.push(weekStart);
-      }
-    }
-
-    for (const contributor of contributorStats) {
-      const person = ensurePerson(contributor.author?.login);
-
-      for (const week of contributor.weeks ?? []) {
-        const commits = week.c ?? 0;
-
-        if (!commits || !person) {
-          continue;
+        if (bucket) {
+          bucket.commits += 1;
         }
 
-        const weekStart = new Date((week.w ?? 0) * 1000).toISOString();
-        person.commits += commits;
-        registerPersonActivity(person, weekStart);
+        if (person) {
+          person.commits += 1;
+        }
+
+        registerPersonActivity(person, commitDate);
+      }
+    } else {
+      for (const week of commitActivity) {
+        const weekStart = new Date((week.week ?? 0) * 1000).toISOString();
+        const bucket = ensureBucket(weekStart);
+
+        if (bucket) {
+          bucket.commits += week.total ?? 0;
+        }
+
+        if ((week.total ?? 0) > 0) {
+          activityDates.push(weekStart);
+        }
+      }
+
+      for (const contributor of contributorStats) {
+        const person = ensurePerson(contributor.author?.login);
+
+        for (const week of contributor.weeks ?? []) {
+          const commits = week.c ?? 0;
+
+          if (!commits || !person) {
+            continue;
+          }
+
+          const weekStart = new Date((week.w ?? 0) * 1000).toISOString();
+          person.commits += commits;
+          registerPersonActivity(person, weekStart);
+        }
       }
     }
 
@@ -471,6 +501,7 @@ export class GithubService {
       repository.fullName,
       pullRequests,
       realIssues,
+      commits,
     );
 
     const pullRequestsMerged = pullRequests.filter((pr) => pr.merged_at).length;
@@ -506,6 +537,7 @@ export class GithubService {
       rawSignals: {
         pullRequestsAnalyzed: pullRequests.length,
         issuesAnalyzed: realIssues.length,
+        commitsAnalyzed: commits.length,
         commitWeeksAnalyzed: commitActivity.length,
         contributorStatsAvailable: contributorStats.length > 0,
         limits: HISTORY_LIMITS,
@@ -602,6 +634,25 @@ export class GithubService {
           page,
         }),
       HISTORY_LIMITS.maxIssues,
+    );
+  }
+
+  private async listCommitsForHistory(
+    github: Octokit,
+    owner: string,
+    repo: string,
+    defaultBranch: string | null,
+  ) {
+    return this.paginateWithLimit(
+      (page) =>
+        github.rest.repos.listCommits({
+          owner,
+          repo,
+          sha: defaultBranch ?? undefined,
+          per_page: 100,
+          page,
+        }),
+      HISTORY_LIMITS.maxCommits,
     );
   }
 
@@ -715,6 +766,7 @@ export class GithubService {
     repository: string,
     pullRequests: any[],
     issues: any[],
+    commits: any[],
   ): GithubHistoryWorkItem[] {
     const prItems = pullRequests.map((pr) => {
       const comments = pr.comments ?? 0;
@@ -771,7 +823,35 @@ export class GithubService {
       };
     });
 
-    return [...prItems, ...issueItems]
+    const commitItems = commits.map((commit) => {
+      const mappedCommit = this.mapCommit(commit);
+      const firstLine = mappedCommit.message.split('\n')[0] || mappedCommit.sha;
+
+      return {
+        item: {
+          type: 'COMMIT' as const,
+          repository,
+          number: null,
+          title: firstLine,
+          url: mappedCommit.url,
+          author:
+            mappedCommit.githubLogin ??
+            mappedCommit.authorName ??
+            mappedCommit.authorEmail,
+          createdAt: mappedCommit.date ?? new Date(0).toISOString(),
+          closedAt: null,
+          comments: 0,
+          reason: 'Commit on the default branch that contributes to the repository history',
+        },
+        score:
+          firstLine.toLowerCase().includes('merge') ||
+          firstLine.toLowerCase().includes('release')
+            ? 5
+            : 1,
+      };
+    });
+
+    return [...prItems, ...issueItems, ...commitItems]
       .sort((a, b) => b.score - a.score)
       .slice(0, HISTORY_LIMITS.maxNotableWork)
       .map(({ item }) => item);

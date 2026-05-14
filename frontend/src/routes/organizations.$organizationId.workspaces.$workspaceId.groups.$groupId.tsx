@@ -64,7 +64,7 @@ function GroupPage() {
   const { organizationId, workspaceId, groupId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const tab = ((search.tab as GroupTab | undefined) ?? "overview");
+  const tab = (search.tab as GroupTab | undefined) ?? "overview";
   const setTab = (v: string) =>
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
@@ -127,7 +127,9 @@ function GroupPage() {
       : list;
   }, [groupResourcesQ.data, resSearch]);
   const availableResources = useMemo(() => {
-    const list = (orgResourcesQ.data ?? []).filter((resource) => !assignedResourceIds.has(resource.id));
+    const list = (orgResourcesQ.data ?? []).filter(
+      (resource) => !assignedResourceIds.has(resource.id),
+    );
     const s = resSearch.trim().toLowerCase();
     return s
       ? list.filter(
@@ -270,7 +272,10 @@ function GroupPage() {
               {membersQ.isLoading ? (
                 <LoadingState />
               ) : membersQ.error ? (
-                <ErrorState message={errorMessage(membersQ.error)} onRetry={() => membersQ.refetch()} />
+                <ErrorState
+                  message={errorMessage(membersQ.error)}
+                  onRetry={() => membersQ.refetch()}
+                />
               ) : (
                 <MemberList
                   members={membersQ.data ?? []}
@@ -303,7 +308,11 @@ function GroupPage() {
             <div className="space-y-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="w-full sm:w-72">
-                  <SearchInput value={resSearch} onChange={setResSearch} placeholder="Search resources…" />
+                  <SearchInput
+                    value={resSearch}
+                    onChange={setResSearch}
+                    placeholder="Search resources…"
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Search assigned resources and organization resources available to assign.
@@ -322,7 +331,9 @@ function GroupPage() {
               ) : (
                 <div className="space-y-6">
                   <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-muted-foreground">Assigned resources</h2>
+                    <h2 className="text-sm font-semibold text-muted-foreground">
+                      Assigned resources
+                    </h2>
                     {filteredAssignedResources.length === 0 ? (
                       <EmptyState
                         icon={<Boxes className="h-4 w-4" />}
@@ -352,7 +363,9 @@ function GroupPage() {
                   </section>
 
                   <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-muted-foreground">Available to assign</h2>
+                    <h2 className="text-sm font-semibold text-muted-foreground">
+                      Available to assign
+                    </h2>
                     {availableResources.length === 0 ? (
                       <EmptyState
                         icon={<Boxes className="h-4 w-4" />}
@@ -460,7 +473,9 @@ function GroupPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMemberOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setMemberOpen(false)}>
+              Cancel
+            </Button>
             <Button
               disabled={!userId}
               onClick={async () => {
@@ -510,23 +525,31 @@ function ReportsTab({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+    <div className="min-w-0 space-y-4">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 max-w-2xl break-words text-xs text-muted-foreground">
             Generate an activity snapshot or a full GitHub history report for this group.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={onRefresh}>
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+          <Button className="w-full sm:w-auto" variant="outline" onClick={onRefresh}>
             <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
           </Button>
-          <Button onClick={() => onCreate("GITHUB_ACTIVITY")} disabled={isCreating}>
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => onCreate("GITHUB_ACTIVITY")}
+            disabled={isCreating}
+          >
             <FileText className="mr-1.5 h-4 w-4" />
             {isCreating ? "Starting..." : "Activity report"}
           </Button>
-          <Button onClick={() => onCreate("GITHUB_HISTORY")} disabled={isCreating}>
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => onCreate("GITHUB_HISTORY")}
+            disabled={isCreating}
+          >
             <FileText className="mr-1.5 h-4 w-4" />
             {isCreating ? "Starting..." : "History report"}
           </Button>
@@ -535,9 +558,11 @@ function ReportsTab({
 
       {isWaitingForReport && (
         <Card className="rounded-xl p-4 shadow-card">
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            Report generation started. Refreshing until the new report is available.
+            <span className="min-w-0 break-words">
+              Report generation started. Refreshing until the new report is available.
+            </span>
           </div>
         </Card>
       )}
@@ -547,33 +572,35 @@ function ReportsTab({
       ) : error ? (
         <ErrorState message={errorMessage(error)} onRetry={onRefresh} />
       ) : reports.length === 0 ? (
-          <EmptyState
-            icon={<FileText className="h-4 w-4" />}
-            title="No reports yet"
-            description="Generate a GitHub report to analyze the group's delivery signals."
-            actionLabel="Generate activity report"
-            onAction={() => onCreate("GITHUB_ACTIVITY")}
-          />
+        <EmptyState
+          icon={<FileText className="h-4 w-4" />}
+          title="No reports yet"
+          description="Generate a GitHub report to analyze the group's delivery signals."
+          actionLabel="Generate activity report"
+          onAction={() => onCreate("GITHUB_ACTIVITY")}
+        />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
-          <Card className="h-fit rounded-xl p-2 shadow-card">
-            <div className="space-y-1">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
+          <Card className="h-fit min-w-0 overflow-hidden rounded-xl p-2 shadow-card">
+            <div className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
               {reports.map((report) => (
                 <button
                   key={report.id}
                   type="button"
                   onClick={() => onSelect(report.id)}
-                  className={`w-full rounded-lg px-3 py-2 text-left transition-colors ${
+                  className={`w-56 shrink-0 rounded-lg px-3 py-2 text-left transition-colors lg:w-full ${
                     (selectedReportId ?? reports[0]?.id) === report.id
                       ? "bg-accent text-foreground"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground"
                   }`}
                 >
-                  <div className="text-sm font-medium">
+                  <div className="truncate text-sm font-medium">
                     {report.type === "GITHUB_HISTORY" ? "GitHub history" : "GitHub activity"}
                   </div>
-                  <div className="text-[11px]">
-                    {report.createdAt ? new Date(report.createdAt).toLocaleString() : "Generated report"}
+                  <div className="truncate text-[11px]">
+                    {report.createdAt
+                      ? new Date(report.createdAt).toLocaleString()
+                      : "Generated report"}
                   </div>
                 </button>
               ))}
@@ -581,15 +608,17 @@ function ReportsTab({
           </Card>
 
           {selectedReport ? (
-            selectedReport.type === "GITHUB_HISTORY" ? (
-              <GroupGithubHistoryReportRenderer
-                report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
-              />
-            ) : (
-              <GroupGithubActivityReportRenderer
-                report={selectedReport as PerformanceReport<GroupGithubActivityReport>}
-              />
-            )
+            <div className="min-w-0 overflow-hidden">
+              {selectedReport.type === "GITHUB_HISTORY" ? (
+                <GroupGithubHistoryReportRenderer
+                  report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
+                />
+              ) : (
+                <GroupGithubActivityReportRenderer
+                  report={selectedReport as PerformanceReport<GroupGithubActivityReport>}
+                />
+              )}
+            </div>
           ) : null}
         </div>
       )}

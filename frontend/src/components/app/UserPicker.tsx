@@ -34,9 +34,7 @@ export function UserPicker({
           <SelectItem key={u.id} value={u.id}>
             <span className="flex flex-col">
               <span className="text-sm">{u.name || u.email}</span>
-              {u.name && (
-                <span className="text-[11px] text-muted-foreground">{u.email}</span>
-              )}
+              {u.name && <span className="text-[11px] text-muted-foreground">{u.email}</span>}
             </span>
           </SelectItem>
         ))}

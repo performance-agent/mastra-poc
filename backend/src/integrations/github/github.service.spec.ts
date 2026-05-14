@@ -120,6 +120,26 @@ describe('GithubService', () => {
             .mockResolvedValue({ data: [] }),
         },
         repos: {
+          listCommits: jest
+            .fn()
+            .mockResolvedValueOnce({
+              data: [
+                {
+                  sha: 'direct',
+                  commit: {
+                    message: 'Direct main branch change',
+                    author: {
+                      name: 'Direct Dev',
+                      email: 'direct@example.com',
+                      date: '2024-01-05T00:00:00.000Z',
+                    },
+                  },
+                  author: { login: 'direct-dev' },
+                  html_url: 'https://github.com/acme/repo/commit/direct',
+                },
+              ],
+            })
+            .mockResolvedValue({ data: [] }),
           getCommitActivityStats: jest.fn().mockResolvedValue({
             data: [{ week: 1704067200, total: 5 }],
           }),
@@ -148,7 +168,7 @@ describe('GithubService', () => {
     expect(history.monthlyBuckets).toEqual([
       {
         period: '2024-01',
-        commits: 5,
+        commits: 1,
         pullRequestsOpened: 1,
         pullRequestsMerged: 1,
         pullRequestsClosed: 1,
@@ -158,13 +178,23 @@ describe('GithubService', () => {
     ]);
     expect(history.people[0]).toMatchObject({
       githubLogin: 'octo',
-      commits: 5,
+      commits: 0,
       openedPullRequests: 1,
       mergedPullRequests: 1,
       closedIssues: 1,
     });
-    expect(history.notableWork).toHaveLength(2);
+    expect(history.people).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          githubLogin: 'direct-dev',
+          commits: 1,
+        }),
+      ]),
+    );
+    expect(history.notableWork).toHaveLength(3);
+    expect(history.rawSignals.commitsAnalyzed).toBe(1);
     expect(history.rawSignals.limits.maxPullRequests).toBe(1000);
+    expect(history.rawSignals.limits.maxCommits).toBe(1000);
   });
 
   it('keeps activity mapping shape unchanged', async () => {

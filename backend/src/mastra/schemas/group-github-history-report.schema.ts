@@ -3,9 +3,9 @@ import { z } from 'zod';
 const reportStatusSchema = z.enum(['GOOD', 'WATCH', 'RISK']);
 
 const workItemSchema = z.object({
-  type: z.enum(['PULL_REQUEST', 'ISSUE']),
+  type: z.enum(['PULL_REQUEST', 'ISSUE', 'COMMIT']),
   repository: z.string(),
-  number: z.number(),
+  number: z.number().nullable(),
   title: z.string(),
   url: z.string(),
   reason: z.string(),
@@ -103,6 +103,7 @@ export const groupGithubHistoryReportSchema = z.object({
     pullRequestsClosedUnmerged: z.number(),
     issuesAnalyzed: z.number(),
     issuesClosed: z.number(),
+    commitsAnalyzed: z.number(),
     commitWeeksAnalyzed: z.number(),
   }),
 });

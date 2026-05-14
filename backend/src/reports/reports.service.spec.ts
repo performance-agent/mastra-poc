@@ -139,11 +139,13 @@ describe('ReportsService', () => {
       rawSignals: {
         pullRequestsAnalyzed: 2,
         issuesAnalyzed: 3,
+        commitsAnalyzed: 1,
         commitWeeksAnalyzed: 4,
         contributorStatsAvailable: true,
         limits: {
           maxPullRequests: 1000,
           maxIssues: 1000,
+          maxCommits: 1000,
           maxPeople: 10,
           maxNotableWork: 15,
           maxBuckets: 24,
@@ -187,6 +189,7 @@ describe('ReportsService', () => {
           rawSignals: {
             pullRequestsAnalyzed: 0,
             issuesAnalyzed: 0,
+            commitsAnalyzed: 0,
             commitWeeksAnalyzed: 0,
           },
           people: Array.from({ length: 25 }, (_, index) => ({

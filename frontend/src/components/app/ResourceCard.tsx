@@ -31,9 +31,7 @@ export function ResourceCard({
               </StatusBadge>
             )}
           </div>
-          {fullName && (
-            <p className="mt-1 break-all text-xs text-muted-foreground">{fullName}</p>
-          )}
+          {fullName && <p className="mt-1 break-all text-xs text-muted-foreground">{fullName}</p>}
           {resource.description && (
             <p className="mt-1.5 line-clamp-3 text-xs text-muted-foreground">
               {resource.description}

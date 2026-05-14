@@ -53,9 +53,7 @@ function OrganizationsIndex() {
     const q = search.trim().toLowerCase();
     if (!q) return data;
     return data.filter(
-      (o) =>
-        o.name.toLowerCase().includes(q) ||
-        (o.description ?? "").toLowerCase().includes(q),
+      (o) => o.name.toLowerCase().includes(q) || (o.description ?? "").toLowerCase().includes(q),
     );
   }, [data, search]);
 
@@ -74,7 +72,11 @@ function OrganizationsIndex() {
           </div>
           <div className="flex items-center gap-2">
             <div className="w-full sm:w-64">
-              <SearchInput value={search} onChange={setSearch} placeholder="Search organizations…" />
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                placeholder="Search organizations…"
+              />
             </div>
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="mr-1.5 h-4 w-4" /> New

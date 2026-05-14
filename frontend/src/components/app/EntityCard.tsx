@@ -31,12 +31,7 @@ export function EntityCard({
 }: EntityCardProps) {
   return (
     <div className="group relative flex flex-col rounded-xl border border-border bg-card p-4 shadow-card transition-all hover:border-border-strong hover:shadow-card-hover">
-      <Link
-        to={to}
-        params={params}
-        className="flex items-start gap-3"
-        aria-label={`Open ${name}`}
-      >
+      <Link to={to} params={params} className="flex items-start gap-3" aria-label={`Open ${name}`}>
         <Avatar name={name} src={photoUrl} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground">{name}</div>

@@ -422,6 +422,7 @@ ${JSON.stringify(reportInput)}
     let pullRequestsClosedUnmerged = 0;
     let issuesAnalyzed = 0;
     let issuesClosed = 0;
+    let commitsAnalyzed = 0;
     let commitWeeksAnalyzed = 0;
     const activityDates: string[] = [];
     const notableWork: GithubHistoryWorkItem[] = [];
@@ -487,6 +488,7 @@ ${JSON.stringify(reportInput)}
         repositoryHistory.flowMetrics.pullRequestsClosedUnmerged;
       issuesAnalyzed += repositoryHistory.rawSignals.issuesAnalyzed;
       issuesClosed += repositoryHistory.flowMetrics.issuesClosed;
+      commitsAnalyzed += repositoryHistory.rawSignals.commitsAnalyzed;
       commitWeeksAnalyzed += repositoryHistory.rawSignals.commitWeeksAnalyzed;
       notableWork.push(...repositoryHistory.notableWork);
 
@@ -541,6 +543,7 @@ ${JSON.stringify(reportInput)}
         pullRequestsClosedUnmerged,
         issuesAnalyzed,
         issuesClosed,
+        commitsAnalyzed,
         commitWeeksAnalyzed,
         people: Array.from(peopleMap.values())
           .sort(

@@ -84,11 +84,13 @@ export type GithubRepositoryHistory = {
   rawSignals: {
     pullRequestsAnalyzed: number;
     issuesAnalyzed: number;
+    commitsAnalyzed: number;
     commitWeeksAnalyzed: number;
     contributorStatsAvailable: boolean;
     limits: {
       maxPullRequests: number;
       maxIssues: number;
+      maxCommits: number;
       maxPeople: number;
       maxNotableWork: number;
       maxBuckets: number;
@@ -119,9 +121,9 @@ export type GithubHistoryPerson = {
 };
 
 export type GithubHistoryWorkItem = {
-  type: 'PULL_REQUEST' | 'ISSUE';
+  type: 'PULL_REQUEST' | 'ISSUE' | 'COMMIT';
   repository: string;
-  number: number;
+  number: number | null;
   title: string;
   url: string;
   author: string | null;

@@ -22,7 +22,13 @@ import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
@@ -33,7 +39,13 @@ import type { Integration, Resource, Role, Workspace } from "@/lib/types";
 const tabSchema = z.object({
   tab: z.string().optional(),
 });
-const organizationTabs = ["overview", "workspaces", "members", "resources", "integrations"] as const;
+const organizationTabs = [
+  "overview",
+  "workspaces",
+  "members",
+  "resources",
+  "integrations",
+] as const;
 type OrganizationTab = (typeof organizationTabs)[number];
 
 export const Route = createFileRoute("/organizations/$organizationId")({
@@ -41,7 +53,10 @@ export const Route = createFileRoute("/organizations/$organizationId")({
   head: ({ params }) => ({
     meta: [
       { title: `Organization — Performance Agent` },
-      { name: "description", content: `Workspace browser for organization ${params.organizationId}.` },
+      {
+        name: "description",
+        content: `Workspace browser for organization ${params.organizationId}.`,
+      },
     ],
   }),
   component: OrganizationPage,
@@ -104,10 +119,7 @@ function OrganizationPage() {
       ) : (
         <div className="space-y-6">
           <Breadcrumbs
-            items={[
-              { label: "Organizations", to: "/organizations" },
-              { label: org.name },
-            ]}
+            items={[{ label: "Organizations", to: "/organizations" }, { label: org.name }]}
           />
           <EntityHeader
             name={org.name}
@@ -183,7 +195,15 @@ function OrganizationPage() {
   );
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+}) {
   return (
     <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -216,7 +236,11 @@ function OverviewTab({
         <StatCard icon={<FolderTree className="h-4 w-4" />} label="Workspaces" value={workspaces} />
         <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={members} />
         <StatCard icon={<Boxes className="h-4 w-4" />} label="Resources" value={resources} />
-        <StatCard icon={<Plug className="h-4 w-4" />} label="Integrations" value={integrations > 0 ? "Connected" : "—"} />
+        <StatCard
+          icon={<Plug className="h-4 w-4" />}
+          label="Integrations"
+          value={integrations > 0 ? "Connected" : "—"}
+        />
       </div>
       {recentResources.length > 0 && (
         <div className="space-y-3">
@@ -471,8 +495,12 @@ function AddMemberDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={onConfirm} disabled={!userId}>Add</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} disabled={!userId}>
+            Add
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -752,9 +780,7 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                   </div>
                   <IntegrationStatusBadge status={integration.status} />
                 </div>
-                <p className="max-w-xl text-xs text-muted-foreground">
-                  {integration.description}
-                </p>
+                <p className="max-w-xl text-xs text-muted-foreground">{integration.description}</p>
                 {integration.installationId && (
                   <p className="text-[11px] text-muted-foreground">
                     Installation ID: {integration.installationId}
@@ -777,14 +803,14 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                   </Button>
                 )}
                 {integration.isGithub && integration.setupUrl && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full shrink-0 sm:w-auto"
-                  onClick={() => handleGithubSetup(integration.setupUrl)}
-                >
-                  {integration.isConnected ? "Manage" : "Setup"}
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full shrink-0 sm:w-auto"
+                    onClick={() => handleGithubSetup(integration.setupUrl)}
+                  >
+                    {integration.isConnected ? "Manage" : "Setup"}
+                  </Button>
                 )}
               </div>
             </Card>

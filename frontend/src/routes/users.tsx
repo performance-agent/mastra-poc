@@ -41,10 +41,7 @@ function UsersPage() {
     const list = q.data ?? [];
     const s = search.trim().toLowerCase();
     return s
-      ? list.filter(
-          (u) =>
-            u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s),
-        )
+      ? list.filter((u) => u.name?.toLowerCase().includes(s) || u.email?.toLowerCase().includes(s))
       : list;
   }, [q.data, search]);
   const refresh = () => qc.invalidateQueries({ queryKey: ["users"] });
@@ -87,7 +84,12 @@ function UsersPage() {
                     <div className="truncate text-sm font-medium">{u.name || u.email}</div>
                     <div className="truncate text-xs text-muted-foreground">{u.email}</div>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(u)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setEditing(u)}
+                  >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
@@ -195,11 +197,22 @@ function UserFormDialog({
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="u-email">Email</Label>
-        <Input id="u-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <Input
+          id="u-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="u-photo">Photo URL</Label>
-        <Input id="u-photo" type="url" value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} />
+        <Input
+          id="u-photo"
+          type="url"
+          value={photoUrl}
+          onChange={(e) => setPhotoUrl(e.target.value)}
+        />
       </div>
     </FormModal>
   );

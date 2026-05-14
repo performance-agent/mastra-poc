@@ -115,12 +115,7 @@ export interface GroupGithubActivityReport {
   };
   people: Array<{
     githubLogin: string;
-    contributionProfile:
-      | "DELIVERY_DRIVER"
-      | "REVIEWER"
-      | "MAINTAINER"
-      | "BLOCKED"
-      | "LOW_SIGNAL";
+    contributionProfile: "DELIVERY_DRIVER" | "REVIEWER" | "MAINTAINER" | "BLOCKED" | "LOW_SIGNAL";
     summary: string;
     metrics: {
       openedPullRequests: number;
@@ -218,6 +213,7 @@ export interface GroupGithubHistoryReport {
     pullRequestsClosedUnmerged: number;
     issuesAnalyzed: number;
     issuesClosed: number;
+    commitsAnalyzed: number;
     commitWeeksAnalyzed: number;
   };
 }

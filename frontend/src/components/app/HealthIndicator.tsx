@@ -25,8 +25,7 @@ export function HealthIndicator() {
     };
   }, []);
 
-  const label =
-    status === "checking" ? "Checking" : status === "ok" ? "API online" : "API offline";
+  const label = status === "checking" ? "Checking" : status === "ok" ? "API online" : "API offline";
   return (
     <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-2.5 py-1 text-xs text-muted-foreground">
       <span

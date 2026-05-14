@@ -41,9 +41,7 @@ const tabSchema = z.object({
 const workspaceTabs = ["overview", "groups", "members", "resources"] as const;
 type WorkspaceTab = (typeof workspaceTabs)[number];
 
-export const Route = createFileRoute(
-  "/organizations/$organizationId/workspaces/$workspaceId",
-)({
+export const Route = createFileRoute("/organizations/$organizationId/workspaces/$workspaceId")({
   validateSearch: tabSchema,
   head: () => ({
     meta: [
@@ -137,9 +135,21 @@ function WorkspacePage() {
           {tab === "overview" && (
             <div className="space-y-6">
               <div className="grid gap-3 sm:grid-cols-3">
-                <StatCard icon={<Layers className="h-4 w-4" />} label="Groups" value={groupsQ.data?.length ?? 0} />
-                <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={membersQ.data?.length ?? 0} />
-                <StatCard icon={<Boxes className="h-4 w-4" />} label="Assigned resources" value={resourcesQ.data?.length ?? 0} />
+                <StatCard
+                  icon={<Layers className="h-4 w-4" />}
+                  label="Groups"
+                  value={groupsQ.data?.length ?? 0}
+                />
+                <StatCard
+                  icon={<Users className="h-4 w-4" />}
+                  label="Members"
+                  value={membersQ.data?.length ?? 0}
+                />
+                <StatCard
+                  icon={<Boxes className="h-4 w-4" />}
+                  label="Assigned resources"
+                  value={resourcesQ.data?.length ?? 0}
+                />
               </div>
 
               {(resourcesQ.data ?? []).length > 0 && (
@@ -159,9 +169,7 @@ function WorkspacePage() {
           {tab === "groups" && (
             <GroupsTab organizationId={organizationId} workspaceId={workspaceId} />
           )}
-          {tab === "members" && (
-            <WorkspaceMembersTab workspaceId={workspaceId} />
-          )}
+          {tab === "members" && <WorkspaceMembersTab workspaceId={workspaceId} />}
           {tab === "resources" && (
             <WorkspaceResourcesTab organizationId={organizationId} workspaceId={workspaceId} />
           )}
@@ -205,7 +213,15 @@ function WorkspacePage() {
   );
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+}) {
   return (
     <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -234,8 +250,7 @@ function GroupsTab({
     queryKey: ["workspace", workspaceId, "groups"],
     queryFn: () => api.listWorkspaceGroups(workspaceId),
   });
-  const refresh = () =>
-    qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "groups"] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "groups"] });
 
   return (
     <div className="space-y-4">
@@ -335,8 +350,7 @@ function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
-  const refresh = () =>
-    qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "members"] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "members"] });
 
   return (
     <div className="space-y-4">
@@ -395,7 +409,9 @@ function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
             <Button
               disabled={!userId}
               onClick={async () => {

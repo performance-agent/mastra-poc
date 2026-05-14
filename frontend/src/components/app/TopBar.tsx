@@ -39,7 +39,13 @@ export function TopBar() {
               {email ? <p className="truncate text-[11px] text-muted-foreground">{email}</p> : null}
             </div>
           </div>
-          <Button variant="ghost" size="icon" title="Sign out" aria-label="Sign out" onClick={signOut}>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Sign out"
+            aria-label="Sign out"
+            onClick={signOut}
+          >
             <LogOut className="h-4 w-4" />
           </Button>
         </div>

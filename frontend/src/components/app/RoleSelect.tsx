@@ -7,13 +7,7 @@ import {
 } from "@/components/ui/select";
 import type { Role } from "@/lib/types";
 
-export function RoleSelect({
-  value,
-  onChange,
-}: {
-  value: Role;
-  onChange: (role: Role) => void;
-}) {
+export function RoleSelect({ value, onChange }: { value: Role; onChange: (role: Role) => void }) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Role)}>
       <SelectTrigger className="h-8 w-32 text-xs">

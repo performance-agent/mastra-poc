@@ -73,8 +73,7 @@ export const api = {
     request<Organization>("/organizations", { method: "POST", body: JSON.stringify(body) }),
   updateOrganization: (id: string, body: Partial<Organization>) =>
     request<Organization>(`/organizations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  deleteOrganization: (id: string) =>
-    request<void>(`/organizations/${id}`, { method: "DELETE" }),
+  deleteOrganization: (id: string) => request<void>(`/organizations/${id}`, { method: "DELETE" }),
 
   // Org → Workspaces
   listOrgWorkspaces: (id: string) => request<Workspace[]>(`/organizations/${id}/workspaces`),
