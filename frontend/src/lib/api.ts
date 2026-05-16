@@ -108,6 +108,8 @@ export const api = {
   listOrgIntegrations: (id: string) => request<Integration[]>(`/organizations/${id}/integrations`),
   syncIntegration: (id: string) =>
     request<Integration>(`/integrations/${id}/sync`, { method: "POST" }),
+  updateIntegration: (id: string, body: Pick<Integration, "name">) =>
+    request<Integration>(`/integrations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   setupGithub: (organizationId: string, body: Record<string, unknown>) =>
     request<unknown>(`/organizations/${organizationId}/integrations/github/setup`, {
       method: "POST",

@@ -1,5 +1,6 @@
 model Integration {
   id       String              @id @default(cuid())
+  name     String
   provider IntegrationProvider
   status   IntegrationStatus
 

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { IntegrationProvider } from '../../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubService } from './github/github.service';
+import { UpdateIntegrationDto } from './dto/update-integration.dto';
 
 @Injectable()
 export class IntegrationsService {
@@ -16,14 +17,19 @@ export class IntegrationsService {
       {
         provider: IntegrationProvider.GITHUB,
         setupUrl: process.env.GITHUB_SETUP_URL,
+        displayName: this.getIntegrationDisplayName(IntegrationProvider.GITHUB),
       },
     ];
   }
 
-  findAllByOrganization(organizationId: string) {
-    return this.prismaService.integration.findMany({
+  async findAllByOrganization(organizationId: string) {
+    const integrations = await this.prismaService.integration.findMany({
       where: { organizationId },
     });
+    return integrations.map((integration) => ({
+      ...integration,
+      displayName: this.getIntegrationDisplayName(integration.provider),
+    }));
   }
 
   async sync(integrationId: string) {
@@ -46,5 +52,21 @@ export class IntegrationsService {
 
   private async syncGithubIntegration(integrationId: string) {
     return this.githubService.sync(integrationId);
+  }
+
+  private getIntegrationDisplayName(provider: IntegrationProvider) {
+    switch (provider) {
+      case IntegrationProvider.GITHUB:
+        return 'GitHub';
+      default:
+        return provider;
+    }
+  }
+
+  update(id: string, updateIntegrationDto: UpdateIntegrationDto) {
+    return this.prismaService.integration.update({
+      where: { id },
+      data: updateIntegrationDto,
+    });
   }
 }
