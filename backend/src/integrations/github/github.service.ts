@@ -49,8 +49,15 @@ export class GithubService {
       );
     }
 
+    const github = this.createInstallationClient(setupGithubDto.installationId);
+    const orgInstallation = await github.rest.apps.getOrgInstallation();
+    const name =
+      orgInstallation.data.account?.html_url ||
+      `GitHub Installation ${setupGithubDto.installationId}`;
+
     const integration = await this.prismaService.integration.create({
       data: {
+        name,
         provider: 'GITHUB',
         status: 'ACTIVE',
         organizationId,
@@ -841,7 +848,8 @@ export class GithubService {
           createdAt: mappedCommit.date ?? new Date(0).toISOString(),
           closedAt: null,
           comments: 0,
-          reason: 'Commit on the default branch that contributes to the repository history',
+          reason:
+            'Commit on the default branch that contributes to the repository history',
         },
         score:
           firstLine.toLowerCase().includes('merge') ||

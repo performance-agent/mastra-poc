@@ -1,9 +1,19 @@
 import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Building2, Users, FolderTree, Boxes, Plug, RefreshCw } from "lucide-react";
+import {
+  Plus,
+  Building2,
+  Users,
+  FolderTree,
+  Boxes,
+  Plug,
+  RefreshCw,
+  MoreHorizontal,
+  Pencil,
+} from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -15,6 +25,7 @@ import { LoadingState } from "@/components/app/LoadingState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EntityFormDialog } from "@/components/app/EntityFormDialog";
+import { FormModal } from "@/components/app/FormModal";
 import { ResourceCard } from "@/components/app/ResourceCard";
 import { MemberList } from "@/components/app/MemberList";
 import { UserPicker } from "@/components/app/UserPicker";
@@ -23,12 +34,19 @@ import { SearchInput } from "@/components/app/SearchInput";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
@@ -584,6 +602,7 @@ type IntegrationView = {
   id?: string;
   key: string;
   name: string;
+  displayName: string;
   type: string;
   description: string;
   setupUrl?: string;
@@ -592,6 +611,14 @@ type IntegrationView = {
   isConnected: boolean;
   installationId?: string;
 };
+
+function integrationTypeKey(integration: Integration) {
+  return (integration.provider ?? integration.type ?? "").toString().toUpperCase();
+}
+
+function integrationDisplayName(integration: Integration, type = integrationTypeKey(integration)) {
+  return integration.displayName ?? (type === "GITHUB" ? "GitHub" : titleCaseProvider(type));
+}
 
 function titleCaseProvider(value: string) {
   return value
@@ -609,13 +636,15 @@ function normalizeIntegration(
 ): IntegrationView {
   const rawType = integration.type ?? integration.provider ?? "integration";
   const type = rawType.toString().toUpperCase();
-  const name = integration.name ?? (type === "GITHUB" ? "GitHub" : titleCaseProvider(type));
+  const displayName = integrationDisplayName(integration, type);
+  const name = integration.name ?? displayName;
   const status = integration.status ?? (options?.isConnected ? "ACTIVE" : "available");
 
   return {
     id: integration.id,
     key: integration.id ?? integration.provider ?? integration.type ?? `integration-${index}`,
     name,
+    displayName,
     type,
     description:
       integration.description ??
@@ -624,10 +653,58 @@ function normalizeIntegration(
         : "Connect this integration to bring external resources into the workspace."),
     setupUrl: integration.setupUrl ?? options?.setupUrl,
     status,
-    isGithub: type.includes("GITHUB") || name.toLowerCase().includes("github"),
+    isGithub: type.includes("GITHUB") || displayName.toLowerCase().includes("github"),
     isConnected: options?.isConnected ?? false,
     installationId: integration.github?.installationId,
   };
+}
+
+function EditIntegrationDialog({
+  integration,
+  onOpenChange,
+  onSubmit,
+}: {
+  integration: IntegrationView | null;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setName(integration?.name ?? "");
+  }, [integration]);
+
+  return (
+    <FormModal
+      open={!!integration}
+      onOpenChange={onOpenChange}
+      title="Edit integration"
+      submitLabel="Save"
+      submitting={submitting}
+      onSubmit={async () => {
+        if (!name.trim()) return;
+        setSubmitting(true);
+        try {
+          await onSubmit(name.trim());
+          onOpenChange(false);
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="integration-name">Name</Label>
+        <Input
+          id="integration-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          required
+          autoFocus
+        />
+      </div>
+    </FormModal>
+  );
 }
 
 function integrationStatusLabel(status: IntegrationView["status"]) {
@@ -682,33 +759,17 @@ function IntegrationStatusBadge({ status }: { status: IntegrationView["status"] 
 function IntegrationsTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<IntegrationView | null>(null);
   const availableQ = useQuery({ queryKey: ["integrations"], queryFn: api.listIntegrations });
   const connectedQ = useQuery({
     queryKey: ["organization", organizationId, "integrations"],
     queryFn: () => api.listOrgIntegrations(organizationId),
   });
-  const availableSetupUrls = new Map(
-    (availableQ.data ?? []).map((integration) => [
-      (integration.provider ?? integration.type ?? "").toString().toUpperCase(),
-      integration.setupUrl,
-    ]),
-  );
   const connectedIntegrations = (connectedQ.data ?? []).map((integration, index) =>
-    normalizeIntegration(integration, index, {
-      isConnected: true,
-      setupUrl: availableSetupUrls.get(
-        (integration.provider ?? integration.type ?? "").toString().toUpperCase(),
-      ),
-    }),
+    normalizeIntegration(integration, index, { isConnected: true }),
   );
-  const connectedTypes = new Set(connectedIntegrations.map((integration) => integration.type));
-  const availableIntegrations = (availableQ.data ?? [])
-    .filter((integration) => {
-      const type = (integration.provider ?? integration.type ?? "").toString().toUpperCase();
-      return !connectedTypes.has(type);
-    })
-    .map((integration, index) => normalizeIntegration(integration, index));
-  const integrations = [...connectedIntegrations, ...availableIntegrations];
+  const availableIntegrations = availableQ.data ?? [];
+  const integrations = connectedIntegrations;
   const isLoading = availableQ.isLoading || connectedQ.isLoading;
   const error = availableQ.error ?? connectedQ.error;
 
@@ -722,6 +783,10 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     toast.message("No setup URL available", {
       description: "This integration does not provide a setup link yet.",
     });
+  };
+
+  const handleAddIntegration = (integration: Integration) => {
+    handleGithubSetup(integration.setupUrl);
   };
 
   const handleSyncIntegration = async (integration: IntegrationView) => {
@@ -742,8 +807,45 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     }
   };
 
+  const handleUpdateIntegration = async (name: string) => {
+    if (!editing?.id) return;
+
+    try {
+      await api.updateIntegration(editing.id, { name });
+      toast.success("Integration updated");
+      await qc.invalidateQueries({ queryKey: ["organization", organizationId, "integrations"] });
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  };
+
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button disabled={availableQ.isLoading}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add integration
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {availableIntegrations.length > 0 ? (
+              availableIntegrations.map((integration) => (
+                <DropdownMenuItem
+                  key={integrationTypeKey(integration)}
+                  onClick={() => handleAddIntegration(integration)}
+                >
+                  <Plug className="mr-2 h-3.5 w-3.5" />
+                  {integrationDisplayName(integration)}
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>No integrations available</DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       {isLoading ? (
         <LoadingState />
       ) : error ? (
@@ -757,8 +859,8 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
       ) : integrations.length === 0 ? (
         <EmptyState
           icon={<Plug className="h-4 w-4" />}
-          title="No integrations available"
-          description="Integrations will appear here when they are configured on the server."
+          title="No integrations connected"
+          description="Add an integration to bring external resources into this organization."
         />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
@@ -774,9 +876,7 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold">{integration.name}</h3>
-                    <p className="text-[11px] uppercase text-muted-foreground">
-                      {integration.type}
-                    </p>
+                    <p className="text-[11px] text-muted-foreground">{integration.displayName}</p>
                   </div>
                   <IntegrationStatusBadge status={integration.status} />
                 </div>
@@ -787,36 +887,48 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                   </p>
                 )}
               </div>
-              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto">
-                {integration.isConnected && integration.id && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                    onClick={() => handleSyncIntegration(integration)}
-                    disabled={syncingId === integration.id}
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0 text-muted-foreground"
+                    aria-label={`${integration.name} actions`}
                   >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${syncingId === integration.id ? "animate-spin" : ""}`}
-                    />
-                    Sync
+                    <MoreHorizontal className="h-4 w-4" />
                   </Button>
-                )}
-                {integration.isGithub && integration.setupUrl && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full shrink-0 sm:w-auto"
-                    onClick={() => handleGithubSetup(integration.setupUrl)}
-                  >
-                    {integration.isConnected ? "Manage" : "Setup"}
-                  </Button>
-                )}
-              </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {integration.isConnected && integration.id && (
+                    <DropdownMenuItem
+                      onClick={() => handleSyncIntegration(integration)}
+                      disabled={syncingId === integration.id}
+                    >
+                      <RefreshCw
+                        className={`mr-2 h-3.5 w-3.5 ${
+                          syncingId === integration.id ? "animate-spin" : ""
+                        }`}
+                      />
+                      Sync
+                    </DropdownMenuItem>
+                  )}
+                  {integration.isConnected && integration.id && (
+                    <DropdownMenuItem onClick={() => setEditing(integration)}>
+                      <Pencil className="mr-2 h-3.5 w-3.5" />
+                      Edit
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </Card>
           ))}
         </div>
       )}
+      <EditIntegrationDialog
+        integration={editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+        onSubmit={handleUpdateIntegration}
+      />
     </div>
   );
 }

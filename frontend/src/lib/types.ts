@@ -69,6 +69,7 @@ export interface Resource {
 export interface Integration {
   id?: string;
   name?: string;
+  displayName?: string;
   type?: string;
   provider?: "GITHUB" | "JIRA" | string;
   organizationId?: string;
