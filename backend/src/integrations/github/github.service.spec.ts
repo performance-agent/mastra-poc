@@ -38,9 +38,9 @@ describe('GithubService', () => {
       githubRepository: null,
     });
 
-    await expect(service.getRepositoryHistory('resource-1')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.getRepositoryHistory('resource-1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('aggregates repository history without returning raw oversized lists', async () => {

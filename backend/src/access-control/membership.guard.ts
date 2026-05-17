@@ -43,12 +43,17 @@ export class MembershipGuard implements CanActivate {
       throw new ForbiddenException(`Missing route param: ${options.param}`);
     }
 
-    const allowed = await this.accessControlService.canAccessResource({
+    const accessInput = {
       userId: user.id,
       resource: options.resource,
       resourceId,
       roles: options.roles,
-    });
+    };
+
+    const allowed =
+      options.mode === 'context'
+        ? await this.accessControlService.canViewResourceContext(accessInput)
+        : await this.accessControlService.canAccessResource(accessInput);
 
     if (!allowed) {
       throw new ForbiddenException('Insufficient permissions');

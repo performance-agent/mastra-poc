@@ -6,6 +6,7 @@ import { MembersModule } from '../members/members.module';
 import { ResourcesModule } from '../resources/resources.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { GithubModule } from '../integrations/github/github.module';
+import { AccessControlModule } from '../access-control/access-control.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { GithubModule } from '../integrations/github/github.module';
     GithubModule,
     ResourcesModule,
     IntegrationsModule,
+    AccessControlModule,
   ],
   controllers: [OrganizationsController],
   providers: [OrganizationsService],

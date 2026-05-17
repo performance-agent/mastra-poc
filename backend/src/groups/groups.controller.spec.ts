@@ -1,6 +1,29 @@
+jest.mock('../prisma/prisma.service', () => ({
+  PrismaService: class PrismaService {},
+}));
+
+jest.mock('octokit', () => ({
+  Octokit: jest.fn(),
+}));
+
+jest.mock('@octokit/auth-app', () => ({
+  createAppAuth: jest.fn(),
+}));
+
+jest.mock('../mastra', () => ({
+  mastra: {
+    getAgent: jest.fn(() => ({
+      generate: jest.fn(),
+    })),
+  },
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { GroupsController } from './groups.controller';
 import { GroupsService } from './groups.service';
+import { MembersService } from '../members/members.service';
+import { ResourcesService } from '../resources/resources.service';
+import { ReportsService } from '../reports/reports.service';
 
 describe('GroupsController', () => {
   let controller: GroupsController;
@@ -8,7 +31,12 @@ describe('GroupsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [GroupsController],
-      providers: [GroupsService],
+      providers: [
+        { provide: GroupsService, useValue: {} },
+        { provide: MembersService, useValue: {} },
+        { provide: ResourcesService, useValue: {} },
+        { provide: ReportsService, useValue: {} },
+      ],
     }).compile();
 
     controller = module.get<GroupsController>(GroupsController);

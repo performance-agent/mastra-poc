@@ -7,6 +7,8 @@ export type ResourceType =
   | 'integration'
   | 'report';
 
+export type AccessMode = 'access' | 'context';
+
 export type CanAccessResource = {
   userId: string;
   resource: ResourceType;

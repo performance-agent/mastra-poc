@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 
 @Injectable()
 export class OrganizationsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly accessControlService: AccessControlService,
+  ) {}
 
   create(userId: string, createOrganizationDto: CreateOrganizationDto) {
     return this.prismaService.organization.create({
@@ -23,13 +27,8 @@ export class OrganizationsService {
 
   findAll(userId: string) {
     return this.prismaService.organization.findMany({
-      where: {
-        memberships: {
-          some: {
-            userId,
-          },
-        },
-      },
+      where:
+        this.accessControlService.buildAccessibleOrganizationsWhere(userId),
     });
   }
 
