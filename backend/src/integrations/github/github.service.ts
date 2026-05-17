@@ -99,80 +99,85 @@ export class GithubService {
 
     const externalIds = repos.map((repo) => repo.id.toString());
 
-    return this.prismaService.$transaction(async (tx) => {
-      await tx.integrationResource.deleteMany({
-        where: {
-          integrationId,
-          type: 'REPOSITORY',
-          externalId: {
-            notIn: externalIds,
-          },
-        },
-      });
-
-      for (const repo of repos) {
-        const externalId = repo.id.toString();
-
-        await tx.integrationResource.upsert({
+    return this.prismaService.$transaction(
+      async (tx) => {
+        await tx.integrationResource.deleteMany({
           where: {
-            integrationId_externalId: {
-              integrationId,
-              externalId,
+            integrationId,
+            type: 'REPOSITORY',
+            externalId: {
+              notIn: externalIds,
             },
           },
-          create: {
-            integrationId,
-            name: repo.name,
-            type: 'REPOSITORY',
-            externalId,
-            githubRepository: {
-              create: {
-                fullName: repo.full_name,
-                defaultBranch: repo.default_branch,
-                htmlUrl: repo.html_url,
-                isPrivate: repo.private,
+        });
+
+        for (const repo of repos) {
+          const externalId = repo.id.toString();
+
+          await tx.integrationResource.upsert({
+            where: {
+              integrationId_externalId: {
+                integrationId,
+                externalId,
               },
             },
-          },
-          update: {
-            name: repo.name,
-            githubRepository: {
-              upsert: {
+            create: {
+              integrationId,
+              name: repo.name,
+              type: 'REPOSITORY',
+              externalId,
+              githubRepository: {
                 create: {
                   fullName: repo.full_name,
                   defaultBranch: repo.default_branch,
                   htmlUrl: repo.html_url,
                   isPrivate: repo.private,
                 },
-                update: {
-                  fullName: repo.full_name,
-                  defaultBranch: repo.default_branch,
-                  htmlUrl: repo.html_url,
-                  isPrivate: repo.private,
+              },
+            },
+            update: {
+              name: repo.name,
+              githubRepository: {
+                upsert: {
+                  create: {
+                    fullName: repo.full_name,
+                    defaultBranch: repo.default_branch,
+                    htmlUrl: repo.html_url,
+                    isPrivate: repo.private,
+                  },
+                  update: {
+                    fullName: repo.full_name,
+                    defaultBranch: repo.default_branch,
+                    htmlUrl: repo.html_url,
+                    isPrivate: repo.private,
+                  },
                 },
+              },
+            },
+          });
+        }
+
+        return tx.integration.findUnique({
+          where: {
+            id: integrationId,
+          },
+          include: {
+            github: true,
+            integrationResources: {
+              include: {
+                githubRepository: true,
+              },
+              orderBy: {
+                name: 'asc',
               },
             },
           },
         });
-      }
-
-      return tx.integration.findUnique({
-        where: {
-          id: integrationId,
-        },
-        include: {
-          github: true,
-          integrationResources: {
-            include: {
-              githubRepository: true,
-            },
-            orderBy: {
-              name: 'asc',
-            },
-          },
-        },
-      });
-    });
+      },
+      {
+        timeout: 10000,
+      },
+    );
   }
 
   async getRepositoryActivity(
