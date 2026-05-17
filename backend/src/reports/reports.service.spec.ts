@@ -90,13 +90,16 @@ describe('ReportsService', () => {
     prismaService.group.findUnique.mockResolvedValue(group);
     githubService.getRepositoryActivity.mockResolvedValue({
       resourceId: 'resource-1',
-      repository: group.integrationResourceAssignments[0].resource.githubRepository,
+      repository:
+        group.integrationResourceAssignments[0].resource.githubRepository,
       pullRequests: { open: [], recentlyClosed: [], recentlyMerged: [] },
       issues: { open: [], recentlyClosed: [] },
       commits: [],
     });
     mockActivityGenerate.mockResolvedValue({ object: { summary: 'ok' } });
-    prismaService.performanceReport.create.mockResolvedValue({ id: 'report-1' });
+    prismaService.performanceReport.create.mockResolvedValue({
+      id: 'report-1',
+    });
 
     await service.createGroupReport('group-1', { type: 'GITHUB_ACTIVITY' });
 
@@ -117,7 +120,8 @@ describe('ReportsService', () => {
     prismaService.group.findUnique.mockResolvedValue(group);
     githubService.getRepositoryHistory.mockResolvedValue({
       resourceId: 'resource-1',
-      repository: group.integrationResourceAssignments[0].resource.githubRepository,
+      repository:
+        group.integrationResourceAssignments[0].resource.githubRepository,
       period: {
         firstActivityAt: '2024-01-01T00:00:00.000Z',
         lastActivityAt: '2024-03-01T00:00:00.000Z',
@@ -153,7 +157,9 @@ describe('ReportsService', () => {
       },
     });
     mockHistoryGenerate.mockResolvedValue({ object: { summary: 'history' } });
-    prismaService.performanceReport.create.mockResolvedValue({ id: 'report-2' });
+    prismaService.performanceReport.create.mockResolvedValue({
+      id: 'report-2',
+    });
 
     await service.createGroupReport('group-1', { type: 'GITHUB_HISTORY' });
 

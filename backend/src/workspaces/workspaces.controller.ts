@@ -16,6 +16,8 @@ import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
 import { RequireMembership } from '../access-control/require-membership.decorator';
+import { CurrentUser } from '../auth/decorators/user.decorator';
+import { type User } from '../auth/types/user.type';
 
 @Controller('workspaces')
 export class WorkspacesController {
@@ -30,6 +32,7 @@ export class WorkspacesController {
     resource: 'workspace',
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
+    mode: 'context',
   })
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -102,10 +105,11 @@ export class WorkspacesController {
     resource: 'workspace',
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
+    mode: 'context',
   })
   @Get(':id/groups')
-  findAll(@Param('id') workspaceId: string) {
-    return this.groupsService.findAll(workspaceId);
+  findAll(@CurrentUser() user: User, @Param('id') workspaceId: string) {
+    return this.groupsService.findAll(workspaceId, user.id);
   }
 
   @RequireMembership({

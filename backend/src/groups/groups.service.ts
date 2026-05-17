@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly accessControlService: AccessControlService,
+  ) {}
   create(workspaceId: string, createGroupDto: CreateGroupDto) {
     return this.prismaService.group.create({
       data: {
@@ -15,9 +19,12 @@ export class GroupsService {
     });
   }
 
-  findAll(workspaceId: string) {
+  findAll(workspaceId: string, userId: string) {
     return this.prismaService.group.findMany({
-      where: { workspaceId },
+      where: this.accessControlService.buildAccessibleGroupsWhere(
+        workspaceId,
+        userId,
+      ),
     });
   }
 

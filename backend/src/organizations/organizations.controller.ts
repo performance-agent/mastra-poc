@@ -51,6 +51,7 @@ export class OrganizationsController {
     resource: 'organization',
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
+    mode: 'context',
   })
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -97,10 +98,14 @@ export class OrganizationsController {
     resource: 'organization',
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
+    mode: 'context',
   })
   @Get(':id/workspaces')
-  findAllWorkspaces(@Param('id') organizationId: string) {
-    return this.workspacesService.findAll(organizationId);
+  findAllWorkspaces(
+    @CurrentUser() user: User,
+    @Param('id') organizationId: string,
+  ) {
+    return this.workspacesService.findAll(organizationId, user.id);
   }
 
   @RequireMembership({

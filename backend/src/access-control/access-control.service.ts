@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { MembershipRole } from '../../generated/prisma/enums';
+import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CanAccessResource } from './types/access-control.types';
+
+type MembershipFilterInput = {
+  userId: string;
+  roles?: MembershipRole[];
+};
 
 @Injectable()
 export class AccessControlService {
@@ -9,158 +16,181 @@ export class AccessControlService {
   async canAccessResource(input: CanAccessResource): Promise<boolean> {
     switch (input.resource) {
       case 'organization':
-        return this.canAccessOrganization(input);
+        return this.hasMembership(input, [
+          this.directOrganization(input.resourceId),
+        ]);
 
       case 'workspace':
-        return this.canAccessWorkspace(input);
+        return this.hasMembership(
+          input,
+          this.workspaceAccess(input.resourceId),
+        );
 
       case 'group':
-        return this.canAccessGroup(input);
+        return this.hasMembership(input, this.groupAccess(input.resourceId));
 
       case 'integration':
-        return this.canAccessIntegration(input);
+        return this.hasMembership(input, [
+          {
+            organization: {
+              integrations: {
+                some: {
+                  id: input.resourceId,
+                },
+              },
+            },
+          },
+        ]);
 
       case 'report':
-        return this.canAccessReport(input);
+        return this.hasMembership(input, this.reportAccess(input.resourceId));
 
       default:
         return false;
     }
   }
 
-  private async canAccessOrganization(
-    input: CanAccessResource,
-  ): Promise<boolean> {
-    const membership = await this.prismaService.membership.findFirst({
-      where: {
-        userId: input.userId,
-        organizationId: input.resourceId,
-        ...(input.roles?.length
-          ? {
-              role: {
-                in: input.roles,
-              },
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-      },
-    });
+  async canViewResourceContext(input: CanAccessResource): Promise<boolean> {
+    switch (input.resource) {
+      case 'organization':
+        return this.hasMembership(
+          input,
+          this.organizationContext(input.resourceId),
+        );
 
-    return Boolean(membership);
+      case 'workspace':
+        return this.hasMembership(
+          input,
+          this.workspaceContext(input.resourceId),
+        );
+
+      case 'group':
+        return this.canAccessResource(input);
+
+      case 'integration':
+      case 'report':
+        return this.canAccessResource(input);
+
+      default:
+        return false;
+    }
   }
 
-  private async canAccessWorkspace(input: CanAccessResource): Promise<boolean> {
-    const membership = await this.prismaService.membership.findFirst({
-      where: {
-        userId: input.userId,
-        ...(input.roles?.length
-          ? {
-              role: {
-                in: input.roles,
-              },
-            }
-          : {}),
-        OR: [
-          // Membership directo sobre el workspace
-          {
-            workspaceId: input.resourceId,
+  buildAccessibleOrganizationsWhere(
+    userId: string,
+    roles?: MembershipRole[],
+  ): Prisma.OrganizationWhereInput {
+    const membership = this.membershipRelationFilter({ userId, roles });
+
+    return {
+      OR: [
+        {
+          memberships: {
+            some: membership,
           },
-
-          // Membership sobre la organization padre del workspace
-          {
-            organization: {
-              workspaces: {
-                some: {
-                  id: input.resourceId,
-                },
-              },
-            },
-          },
-        ],
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    return Boolean(membership);
-  }
-
-  private async canAccessGroup(input: CanAccessResource): Promise<boolean> {
-    const membership = await this.prismaService.membership.findFirst({
-      where: {
-        userId: input.userId,
-        ...(input.roles?.length
-          ? {
-              role: {
-                in: input.roles,
-              },
-            }
-          : {}),
-        OR: [
-          // Membership directo sobre el group
-          {
-            groupId: input.resourceId,
-          },
-
-          // Membership sobre el workspace padre del group
-          {
-            workspace: {
-              groups: {
-                some: {
-                  id: input.resourceId,
-                },
-              },
-            },
-          },
-
-          // Membership sobre la organization padre del group
-          {
-            organization: {
-              workspaces: {
-                some: {
-                  groups: {
-                    some: {
-                      id: input.resourceId,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        ],
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    return Boolean(membership);
-  }
-
-  private async canAccessIntegration(
-    input: CanAccessResource,
-  ): Promise<boolean> {
-    const membership = await this.prismaService.membership.findFirst({
-      where: {
-        userId: input.userId,
-        organization: {
-          integrations: {
+        },
+        {
+          workspaces: {
             some: {
-              id: input.resourceId,
+              memberships: {
+                some: membership,
+              },
             },
           },
         },
-        ...(input.roles?.length
-          ? {
-              role: {
-                in: input.roles,
+        {
+          workspaces: {
+            some: {
+              groups: {
+                some: {
+                  memberships: {
+                    some: membership,
+                  },
+                },
               },
-            }
-          : {}),
-      },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  buildAccessibleWorkspacesWhere(
+    organizationId: string,
+    userId: string,
+    roles?: MembershipRole[],
+  ): Prisma.WorkspaceWhereInput {
+    const membership = this.membershipRelationFilter({ userId, roles });
+
+    return {
+      organizationId,
+      OR: [
+        {
+          memberships: {
+            some: membership,
+          },
+        },
+        {
+          organization: {
+            memberships: {
+              some: membership,
+            },
+          },
+        },
+        {
+          groups: {
+            some: {
+              memberships: {
+                some: membership,
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  buildAccessibleGroupsWhere(
+    workspaceId: string,
+    userId: string,
+    roles?: MembershipRole[],
+  ): Prisma.GroupWhereInput {
+    const membership = this.membershipRelationFilter({ userId, roles });
+
+    return {
+      workspaceId,
+      OR: [
+        {
+          memberships: {
+            some: membership,
+          },
+        },
+        {
+          workspace: {
+            memberships: {
+              some: membership,
+            },
+          },
+        },
+        {
+          workspace: {
+            organization: {
+              memberships: {
+                some: membership,
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  private async hasMembership(
+    input: MembershipFilterInput,
+    predicates: Prisma.MembershipWhereInput[],
+  ): Promise<boolean> {
+    const membership = await this.prismaService.membership.findFirst({
+      where: this.membershipWhere(input, predicates),
       select: {
         id: true,
       },
@@ -169,95 +199,190 @@ export class AccessControlService {
     return Boolean(membership);
   }
 
-  private async canAccessReport(input: CanAccessResource): Promise<boolean> {
-    const membership = await this.prismaService.membership.findFirst({
-      where: {
-        userId: input.userId,
-        ...(input.roles?.length
-          ? {
-              role: {
-                in: input.roles,
+  private membershipWhere(
+    input: MembershipFilterInput,
+    predicates: Prisma.MembershipWhereInput[],
+  ): Prisma.MembershipWhereInput {
+    return {
+      ...this.membershipRelationFilter(input),
+      OR: predicates,
+    };
+  }
+
+  private membershipRelationFilter({
+    userId,
+    roles,
+  }: MembershipFilterInput): Prisma.MembershipWhereInput {
+    return {
+      userId,
+      ...(roles?.length
+        ? {
+            role: {
+              in: roles,
+            },
+          }
+        : {}),
+    };
+  }
+
+  private directOrganization(
+    organizationId: string,
+  ): Prisma.MembershipWhereInput {
+    return {
+      organizationId,
+    };
+  }
+
+  private workspaceAccess(workspaceId: string): Prisma.MembershipWhereInput[] {
+    return [
+      {
+        workspaceId,
+      },
+      {
+        organization: {
+          workspaces: {
+            some: {
+              id: workspaceId,
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  private groupAccess(groupId: string): Prisma.MembershipWhereInput[] {
+    return [
+      {
+        groupId,
+      },
+      {
+        workspace: {
+          groups: {
+            some: {
+              id: groupId,
+            },
+          },
+        },
+      },
+      {
+        organization: {
+          workspaces: {
+            some: {
+              groups: {
+                some: {
+                  id: groupId,
+                },
               },
-            }
-          : {}),
-        OR: [
-          {
-            organization: {
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  private organizationContext(
+    organizationId: string,
+  ): Prisma.MembershipWhereInput[] {
+    return [
+      this.directOrganization(organizationId),
+      {
+        workspace: {
+          organizationId,
+        },
+      },
+      {
+        group: {
+          workspace: {
+            organizationId,
+          },
+        },
+      },
+    ];
+  }
+
+  private workspaceContext(workspaceId: string): Prisma.MembershipWhereInput[] {
+    return [
+      ...this.workspaceAccess(workspaceId),
+      {
+        group: {
+          workspaceId,
+        },
+      },
+    ];
+  }
+
+  private reportAccess(reportId: string): Prisma.MembershipWhereInput[] {
+    return [
+      {
+        organization: {
+          performanceReports: {
+            some: {
+              id: reportId,
+            },
+          },
+        },
+      },
+      {
+        workspace: {
+          performanceReports: {
+            some: {
+              id: reportId,
+            },
+          },
+        },
+      },
+      {
+        group: {
+          performanceReports: {
+            some: {
+              id: reportId,
+            },
+          },
+        },
+      },
+      {
+        organization: {
+          workspaces: {
+            some: {
               performanceReports: {
                 some: {
-                  id: input.resourceId,
+                  id: reportId,
                 },
               },
             },
           },
-          {
-            workspace: {
-              performanceReports: {
-                some: {
-                  id: input.resourceId,
-                },
-              },
-            },
-          },
-          {
-            group: {
-              performanceReports: {
-                some: {
-                  id: input.resourceId,
-                },
-              },
-            },
-          },
-          {
-            organization: {
-              workspaces: {
-                some: {
-                  performanceReports: {
-                    some: {
-                      id: input.resourceId,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          {
-            organization: {
-              workspaces: {
-                some: {
-                  groups: {
-                    some: {
-                      performanceReports: {
-                        some: {
-                          id: input.resourceId,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          {
-            workspace: {
+        },
+      },
+      {
+        organization: {
+          workspaces: {
+            some: {
               groups: {
                 some: {
                   performanceReports: {
                     some: {
-                      id: input.resourceId,
+                      id: reportId,
                     },
                   },
                 },
               },
             },
           },
-        ],
+        },
       },
-      select: {
-        id: true,
+      {
+        workspace: {
+          groups: {
+            some: {
+              performanceReports: {
+                some: {
+                  id: reportId,
+                },
+              },
+            },
+          },
+        },
       },
-    });
-
-    return Boolean(membership);
+    ];
   }
 }

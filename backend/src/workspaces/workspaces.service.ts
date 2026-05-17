@@ -2,10 +2,14 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccessControlService } from '../access-control/access-control.service';
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly accessControlService: AccessControlService,
+  ) {}
   async create(organizationId: string, createWorkspaceDto: CreateWorkspaceDto) {
     await this.ensureOrganizationExists(organizationId);
 
@@ -19,11 +23,14 @@ export class WorkspacesService {
     });
   }
 
-  async findAll(organizationId: string) {
+  async findAll(organizationId: string, userId: string) {
     await this.ensureOrganizationExists(organizationId);
 
     return this.prismaService.workspace.findMany({
-      where: { organization: { id: organizationId } },
+      where: this.accessControlService.buildAccessibleWorkspacesWhere(
+        organizationId,
+        userId,
+      ),
     });
   }
 
