@@ -15,6 +15,9 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AccessControlModule } from './access-control/access-control.module';
 import { ReportsModule } from './reports/reports.module';
+import { APP_GUARD } from '@nestjs/core';
+import { AuthGuard } from './auth/auth.guard';
+import { MembershipGuard } from './access-control/membership.guard';
 
 @Module({
   imports: [
@@ -34,6 +37,10 @@ import { ReportsModule } from './reports/reports.module';
     ReportsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: MembershipGuard },
+  ],
 })
 export class AppModule {}
