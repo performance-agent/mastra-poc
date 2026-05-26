@@ -27,6 +27,12 @@ const HISTORY_LIMITS = {
   maxBuckets: 24,
 };
 
+const AGENT_LIMITS = {
+  maxPullRequests: 100,
+  maxCommits: 100,
+  maxFiles: 100,
+};
+
 @Injectable()
 export class GithubService {
   constructor(private readonly prismaService: PrismaService) {}
@@ -557,6 +563,185 @@ export class GithubService {
     };
   }
 
+  async listCommits(owner: string, repo: string, options: any = {}) {
+    const { github, githubRepository } =
+      await this.getGithubRepositoryContextByOwnerRepo(owner, repo);
+
+    const commits = await this.paginateWithLimit(
+      (page) =>
+        github.rest.repos.listCommits({
+          owner,
+          repo,
+          sha: options.sha ?? githubRepository.defaultBranch ?? undefined,
+          since: options.since
+            ? new Date(options.since).toISOString()
+            : undefined,
+          until: options.until
+            ? new Date(options.until).toISOString()
+            : undefined,
+          author: options.author,
+          path: options.path,
+          per_page: 100,
+          page,
+        }),
+      options.limit ?? AGENT_LIMITS.maxCommits,
+    );
+
+    return commits.map((commit) => this.mapCommit(commit));
+  }
+
+  async getCommitDetails(owner: string, repo: string, ref: string) {
+    const { github } = await this.getGithubRepositoryContextByOwnerRepo(
+      owner,
+      repo,
+    );
+    const response = await github.rest.repos.getCommit({ owner, repo, ref });
+    const commit = response.data;
+
+    return {
+      ...this.mapCommit(commit),
+      files: (commit.files ?? [])
+        .slice(0, AGENT_LIMITS.maxFiles)
+        .map((file) => this.mapChangedFile(file)),
+    };
+  }
+
+  async listPullRequests(owner: string, repo: string, options: any = {}) {
+    const { github } = await this.getGithubRepositoryContextByOwnerRepo(
+      owner,
+      repo,
+    );
+    const state = options.state ?? 'all';
+    const pullRequests = await this.paginateWithLimit(
+      (page) =>
+        github.rest.pulls.list({
+          owner,
+          repo,
+          state,
+          sort: options.sort ?? 'updated',
+          direction: options.direction ?? 'desc',
+          head: options.head,
+          base: options.base,
+          per_page: 100,
+          page,
+        }),
+      options.limit ?? AGENT_LIMITS.maxPullRequests,
+    );
+
+    return pullRequests
+      .map((pr) => this.mapPullRequestForAgent(pr))
+      .filter((pr) => this.matchesAgentPullRequestFilters(pr, options));
+  }
+
+  async getPullRequestDetails(owner: string, repo: string, pullNumber: number) {
+    const { github } = await this.getGithubRepositoryContextByOwnerRepo(
+      owner,
+      repo,
+    );
+    const [pullRequestResponse, files] = await Promise.all([
+      github.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: pullNumber,
+      }),
+      this.paginateWithLimit(
+        (page) =>
+          github.rest.pulls.listFiles({
+            owner,
+            repo,
+            pull_number: pullNumber,
+            per_page: 100,
+            page,
+          }),
+        AGENT_LIMITS.maxFiles,
+      ),
+    ]);
+
+    return {
+      ...this.mapPullRequestForAgent(pullRequestResponse.data),
+      files: files.map((file) => this.mapChangedFile(file)),
+    };
+  }
+
+  async listPullRequestFiles(owner: string, repo: string, pullNumber: number) {
+    const { github } = await this.getGithubRepositoryContextByOwnerRepo(
+      owner,
+      repo,
+    );
+    const files = await this.paginateWithLimit(
+      (page) =>
+        github.rest.pulls.listFiles({
+          owner,
+          repo,
+          pull_number: pullNumber,
+          per_page: 100,
+          page,
+        }),
+      AGENT_LIMITS.maxFiles,
+    );
+
+    return files.map((file) => this.mapChangedFile(file));
+  }
+
+  async listGithubRepositoryResourceIdsByGroupId(groupId: string) {
+    const assignments =
+      await this.prismaService.integrationResourceAssignment.findMany({
+        where: {
+          groupId,
+          resource: {
+            type: 'REPOSITORY',
+            integration: {
+              provider: 'GITHUB',
+              github: {
+                isNot: null,
+              },
+            },
+            githubRepository: {
+              isNot: null,
+            },
+          },
+        },
+        include: {
+          resource: {
+            include: {
+              githubRepository: true,
+            },
+          },
+        },
+      });
+
+    return assignments.map((assignment) => ({
+      resourceId: assignment.resource.id,
+      fullName: assignment.resource.githubRepository?.fullName ?? null,
+    }));
+  }
+
+  async listGithubRepositoryResourceIdsByIntegrationId(integrationId: string) {
+    const resources = await this.prismaService.integrationResource.findMany({
+      where: {
+        integrationId,
+        type: 'REPOSITORY',
+        integration: {
+          provider: 'GITHUB',
+          github: {
+            isNot: null,
+          },
+        },
+        githubRepository: {
+          isNot: null,
+        },
+      },
+      include: {
+        githubRepository: true,
+      },
+    });
+
+    return resources.map((resource) => ({
+      resourceId: resource.id,
+      fullName: resource.githubRepository?.fullName ?? null,
+    }));
+  }
+
   private async getGithubRepositoryContext(resourceId: string) {
     const resource = await this.prismaService.integrationResource.findUnique({
       where: {
@@ -601,6 +786,53 @@ export class GithubService {
     return {
       resource,
       githubRepository,
+      owner,
+      repo,
+      github: this.createInstallationClient(
+        resource.integration.github.installationId,
+      ),
+    };
+  }
+
+  private async getGithubRepositoryContextByOwnerRepo(
+    owner: string,
+    repo: string,
+  ) {
+    const fullName = `${owner}/${repo}`;
+    const resource = await this.prismaService.integrationResource.findFirst({
+      where: {
+        type: 'REPOSITORY',
+        githubRepository: {
+          fullName,
+        },
+        integration: {
+          provider: 'GITHUB',
+          github: {
+            isNot: null,
+          },
+        },
+      },
+      include: {
+        integration: {
+          include: {
+            github: true,
+          },
+        },
+        githubRepository: true,
+      },
+    });
+
+    if (
+      !resource ||
+      !resource.integration.github ||
+      !resource.githubRepository
+    ) {
+      throw new BadRequestException(`GitHub repository not found: ${fullName}`);
+    }
+
+    return {
+      resource,
+      githubRepository: resource.githubRepository,
       owner,
       repo,
       github: this.createInstallationClient(
@@ -772,6 +1004,46 @@ export class GithubService {
       date: commit.commit.author?.date ?? null,
       url: commit.html_url,
     };
+  }
+
+  private mapPullRequestForAgent(pr: any) {
+    return {
+      ...this.mapPullRequest(pr),
+      body: pr.body ?? null,
+      headRef: pr.head?.ref ?? null,
+      headSha: pr.head?.sha ?? null,
+      baseRef: pr.base?.ref ?? null,
+      mergeCommitSha: pr.merge_commit_sha ?? null,
+    };
+  }
+
+  private mapChangedFile(file: any) {
+    return {
+      filename: file.filename,
+      status: file.status,
+      additions: file.additions ?? 0,
+      deletions: file.deletions ?? 0,
+      changes: file.changes ?? 0,
+      patch: file.patch ?? null,
+      rawUrl: file.raw_url ?? null,
+      blobUrl: file.blob_url ?? null,
+    };
+  }
+
+  private matchesAgentPullRequestFilters(pr: any, options: any) {
+    if (options.author && pr.author !== options.author) {
+      return false;
+    }
+
+    if (options.since && new Date(pr.updatedAt) < new Date(options.since)) {
+      return false;
+    }
+
+    if (options.until && new Date(pr.updatedAt) > new Date(options.until)) {
+      return false;
+    }
+
+    return true;
   }
 
   private buildNotableHistoryWork(
