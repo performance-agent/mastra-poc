@@ -60,6 +60,44 @@ export type GithubCommitActivity = {
   url: string;
 };
 
+export type GithubChangedFile = {
+  filename: string;
+  status: string | null;
+  additions: number | null;
+  deletions: number | null;
+  changes: number | null;
+};
+
+export type GithubPullRequestSearchOptions = {
+  state?: 'open' | 'closed' | 'all';
+  since?: string | null;
+  until?: string | null;
+  author?: string | null;
+  ticketKey?: string | null;
+  branch?: string | null;
+  moduleOrPath?: string | null;
+};
+
+export type GithubCommitSearchOptions = {
+  since?: string | null;
+  until?: string | null;
+  author?: string | null;
+  ticketKey?: string | null;
+  moduleOrPath?: string | null;
+};
+
+export type GithubPullRequestDetails = GithubPullRequestActivity & {
+  body: string | null;
+  branch: string | null;
+  baseBranch: string | null;
+  files: GithubChangedFile[];
+  commits: GithubCommitActivity[];
+};
+
+export type GithubCommitDetails = GithubCommitActivity & {
+  files: GithubChangedFile[];
+};
+
 export type GithubRepositoryHistory = {
   resourceId: string;
   repository: GithubRepositoryActivity['repository'];

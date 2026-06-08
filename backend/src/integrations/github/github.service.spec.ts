@@ -276,4 +276,112 @@ describe('GithubService', () => {
       ],
     });
   });
+
+  it('gets pull request details through the existing resource context', async () => {
+    prismaService.integrationResource.findUnique.mockResolvedValue({
+      id: 'resource-1',
+      name: 'repo',
+      type: 'REPOSITORY',
+      integration: {
+        provider: 'GITHUB',
+        github: { installationId: 'installation-1' },
+      },
+      githubRepository: {
+        fullName: 'acme/repo',
+        defaultBranch: 'main',
+        htmlUrl: 'https://github.com/acme/repo',
+        isPrivate: false,
+      },
+    });
+
+    const github = {
+      paginate: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            filename: 'src/auth/login.ts',
+            status: 'modified',
+            additions: 8,
+            deletions: 1,
+            changes: 9,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            sha: 'abc',
+            commit: {
+              message: 'LAB-12 add login',
+              author: {
+                name: 'Octo',
+                email: 'octo@example.com',
+                date: '2026-05-27T00:00:00.000Z',
+              },
+            },
+            author: { login: 'octo' },
+            html_url: 'https://github.com/acme/repo/commit/abc',
+          },
+        ]),
+      rest: {
+        pulls: {
+          get: jest.fn().mockResolvedValue({
+            data: {
+              number: 12,
+              title: 'LAB-12 Implement login',
+              body: 'Closes LAB-12',
+              user: { login: 'octo' },
+              state: 'closed',
+              created_at: '2026-05-26T00:00:00.000Z',
+              updated_at: '2026-05-27T00:00:00.000Z',
+              closed_at: '2026-05-27T00:00:00.000Z',
+              merged_at: '2026-05-27T00:00:00.000Z',
+              draft: false,
+              comments: 1,
+              review_comments: 2,
+              additions: 8,
+              deletions: 1,
+              changed_files: 1,
+              html_url: 'https://github.com/acme/repo/pull/12',
+              head: { ref: 'feature/LAB-12-login' },
+              base: { ref: 'main' },
+            },
+          }),
+          listFiles: jest.fn(),
+          listCommits: jest.fn(),
+        },
+      },
+    };
+
+    jest
+      .spyOn(service as any, 'createInstallationClient')
+      .mockReturnValue(github);
+
+    const details = await service.getPullRequestDetails('resource-1', 12);
+
+    expect(github.rest.pulls.get).toHaveBeenCalledWith({
+      owner: 'acme',
+      repo: 'repo',
+      pull_number: 12,
+    });
+    expect(details).toMatchObject({
+      number: 12,
+      title: 'LAB-12 Implement login',
+      state: 'MERGED',
+      branch: 'feature/LAB-12-login',
+      baseBranch: 'main',
+      files: [
+        {
+          filename: 'src/auth/login.ts',
+          additions: 8,
+          deletions: 1,
+        },
+      ],
+      commits: [
+        {
+          sha: 'abc',
+          message: 'LAB-12 add login',
+          githubLogin: 'octo',
+        },
+      ],
+    });
+  });
 });

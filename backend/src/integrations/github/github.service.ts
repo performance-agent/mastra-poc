@@ -9,11 +9,15 @@ import { Octokit } from 'octokit';
 import { createAppAuth } from '@octokit/auth-app';
 import {
   GithubCommitActivity,
+  GithubCommitDetails,
+  GithubCommitSearchOptions,
+  GithubPullRequestDetails,
   GithubHistoryBucket,
   GithubHistoryPerson,
   GithubHistoryWorkItem,
   GithubIssueActivity,
   GithubPullRequestActivity,
+  GithubPullRequestSearchOptions,
   GithubRepositoryActivity,
   GithubRepositoryHistory,
 } from './types/github.types';
@@ -557,6 +561,136 @@ export class GithubService {
     };
   }
 
+  async searchPullRequests(
+    resourceId: string,
+    options: GithubPullRequestSearchOptions = {},
+  ): Promise<GithubPullRequestDetails[]> {
+    const context = await this.getGithubRepositoryContext(resourceId);
+    const { github, owner, repo } = context;
+
+    const pullRequests = await this.paginateWithLimit(
+      (page) =>
+        github.rest.pulls.list({
+          owner,
+          repo,
+          state: options.state ?? 'all',
+          sort: 'updated',
+          direction: 'desc',
+          per_page: 100,
+          page,
+        }),
+      100,
+    );
+
+    const filteredPullRequests = pullRequests.filter((pullRequest) =>
+      this.matchesPullRequestSearchOptions(pullRequest, options),
+    );
+
+    return Promise.all(
+      filteredPullRequests
+        .slice(0, 20)
+        .map((pullRequest) =>
+          this.getPullRequestDetails(resourceId, pullRequest.number),
+        ),
+    );
+  }
+
+  async searchCommits(
+    resourceId: string,
+    options: GithubCommitSearchOptions = {},
+  ): Promise<GithubCommitDetails[]> {
+    const context = await this.getGithubRepositoryContext(resourceId);
+    const { github, owner, repo, githubRepository } = context;
+
+    const commits = await this.paginateWithLimit(
+      (page) =>
+        github.rest.repos.listCommits({
+          owner,
+          repo,
+          sha: githubRepository.defaultBranch ?? undefined,
+          since: options.since
+            ? new Date(options.since).toISOString()
+            : undefined,
+          until: options.until
+            ? this.toEndOfDayIsoString(options.until)
+            : undefined,
+          author: options.author ?? undefined,
+          path: options.moduleOrPath ?? undefined,
+          per_page: 100,
+          page,
+        }),
+      100,
+    );
+
+    const filteredCommits = commits.filter((commit) =>
+      this.matchesCommitSearchOptions(commit, options),
+    );
+
+    return Promise.all(
+      filteredCommits
+        .slice(0, 30)
+        .map((commit) => this.getCommitDetails(resourceId, commit.sha)),
+    );
+  }
+
+  async getPullRequestDetails(
+    resourceId: string,
+    pullRequestNumber: number,
+  ): Promise<GithubPullRequestDetails> {
+    const context = await this.getGithubRepositoryContext(resourceId);
+    const { github, owner, repo } = context;
+
+    const [pullRequestResponse, files, commits] = await Promise.all([
+      github.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: pullRequestNumber,
+      }),
+      github.paginate(github.rest.pulls.listFiles, {
+        owner,
+        repo,
+        pull_number: pullRequestNumber,
+        per_page: 100,
+      }),
+      github.paginate(github.rest.pulls.listCommits, {
+        owner,
+        repo,
+        pull_number: pullRequestNumber,
+        per_page: 100,
+      }),
+    ]);
+
+    return {
+      ...this.mapPullRequest(pullRequestResponse.data),
+      body: pullRequestResponse.data.body ?? null,
+      branch: pullRequestResponse.data.head?.ref ?? null,
+      baseBranch: pullRequestResponse.data.base?.ref ?? null,
+      files: files.map((file) => this.mapChangedFile(file)),
+      commits: commits.map((commit) => this.mapCommit(commit)),
+    };
+  }
+
+  async getCommitDetails(
+    resourceId: string,
+    sha: string,
+  ): Promise<GithubCommitDetails> {
+    const context = await this.getGithubRepositoryContext(resourceId);
+    const { github, owner, repo } = context;
+
+    const response = await github.rest.repos.getCommit({
+      owner,
+      repo,
+      ref: sha,
+    });
+
+    return {
+      ...this.mapCommit(response.data),
+      files: (response.data.files ?? []).map((file) =>
+        this.mapChangedFile(file),
+      ),
+    };
+  }
+
   private async getGithubRepositoryContext(resourceId: string) {
     const resource = await this.prismaService.integrationResource.findUnique({
       where: {
@@ -772,6 +906,119 @@ export class GithubService {
       date: commit.commit.author?.date ?? null,
       url: commit.html_url,
     };
+  }
+
+  private mapChangedFile(file: any) {
+    return {
+      filename: file.filename,
+      status: file.status ?? null,
+      additions: file.additions ?? null,
+      deletions: file.deletions ?? null,
+      changes: file.changes ?? null,
+    };
+  }
+
+  private matchesPullRequestSearchOptions(
+    pullRequest: any,
+    options: GithubPullRequestSearchOptions,
+  ) {
+    if (!this.isInsideSearchPeriod(pullRequest, options.since, options.until)) {
+      return false;
+    }
+
+    if (options.author && pullRequest.user?.login !== options.author) {
+      return false;
+    }
+
+    if (
+      options.ticketKey &&
+      !this.containsText(
+        [pullRequest.title, pullRequest.body, pullRequest.head?.ref],
+        options.ticketKey,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      options.branch &&
+      !this.containsText([pullRequest.head?.ref], options.branch)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private matchesCommitSearchOptions(
+    commit: any,
+    options: GithubCommitSearchOptions,
+  ) {
+    if (
+      options.ticketKey &&
+      !this.containsText([commit.commit?.message], options.ticketKey)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private isInsideSearchPeriod(
+    item: any,
+    since: string | null | undefined,
+    until: string | null | undefined,
+  ) {
+    if (!since && !until) {
+      return true;
+    }
+
+    const candidateDates = [
+      item.created_at,
+      item.updated_at,
+      item.closed_at,
+      item.merged_at,
+      item.commit?.author?.date,
+      item.commit?.committer?.date,
+    ].filter(Boolean);
+
+    return candidateDates.some((dateLike) => {
+      const timestamp = new Date(dateLike).getTime();
+
+      if (Number.isNaN(timestamp)) {
+        return false;
+      }
+
+      if (since && timestamp < new Date(since).getTime()) {
+        return false;
+      }
+
+      if (
+        until &&
+        timestamp > new Date(this.toEndOfDayIsoString(until)).getTime()
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  private containsText(
+    values: Array<string | null | undefined>,
+    needle: string,
+  ) {
+    const normalizedNeedle = needle.toLowerCase();
+
+    return values.some((value) =>
+      (value ?? '').toLowerCase().includes(normalizedNeedle),
+    );
+  }
+
+  private toEndOfDayIsoString(date: string) {
+    const endOfDay = new Date(date);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    return endOfDay.toISOString();
   }
 
   private buildNotableHistoryWork(
