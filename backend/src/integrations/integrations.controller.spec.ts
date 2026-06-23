@@ -2,13 +2,22 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IntegrationsController } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
 
+jest.mock('./integrations.service', () => ({
+  IntegrationsService: class IntegrationsService {},
+}));
+
 describe('IntegrationsController', () => {
   let controller: IntegrationsController;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [IntegrationsController],
-      providers: [IntegrationsService],
+      providers: [
+        {
+          provide: IntegrationsService,
+          useValue: {},
+        },
+      ],
     }).compile();
 
     controller = module.get<IntegrationsController>(IntegrationsController);

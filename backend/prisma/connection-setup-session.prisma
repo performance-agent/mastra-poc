@@ -1,0 +1,22 @@
+model ConnectionSetupSession {
+  id                String    @id @default(cuid())
+  organizationId    String
+  pluginId          String
+  connectionName    String
+  initiatedByUserId String?
+  status            String
+  expiresAt         DateTime  @db.Timestamptz(3)
+  completedAt       DateTime? @db.Timestamptz(3)
+  failedAt          DateTime? @db.Timestamptz(3)
+  failureReason     String?
+  metadata          Json?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([organizationId])
+  @@index([pluginId, connectionName])
+  @@index([status, expiresAt])
+}

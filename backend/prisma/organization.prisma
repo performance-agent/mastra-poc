@@ -6,9 +6,10 @@ model Organization {
 
   workspaces Workspace[]
 
-  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime            @default(now()) @updatedAt @db.Timestamptz(3)
-  integrations       Integration[]
-  memberships        Membership[]
-  performanceReports PerformanceReport[]
+  createdAt               DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                 @default(now()) @updatedAt @db.Timestamptz(3)
+  integrations            Integration[]
+  memberships             Membership[]
+  performanceReports      PerformanceReport[]
+  connectionSetupSessions ConnectionSetupSession[]
 }

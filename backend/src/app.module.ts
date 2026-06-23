@@ -15,6 +15,7 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AccessControlModule } from './access-control/access-control.module';
 import { ReportsModule } from './reports/reports.module';
+import { PluginRuntimeModule } from './plugin-runtime/plugin-runtime.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { MembershipGuard } from './access-control/membership.guard';
@@ -35,6 +36,7 @@ import { MembershipGuard } from './access-control/membership.guard';
     PrismaModule,
     AccessControlModule,
     ReportsModule,
+    PluginRuntimeModule,
   ],
   controllers: [AppController],
   providers: [
