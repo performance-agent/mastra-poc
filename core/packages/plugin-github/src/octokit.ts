@@ -27,6 +27,11 @@ type RepositoryPullRequest = Awaited<ReturnType<OctokitClient["rest"]["pulls"]["
 type RepositoryCommit = Awaited<ReturnType<OctokitClient["rest"]["repos"]["listCommits"]>>["data"][number];
 type Installation = Awaited<ReturnType<OctokitClient["rest"]["apps"]["getInstallation"]>>["data"];
 type ListedInstallation = Awaited<ReturnType<OctokitClient["rest"]["apps"]["listInstallations"]>>["data"][number];
+type GitHubAppAuthOptions = {
+  appId: GitHubAppConfig["appId"];
+  privateKey: GitHubAppConfig["privateKey"];
+  installationId?: number;
+};
 
 export function createOctokitGitHubClientFactory(config: GitHubAppConfig): GitHubClientFactory {
   return new OctokitGitHubClientFactory(config);
@@ -53,7 +58,8 @@ class OctokitGitHubClientFactory implements GitHubClientFactory {
   }
 
   async createInstallationClient(providerInstallationId: string): Promise<GitHubClient> {
-    return new OctokitGitHubClient(createOctokit(this.config, Number(providerInstallationId)));
+    const installationId = parsePositiveInteger(providerInstallationId, "GitHub providerInstallationId");
+    return new OctokitGitHubClient(createOctokit(this.config, installationId));
   }
 }
 
@@ -127,11 +133,14 @@ class OctokitGitHubClient implements GitHubClient {
 }
 
 function createOctokit(config: GitHubAppConfig, installationId?: number): OctokitClient {
-  const auth = {
+  const auth: GitHubAppAuthOptions = {
     appId: config.appId,
-    privateKey: config.privateKey,
-    installationId,
+    privateKey: normalizePrivateKey(config.privateKey),
   };
+  if (installationId !== undefined) {
+    auth.installationId = parsePositiveInteger(installationId, "GitHub installationId");
+  }
+
   const options: OctokitOptions = {
     authStrategy: createAppAuth,
     auth,
@@ -139,6 +148,18 @@ function createOctokit(config: GitHubAppConfig, installationId?: number): Octoki
   if (config.baseUrl) options.baseUrl = config.baseUrl;
   if (config.userAgent) options.userAgent = config.userAgent;
   return new Octokit(options);
+}
+
+function normalizePrivateKey(privateKey: string): string {
+  return privateKey.replace(/\\n/g, "\n");
+}
+
+function parsePositiveInteger(value: string | number, label: string): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${label}: ${value}`);
+  }
+  return parsed;
 }
 
 function mapRepository(repository: InstallationRepository): GitHubRepository {
