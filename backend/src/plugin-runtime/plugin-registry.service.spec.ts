@@ -23,6 +23,24 @@ const githubPlugin = {
   permissions: [],
 };
 
+const jiraPlugin = {
+  manifest: {
+    id: 'jira',
+    name: 'Jira',
+    version: '0.1.0',
+  },
+  permissions: [],
+};
+
+const softwareReportsPlugin = {
+  manifest: {
+    id: 'software-reports',
+    name: 'Software Reports',
+    version: '0.1.0',
+  },
+  permissions: [],
+};
+
 describe('PluginRegistryService', () => {
   const config = new Map<string, string>([
     ['GITHUB_APP_ID', '123'],
@@ -59,7 +77,11 @@ describe('PluginRegistryService', () => {
   });
 
   it('registers and resolves the GitHub plugin by id', () => {
-    const registry = new PluginRegistryService(githubPlugin as any);
+    const registry = new PluginRegistryService(
+      githubPlugin as any,
+      jiraPlugin as any,
+      softwareReportsPlugin as any,
+    );
 
     return expect(registry.requirePlugin('github')).resolves.toMatchObject({
       manifest: {
@@ -80,12 +102,24 @@ describe('PluginRegistryService', () => {
   });
 
   it('returns registered plugin ids', () => {
-    const registry = new PluginRegistryService(githubPlugin as any);
-    expect(registry.getRegisteredPluginIds()).toEqual(['github']);
+    const registry = new PluginRegistryService(
+      githubPlugin as any,
+      jiraPlugin as any,
+      softwareReportsPlugin as any,
+    );
+    expect(registry.getRegisteredPluginIds()).toEqual([
+      'github',
+      'jira',
+      'software-reports',
+    ]);
   });
 
   it('returns undefined for unknown plugin ids', async () => {
-    const registry = new PluginRegistryService(githubPlugin as any);
+    const registry = new PluginRegistryService(
+      githubPlugin as any,
+      jiraPlugin as any,
+      softwareReportsPlugin as any,
+    );
 
     await expect(registry.getPlugin('unknown')).resolves.toBeUndefined();
   });

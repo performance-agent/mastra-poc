@@ -6,11 +6,18 @@ import type {
   DiscoveredResource,
   PluginDataProvider,
   RuntimeContext,
+  RuntimeScope,
 } from '@pa/core';
 import { createOctokitGitHubClientFactory } from '@pa/plugin-github';
 import { PrismaService } from '../prisma/prisma.service';
 import { PluginRegistryService } from './plugin-registry.service';
 import { PluginRuntimeConfigService } from './plugin-runtime-config.service';
+
+type RuntimeContextInput = {
+  organizationId: string;
+  pluginId: string;
+  scope: RuntimeScope;
+};
 
 @Injectable()
 export class PluginDataQueryService {
@@ -20,88 +27,104 @@ export class PluginDataQueryService {
     private readonly prismaService: PrismaService,
   ) {}
 
+  async query<TData, TQuery>(
+    organizationId: string,
+    contract: DataTypeDefinition<TData, TQuery>,
+    query: DataQuery<TQuery>,
+  ): Promise<DataRecord<TData>[]> {
+    const records: DataRecord<TData>[] = [];
+
+    for (const plugin of this.pluginRegistry.getRegisteredPlugins()) {
+      const provider = plugin.providers?.find(
+        (candidate) => candidate.contract.key === contract.key,
+      ) as PluginDataProvider | undefined;
+      if (!provider) continue;
+
+      const scope = query.scope ?? { type: 'organization', id: organizationId };
+      const context = this.createContext({
+        organizationId,
+        pluginId: plugin.manifest.id,
+        scope,
+      });
+      records.push(
+        ...((await provider.query(
+          context,
+          query as DataQuery<unknown>,
+        )) as DataRecord<TData>[]),
+      );
+    }
+
+    if (records.length === 0) {
+      const hasProvider = this.pluginRegistry
+        .getRegisteredPlugins()
+        .some((plugin) =>
+          plugin.providers?.some(
+            (provider) => provider.contract.key === contract.key,
+          ),
+        );
+      if (!hasProvider) {
+        throw new Error(`No provider is installed for contract: ${contract.key}`);
+      }
+    }
+
+    return records;
+  }
+
   async queryGitHubResource<TData, TQuery>(
     resourceId: string,
     contract: DataTypeDefinition<TData, TQuery>,
     query: DataQuery<TQuery>,
   ): Promise<DataRecord<TData>[]> {
-    const resource = await this.prismaService.integrationResource.findUnique({
+    const resource = await this.prismaService.canonicalResource.findUnique({
       where: { id: resourceId },
-      include: {
-        integration: {
-          include: {
-            github: true,
-          },
-        },
-        githubRepository: true,
-      },
     });
-
-    if (
-      !resource ||
-      resource.integration.provider !== 'GITHUB' ||
-      resource.type !== 'REPOSITORY' ||
-      !resource.integration.github ||
-      !resource.githubRepository
-    ) {
-      return [];
+    if (resource?.provider === 'github') {
+      return this.query(resource.organizationId, contract, {
+        ...query,
+        scope: query.scope ?? {
+          type: 'organization',
+          id: resource.organizationId,
+        },
+      });
     }
 
-    const plugin = await this.pluginRegistry.requirePlugin('github');
-    const provider = plugin.providers?.find(
-      (candidate) => candidate.contract.key === contract.key,
-    ) as PluginDataProvider | undefined;
+    const legacyResource =
+      await this.prismaService.integrationResource.findUnique({
+        where: { id: resourceId },
+        include: { integration: true },
+      });
+    if (!legacyResource) return [];
 
-    if (!provider) {
-      return [];
-    }
-
-    const providerInstallationId = resource.integration.github.installationId;
-    const discoveredResource: DiscoveredResource = {
-      id: resource.id,
-      provider: 'github',
-      type: 'github.repository',
-      externalId: resource.externalId,
-      installationId: resource.integration.id,
-      name: resource.githubRepository.fullName,
-      url: resource.githubRepository.htmlUrl ?? undefined,
-      metadata: {
-        providerInstallationId,
-        fullName: resource.githubRepository.fullName,
-        connectionId: resource.integration.id,
-      },
-    };
-
-    const context: RuntimeContext<{
-      github: ReturnType<typeof createOctokitGitHubClientFactory>;
-    }> = {
-      tenantId: resource.integration.organizationId,
-      organizationId: resource.integration.organizationId,
-      pluginId: 'github',
-      installationId: resource.integration.id,
+    return this.query(legacyResource.integration.organizationId, contract, {
+      ...query,
       scope: query.scope ?? {
         type: 'organization',
-        id: resource.integration.organizationId,
+        id: legacyResource.integration.organizationId,
       },
-      connections: {
-        github: {
-          id: resource.integration.id,
-          client: async () =>
-            createOctokitGitHubClientFactory(
-              this.configService.getGitHubPluginOptions().app,
-            ),
-        },
-      },
+    });
+  }
+
+  createContext(input: RuntimeContextInput): RuntimeContext {
+    return {
+      tenantId: input.organizationId,
+      organizationId: input.organizationId,
+      pluginId: input.pluginId,
+      installationId: `${input.organizationId}:${input.pluginId}`,
+      scope: input.scope,
+      connections: this.connectionRegistry(input.organizationId),
       data: {
-        query: async () => [],
+        query: async (contract, query) =>
+          this.query(input.organizationId, contract, {
+            ...query,
+            scope: query.scope ?? input.scope,
+          }),
       },
       resources: {
-        assigned: async (input) => {
-          if (input.type && input.type !== discoveredResource.type) {
-            return [];
-          }
-          return [discoveredResource];
-        },
+        assigned: async (resourceInput) =>
+          this.assignedResources(input.organizationId, {
+            type: resourceInput.type,
+            scope: resourceInput.scope ?? input.scope,
+          }),
       },
       secrets: {
         get: async () => undefined,
@@ -112,21 +135,118 @@ export class PluginDataQueryService {
         delete: async () => undefined,
       },
       ids: {
-        fromSource: (input) =>
+        fromSource: (source) =>
           [
-            input.provider,
-            input.connectionId,
-            input.resourceId,
-            input.externalId,
+            source.provider,
+            source.connectionId,
+            source.resourceId,
+            source.externalId,
           ]
             .filter(Boolean)
             .join(':'),
       },
     };
+  }
 
-    return provider.query(
-      context as unknown as RuntimeContext,
-      query,
-    ) as Promise<DataRecord<TData>[]>;
+  private connectionRegistry(organizationId: string) {
+    return {
+      github: {
+        id: 'github',
+        client: async () => {
+          const factory = createOctokitGitHubClientFactory(
+            this.configService.getGitHubPluginOptions().app,
+          );
+          return {
+            ...factory,
+            listInstallations: async () => {
+              const connections =
+                await this.prismaService.integrationConnection.findMany({
+                  where: {
+                    organizationId,
+                    provider: 'github',
+                    status: 'active',
+                  },
+                });
+              return connections
+                .filter((connection) => connection.providerInstallationId)
+                .map((connection) => ({
+                  bindingId: connection.id,
+                  providerInstallationId: connection.providerInstallationId!,
+                }));
+            },
+          };
+        },
+      },
+      jira: {
+        id: 'jira',
+        client: async () => {
+          const connection =
+            await this.prismaService.integrationConnection.findFirst({
+              where: {
+                organizationId,
+                provider: 'jira',
+                status: 'active',
+              },
+            });
+          return {
+            cloudId: connection?.cloudId ?? connection?.externalId ?? '',
+            siteUrl: connection?.siteUrl ?? connection?.accountUrl ?? '',
+            listIssues: async () => [],
+          };
+        },
+      },
+    };
+  }
+
+  private async assignedResources(
+    organizationId: string,
+    input: { type?: string; scope: RuntimeScope },
+  ): Promise<DiscoveredResource[]> {
+    const resources = await this.prismaService.canonicalResource.findMany({
+      where: {
+        organizationId,
+        resourceType: input.type,
+        ...(input.scope.type === 'organization'
+          ? {}
+          : {
+              legacyResourceId: {
+                in: await this.legacyResourceIdsForScope(input.scope),
+              },
+            }),
+      },
+      include: { connection: true },
+    });
+
+    return resources.map((resource) => ({
+      id: resource.id,
+      provider: resource.provider,
+      type: resource.resourceType,
+      externalId: resource.externalId,
+      installationId: resource.connectionId,
+      name: resource.name ?? undefined,
+      url: resource.url ?? undefined,
+      metadata: {
+        ...(this.isRecord(resource.metadata) ? resource.metadata : {}),
+        connectionId: resource.connectionId,
+        providerInstallationId: resource.connection.providerInstallationId,
+      },
+    }));
+  }
+
+  private async legacyResourceIdsForScope(scope: RuntimeScope) {
+    if (scope.type === 'organization') return [];
+    const assignments =
+      await this.prismaService.integrationResourceAssignment.findMany({
+        where:
+          scope.type === 'workspace'
+            ? { workspaceId: scope.id }
+            : { groupId: scope.id },
+        select: { resourceId: true },
+      });
+    return assignments.map((assignment) => assignment.resourceId);
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
   }
 }

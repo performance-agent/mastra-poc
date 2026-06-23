@@ -2,6 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { IntegrationsService } from './integrations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubService } from './github/github.service';
+import { PluginRegistryService } from '../plugin-runtime/plugin-registry.service';
+import { PrismaConnectionSetupSessionStore } from '../plugin-runtime/prisma-connection-setup-session.store';
+import { PrismaConnectionBindingStore } from '../plugin-runtime/prisma-connection-binding.store';
+import { PluginRuntimeLoggerService } from '../plugin-runtime/plugin-runtime-logger.service';
 
 jest.mock('./github/github.service', () => ({
   GithubService: class GithubService {},
@@ -20,6 +24,22 @@ describe('IntegrationsService', () => {
         },
         {
           provide: GithubService,
+          useValue: {},
+        },
+        {
+          provide: PluginRegistryService,
+          useValue: { getRegisteredPlugins: jest.fn(() => []) },
+        },
+        {
+          provide: PrismaConnectionSetupSessionStore,
+          useValue: {},
+        },
+        {
+          provide: PrismaConnectionBindingStore,
+          useValue: {},
+        },
+        {
+          provide: PluginRuntimeLoggerService,
           useValue: {},
         },
       ],

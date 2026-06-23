@@ -1,15 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type {
-  ConnectionBinding,
-  ConnectionBindingStore,
   ConnectionSetupSession,
   PluginDefinition,
 } from '@pa/core';
-import { PrismaService } from '../prisma/prisma.service';
 import { GithubService } from '../integrations/github/github.service';
 import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
 import { PluginRegistryService } from './plugin-registry.service';
 import { PluginRuntimeLoggerService } from './plugin-runtime-logger.service';
+import { PrismaConnectionBindingStore } from './prisma-connection-binding.store';
 import { PrismaConnectionSetupSessionStore } from './prisma-connection-setup-session.store';
 
 const GITHUB_PLUGIN_ID = 'github';
@@ -21,8 +19,8 @@ export class GitHubPluginSetupService {
   constructor(
     private readonly pluginRegistry: PluginRegistryService,
     private readonly setupSessions: PrismaConnectionSetupSessionStore,
+    private readonly connectionBindings: PrismaConnectionBindingStore,
     private readonly logger: PluginRuntimeLoggerService,
-    private readonly prismaService: PrismaService,
     private readonly githubService: GithubService,
   ) {}
 
@@ -109,9 +107,11 @@ export class GitHubPluginSetupService {
         },
       );
 
-      return this.githubService.sync(
+      const syncResult = await this.githubService.sync(
         binding.pluginInstallationId || binding.id,
       );
+      await this.connectionBindings.migrateLegacyOrganization(organizationId);
+      return syncResult;
     } catch (error) {
       await this.setupSessions.markFailed(
         setupSession.id,
@@ -173,206 +173,7 @@ export class GitHubPluginSetupService {
   private ports() {
     return {
       setupSessions: this.setupSessions,
-      connectionBindings: this.legacyConnectionBindings(),
+      connectionBindings: this.connectionBindings,
     };
-  }
-
-  private legacyConnectionBindings(): ConnectionBindingStore {
-    return {
-      create: async (input) => {
-        const providerInstallationId = input.providerInstallationId;
-        if (
-          !providerInstallationId ||
-          !Number.isInteger(Number(providerInstallationId)) ||
-          Number(providerInstallationId) <= 0
-        ) {
-          throw new BadRequestException(
-            `Invalid GitHub installation id: ${providerInstallationId}`,
-          );
-        }
-
-        const existing = await this.findLegacyIntegration(
-          input.organizationId,
-          providerInstallationId,
-        );
-        if (existing) {
-          await this.prismaService.integration.update({
-            where: { id: existing.id },
-            data: {
-              name:
-                input.externalAccountName ||
-                existing.name ||
-                `GitHub Installation ${providerInstallationId}`,
-              status: 'ACTIVE',
-              github: {
-                update: {
-                  accountLogin: input.externalAccountName,
-                  accountType: input.externalAccountType,
-                  accountAvatarUrl: input.externalAccountAvatarUrl,
-                  accountUrl: input.externalAccountUrl,
-                },
-              },
-            },
-          });
-          return this.toConnectionBinding({
-            ...existing,
-            name:
-              input.externalAccountName ||
-              existing.name ||
-              `GitHub Installation ${providerInstallationId}`,
-            status: 'ACTIVE',
-            github: {
-              installationId: providerInstallationId,
-              accountLogin: input.externalAccountName ?? null,
-              accountType: input.externalAccountType ?? null,
-              accountAvatarUrl: input.externalAccountAvatarUrl ?? null,
-              accountUrl: input.externalAccountUrl ?? null,
-            },
-          });
-        }
-
-        const existingInstallation =
-          await this.prismaService.githubIntegration.findUnique({
-            where: { installationId: providerInstallationId },
-            include: { integration: true },
-          });
-        if (
-          existingInstallation &&
-          existingInstallation.integration.organizationId !==
-            input.organizationId
-        ) {
-          throw new BadRequestException(
-            'GitHub installation is already connected to another organization',
-          );
-        }
-
-        const integration = await this.prismaService.integration.create({
-          data: {
-            name:
-              input.externalAccountName ||
-              input.externalAccountUrl ||
-              `GitHub Installation ${providerInstallationId}`,
-            provider: 'GITHUB',
-            status: 'ACTIVE',
-            organizationId: input.organizationId,
-            github: {
-              create: {
-                installationId: providerInstallationId,
-                accountLogin: input.externalAccountName,
-                accountType: input.externalAccountType,
-                accountAvatarUrl: input.externalAccountAvatarUrl,
-                accountUrl: input.externalAccountUrl,
-              },
-            },
-          },
-          include: { github: true },
-        });
-
-        return this.toConnectionBinding(integration);
-      },
-      get: async (id) => {
-        const integration = await this.prismaService.integration.findUnique({
-          where: { id },
-          include: { github: true },
-        });
-        return integration?.github
-          ? this.toConnectionBinding(integration)
-          : undefined;
-      },
-      find: async (input) => {
-        if (!input.providerInstallationId) {
-          return undefined;
-        }
-        const integration = await this.findLegacyIntegration(
-          input.organizationId,
-          input.providerInstallationId,
-        );
-        return integration ? this.toConnectionBinding(integration) : undefined;
-      },
-      update: async (id, patch) => {
-        const status =
-          patch.status === 'disconnected'
-            ? 'REVOKED'
-            : patch.status === 'failed'
-              ? 'DISABLED'
-              : 'ACTIVE';
-        const integration = await this.prismaService.integration.update({
-          where: { id },
-          data: { status },
-          include: { github: true },
-        });
-        return this.toConnectionBinding(integration);
-      },
-    };
-  }
-
-  private findLegacyIntegration(
-    organizationId: string,
-    installationId: string,
-  ) {
-    return this.prismaService.integration.findFirst({
-      where: {
-        organizationId,
-        provider: 'GITHUB',
-        github: {
-          installationId,
-        },
-      },
-      include: { github: true },
-    });
-  }
-
-  private toConnectionBinding(integration: {
-    id: string;
-    organizationId: string;
-    provider: string;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-    github: {
-      installationId: string;
-      accountLogin?: string | null;
-      accountType?: string | null;
-      accountAvatarUrl?: string | null;
-      accountUrl?: string | null;
-    } | null;
-    name?: string;
-  }): ConnectionBinding {
-    if (!integration.github) {
-      throw new BadRequestException('Integration is not a GitHub integration');
-    }
-
-    const binding: ConnectionBinding = {
-      id: integration.id,
-      organizationId: integration.organizationId,
-      pluginId: GITHUB_PLUGIN_ID,
-      pluginInstallationId: integration.id,
-      connectionName: GITHUB_CONNECTION_NAME,
-      provider: 'github',
-      status:
-        integration.status === 'REVOKED'
-          ? 'disconnected'
-          : integration.status === 'DISABLED'
-            ? 'failed'
-            : 'active',
-      providerInstallationId: integration.github.installationId,
-      createdAt: integration.createdAt,
-      updatedAt: integration.updatedAt,
-    };
-
-    if (integration.github.accountLogin) {
-      binding.externalAccountName = integration.github.accountLogin;
-    }
-    if (integration.github.accountType) {
-      binding.externalAccountType = integration.github.accountType;
-    }
-    if (integration.github.accountAvatarUrl) {
-      binding.externalAccountAvatarUrl = integration.github.accountAvatarUrl;
-    }
-    if (integration.github.accountUrl) {
-      binding.externalAccountUrl = integration.github.accountUrl;
-    }
-
-    return binding;
   }
 }

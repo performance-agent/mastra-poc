@@ -3,7 +3,6 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { ConnectionBinding, ConnectionBindingStore } from '@pa/core';
 import {
   verifyGitHubWebhookSignature,
   type GitHubProviderEvent,
@@ -14,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PluginRegistryService } from './plugin-registry.service';
 import { PluginRuntimeConfigService } from './plugin-runtime-config.service';
 import { PluginRuntimeLoggerService } from './plugin-runtime-logger.service';
+import { PrismaConnectionBindingStore } from './prisma-connection-binding.store';
 import { PrismaConnectionSetupSessionStore } from './prisma-connection-setup-session.store';
 
 const GITHUB_PLUGIN_ID = 'github';
@@ -44,6 +44,7 @@ export class GitHubPluginWebhookService {
     private readonly configService: PluginRuntimeConfigService,
     private readonly logger: PluginRuntimeLoggerService,
     private readonly setupSessions: PrismaConnectionSetupSessionStore,
+    private readonly connectionBindings: PrismaConnectionBindingStore,
     private readonly prismaService: PrismaService,
     private readonly githubService: GithubService,
   ) {}
@@ -61,18 +62,34 @@ export class GitHubPluginWebhookService {
     }
 
     const providerInstallationId = String(providerEvent.installation.id);
-    const githubIntegration =
-      await this.prismaService.githubIntegration.findUnique({
-        where: { installationId: providerInstallationId },
-        include: { integration: true },
-      });
+    const connection = await this.prismaService.integrationConnection.findFirst({
+      where: {
+        provider: 'github',
+        providerInstallationId,
+      },
+    });
 
-    if (!githubIntegration) {
+    const githubIntegration = connection
+      ? undefined
+      : await this.prismaService.githubIntegration.findUnique({
+          where: { installationId: providerInstallationId },
+          include: { integration: true },
+        });
+
+    if (!connection && !githubIntegration) {
       this.logger.warn('Ignored GitHub webhook for unknown installation', {
         deliveryId: input.deliveryId,
         providerInstallationId,
       });
       return { status: 'ignored' };
+    }
+
+    const organizationId =
+      connection?.organizationId ?? githubIntegration!.integration.organizationId;
+    const pluginInstallationId = connection?.id ?? githubIntegration!.integrationId;
+
+    if (!connection && githubIntegration) {
+      await this.connectionBindings.migrateLegacyOrganization(organizationId);
     }
 
     const plugin = await this.pluginRegistry.requirePlugin(GITHUB_PLUGIN_ID);
@@ -85,21 +102,26 @@ export class GitHubPluginWebhookService {
 
     await setup.handleProviderEvent(
       {
-        organizationId: githubIntegration.integration.organizationId,
+        organizationId,
         pluginId: GITHUB_PLUGIN_ID,
-        pluginInstallationId: githubIntegration.integrationId,
+        pluginInstallationId,
         connectionName: GITHUB_CONNECTION_NAME,
         logger: this.logger,
         ports: {
           setupSessions: this.setupSessions,
-          connectionBindings: this.legacyConnectionBindings(),
+          connectionBindings: this.connectionBindings,
         },
       },
       providerEvent,
     );
 
-    if (providerEvent.type.startsWith('installation_repositories.')) {
-      await this.githubService.sync(githubIntegration.integrationId);
+    if (
+      providerEvent.type.startsWith('installation_repositories.') &&
+      (connection?.legacyIntegrationId || githubIntegration?.integrationId)
+    ) {
+      await this.githubService.sync(
+        connection?.legacyIntegrationId ?? githubIntegration!.integrationId,
+      );
     }
 
     return { status: 'accepted' };
@@ -187,84 +209,4 @@ export class GitHubPluginWebhookService {
       }));
   }
 
-  private legacyConnectionBindings(): ConnectionBindingStore {
-    return {
-      create: async () => {
-        throw new BadRequestException(
-          'GitHub webhooks cannot create integrations',
-        );
-      },
-      get: async (id) => {
-        const integration = await this.prismaService.integration.findUnique({
-          where: { id },
-          include: { github: true },
-        });
-        return integration?.github
-          ? this.toConnectionBinding(integration)
-          : undefined;
-      },
-      find: async (input) => {
-        if (!input.providerInstallationId) {
-          return undefined;
-        }
-        const integration = await this.prismaService.integration.findFirst({
-          where: {
-            organizationId: input.organizationId,
-            provider: 'GITHUB',
-            github: {
-              installationId: input.providerInstallationId,
-            },
-          },
-          include: { github: true },
-        });
-        return integration ? this.toConnectionBinding(integration) : undefined;
-      },
-      update: async (id, patch) => {
-        const status =
-          patch.status === 'disconnected'
-            ? 'REVOKED'
-            : patch.status === 'failed'
-              ? 'DISABLED'
-              : 'ACTIVE';
-        const integration = await this.prismaService.integration.update({
-          where: { id },
-          data: { status },
-          include: { github: true },
-        });
-        return this.toConnectionBinding(integration);
-      },
-    };
-  }
-
-  private toConnectionBinding(integration: {
-    id: string;
-    organizationId: string;
-    provider: string;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-    github: { installationId: string } | null;
-  }): ConnectionBinding {
-    if (!integration.github) {
-      throw new BadRequestException('Integration is not a GitHub integration');
-    }
-
-    return {
-      id: integration.id,
-      organizationId: integration.organizationId,
-      pluginId: GITHUB_PLUGIN_ID,
-      pluginInstallationId: integration.id,
-      connectionName: GITHUB_CONNECTION_NAME,
-      provider: 'github',
-      status:
-        integration.status === 'REVOKED'
-          ? 'disconnected'
-          : integration.status === 'DISABLED'
-            ? 'failed'
-            : 'active',
-      providerInstallationId: integration.github.installationId,
-      createdAt: integration.createdAt,
-      updatedAt: integration.updatedAt,
-    };
-  }
 }

@@ -169,6 +169,42 @@ export class OrganizationsController {
     param: 'id',
     roles: ['OWNER', 'ADMIN'],
   })
+  @Post(':id/integrations/:pluginId/setup/start')
+  startPluginSetup(
+    @CurrentUser() user: User,
+    @Param('id') organizationId: string,
+    @Param('pluginId') pluginId: string,
+  ) {
+    return this.integrationsService.startSetup(
+      organizationId,
+      pluginId,
+      user.id,
+    );
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/integrations/:pluginId/setup/complete')
+  completePluginSetup(
+    @Param('id') organizationId: string,
+    @Param('pluginId') pluginId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.integrationsService.completeSetup(
+      organizationId,
+      pluginId,
+      body,
+    );
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Post(':id/integrations/github/setup')
   setup(
     @Param('id') organizationId: string,

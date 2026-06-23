@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { PluginDefinition } from '@pa/core';
-import { GITHUB_PLUGIN } from './plugin-runtime.tokens';
-
-const GITHUB_PLUGIN_ID = 'github';
+import {
+  GITHUB_PLUGIN,
+  JIRA_PLUGIN,
+  SOFTWARE_REPORTS_PLUGIN,
+} from './plugin-runtime.tokens';
 
 @Injectable()
 export class PluginRegistryService {
@@ -11,22 +13,39 @@ export class PluginRegistryService {
   constructor(
     @Inject(GITHUB_PLUGIN)
     private readonly githubPlugin: PluginDefinition,
+    @Inject(JIRA_PLUGIN)
+    private readonly jiraPlugin: PluginDefinition,
+    @Inject(SOFTWARE_REPORTS_PLUGIN)
+    private readonly softwareReportsPlugin: PluginDefinition,
   ) {}
 
+  private registry() {
+    return {
+      github: this.githubPlugin,
+      jira: this.jiraPlugin,
+      'software-reports': this.softwareReportsPlugin,
+    } satisfies Record<string, PluginDefinition>;
+  }
+
   getRegisteredPluginIds() {
-    return [GITHUB_PLUGIN_ID];
+    return Object.keys(this.registry());
+  }
+
+  getRegisteredPlugins() {
+    return Object.values(this.registry());
   }
 
   getPlugin(pluginId: string): Promise<PluginDefinition | undefined> {
-    if (pluginId !== GITHUB_PLUGIN_ID) {
+    const plugin = this.registry()[pluginId];
+    if (!plugin) {
       return Promise.resolve(undefined);
     }
 
-    if (!this.plugins.has(GITHUB_PLUGIN_ID)) {
-      this.plugins.set(GITHUB_PLUGIN_ID, Promise.resolve(this.githubPlugin));
+    if (!this.plugins.has(pluginId)) {
+      this.plugins.set(pluginId, Promise.resolve(plugin));
     }
 
-    return this.plugins.get(GITHUB_PLUGIN_ID)!;
+    return this.plugins.get(pluginId)!;
   }
 
   async requirePlugin(pluginId: string): Promise<PluginDefinition> {

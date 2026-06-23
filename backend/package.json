@@ -38,6 +38,8 @@
     "@pa/core": "file:../core/packages/core",
     "@pa/packs-software": "file:../core/packages/packs-software",
     "@pa/plugin-github": "file:../core/packages/plugin-github",
+    "@pa/plugin-jira": "file:../core/packages/plugin-jira",
+    "@pa/plugin-software-reports": "file:../core/packages/plugin-software-reports",
     "@pa/sdk": "file:../core/packages/sdk",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
