@@ -81,13 +81,19 @@ export type GitHubInstallation = {
   id: string;
   accountId: string;
   accountName: string;
+  accountType?: string;
+  accountAvatarUrl?: string;
   accountUrl?: string;
 };
 
 export interface GitHubClient {
-  listRepositories(input?: ListRepositoriesInput): Promise<readonly GitHubRepository[]>;
+  listRepositories(
+    input?: ListRepositoriesInput,
+  ): Promise<readonly GitHubRepository[]>;
   listIssues(input: ListIssuesInput): Promise<readonly GitHubIssue[]>;
-  listPullRequests(input: ListPullRequestsInput): Promise<readonly GitHubPullRequest[]>;
+  listPullRequests(
+    input: ListPullRequestsInput,
+  ): Promise<readonly GitHubPullRequest[]>;
   listCommits(input: ListCommitsInput): Promise<readonly GitHubCommit[]>;
   getInstallation(input: GetInstallationInput): Promise<GitHubInstallation>;
 }
@@ -99,7 +105,9 @@ export type GitHubConnectionInstallation = {
 
 export interface GitHubClientFactory {
   listInstallations(): Promise<readonly GitHubConnectionInstallation[]>;
-  createInstallationClient(providerInstallationId: string): Promise<GitHubClient>;
+  createInstallationClient(
+    providerInstallationId: string,
+  ): Promise<GitHubClient>;
 }
 
 export type GitHubAppConfig = {
@@ -134,7 +142,9 @@ export type GitHubInstallationRepositoriesEvent = {
   repositories: readonly GitHubRepository[];
 };
 
-export type GitHubProviderEvent = GitHubInstallationDeletedEvent | GitHubInstallationRepositoriesEvent;
+export type GitHubProviderEvent =
+  | GitHubInstallationDeletedEvent
+  | GitHubInstallationRepositoriesEvent;
 
 export type GitHubRepositoryResource = {
   provider: "github";

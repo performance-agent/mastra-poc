@@ -6,6 +6,7 @@ import type {
   Membership,
   Resource,
   Integration,
+  IntegrationCatalogItem,
   PerformanceReport,
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
@@ -106,6 +107,8 @@ export const api = {
   // Integrations
   listIntegrations: () => request<Integration[]>("/integrations"),
   listOrgIntegrations: (id: string) => request<Integration[]>(`/organizations/${id}/integrations`),
+  listOrgIntegrationCatalog: (id: string) =>
+    request<IntegrationCatalogItem[]>(`/organizations/${id}/integrations/catalog`),
   syncIntegration: (id: string) =>
     request<Integration>(`/integrations/${id}/sync`, { method: "POST" }),
   updateIntegration: (id: string, body: Pick<Integration, "name">) =>
@@ -116,7 +119,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   startGithubSetup: (organizationId: string) =>
-    request<{ redirectUrl: string; setupSessionId: string }>(
+    request<{ installUrl: string; redirectUrl: string; setupSessionId: string }>(
       `/organizations/${organizationId}/integrations/github/setup/start`,
       {
         method: "POST",

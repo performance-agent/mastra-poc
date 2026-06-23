@@ -71,11 +71,19 @@ export class GithubService {
       );
     }
 
-    const github = this.createInstallationClient(setupGithubDto.installationId);
-    const orgInstallation = await github.rest.apps.getOrgInstallation();
+    const installationId = this.parsePositiveInteger(
+      setupGithubDto.installationId,
+      'GitHub installationId',
+    );
+    const clientFactory = this.createPluginGitHubClientFactory();
+    const client = await clientFactory.createInstallationClient(
+      String(installationId),
+    );
+    const installation = await client.getInstallation({
+      installationId: String(installationId),
+    });
     const name =
-      orgInstallation.data.account?.html_url ||
-      `GitHub Installation ${setupGithubDto.installationId}`;
+      installation.accountName || `GitHub Installation ${installationId}`;
 
     const integration = await this.prismaService.integration.create({
       data: {
@@ -85,7 +93,11 @@ export class GithubService {
         organizationId,
         github: {
           create: {
-            installationId: setupGithubDto.installationId,
+            installationId: String(installationId),
+            accountLogin: installation.accountName,
+            accountType: installation.accountType,
+            accountAvatarUrl: installation.accountAvatarUrl,
+            accountUrl: installation.accountUrl,
           },
         },
       },
@@ -141,7 +153,17 @@ export class GithubService {
   }
 
   private getOptionalConfig(key: string) {
-    return this.configService?.get<string>(key) || process.env[key] || undefined;
+    return (
+      this.configService?.get<string>(key) || process.env[key] || undefined
+    );
+  }
+
+  private parsePositiveInteger(value: string, label: string) {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new BadRequestException(`Invalid ${label}: ${value}`);
+    }
+    return parsed;
   }
 
   async getRepositoryActivity(
@@ -166,7 +188,8 @@ export class GithubService {
 
     if (canonicalActivity) {
       mappedOpenPullRequests = canonicalActivity.openPullRequests;
-      mappedRecentlyClosedPullRequests = canonicalActivity.recentlyClosedPullRequests;
+      mappedRecentlyClosedPullRequests =
+        canonicalActivity.recentlyClosedPullRequests;
       mappedRecentlyMergedPullRequests =
         mappedRecentlyClosedPullRequests.filter((pr) => pr.state === 'MERGED');
       mappedOpenIssues = canonicalActivity.openIssues;
@@ -267,7 +290,10 @@ export class GithubService {
     };
   }
 
-  private async getCanonicalRepositoryActivity(resourceId: string, since: Date) {
+  private async getCanonicalRepositoryActivity(
+    resourceId: string,
+    since: Date,
+  ) {
     if (!this.pluginDataQueryService) {
       return null;
     }
@@ -279,21 +305,41 @@ export class GithubService {
       recentlyClosedIssues,
       recentCommits,
     ] = await Promise.all([
-      this.pluginDataQueryService.queryGitHubResource(resourceId, software.pullRequest.v1, {
-        where: { status: ['open'] },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resourceId, software.pullRequest.v1, {
-        where: { status: ['closed', 'merged'] },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resourceId, software.issue.v1, {
-        where: { status: ['open'] },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resourceId, software.issue.v1, {
-        where: { status: ['closed'], updatedSince: since },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resourceId, software.commit.v1, {
-        where: { since },
-      }),
+      this.pluginDataQueryService.queryGitHubResource(
+        resourceId,
+        software.pullRequest.v1,
+        {
+          where: { status: ['open'] },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resourceId,
+        software.pullRequest.v1,
+        {
+          where: { status: ['closed', 'merged'] },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resourceId,
+        software.issue.v1,
+        {
+          where: { status: ['open'] },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resourceId,
+        software.issue.v1,
+        {
+          where: { status: ['closed'], updatedSince: since },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resourceId,
+        software.commit.v1,
+        {
+          where: { since },
+        },
+      ),
     ]);
 
     return {
@@ -833,7 +879,8 @@ export class GithubService {
       state: issue.status === 'closed' ? 'CLOSED' : 'OPEN',
       createdAt: issue.createdAt.toISOString(),
       updatedAt: issue.updatedAt.toISOString(),
-      closedAt: issue.status === 'closed' ? issue.updatedAt.toISOString() : null,
+      closedAt:
+        issue.status === 'closed' ? issue.updatedAt.toISOString() : null,
       labels: [...issue.labels],
       // TODO: Extend canonical issue contracts with comment counts and explicit author.
       comments: 0,

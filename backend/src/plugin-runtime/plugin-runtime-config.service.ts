@@ -18,8 +18,8 @@ export class PluginRuntimeConfigService {
   getGitHubPluginOptions(): GitHubPluginOptions {
     const appId = this.require('GITHUB_APP_ID');
     const privateKey = this.require('GITHUB_PRIVATE_KEY');
-    const appInstallationUrl = this.require('GITHUB_SETUP_URL');
-    const appSlug = this.optional('GITHUB_APP_SLUG');
+    const appSlug = this.require('GITHUB_APP_SLUG');
+    const appInstallationUrl = this.githubAppInstallationUrl(appSlug);
     const webhookSecret = this.optional('GITHUB_WEBHOOK_SECRET');
 
     return {
@@ -47,5 +47,15 @@ export class PluginRuntimeConfigService {
 
   private optional(key: string) {
     return this.configService.get<string>(key) || undefined;
+  }
+
+  private githubAppInstallationUrl(appSlug: string) {
+    const configured =
+      this.optional('GITHUB_APP_INSTALLATION_URL') ??
+      this.optional('GITHUB_SETUP_URL');
+    if (configured?.includes('/installations/new')) {
+      return configured;
+    }
+    return `https://github.com/apps/${appSlug}/installations/new`;
   }
 }

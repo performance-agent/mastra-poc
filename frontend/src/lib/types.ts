@@ -85,6 +85,34 @@ export interface Integration {
   } | null;
 }
 
+export type IntegrationCatalogStatus = "connected" | "available" | "needs_attention";
+
+export interface IntegrationCatalogConnection {
+  id: string;
+  provider: string;
+  providerInstallationId: string;
+  accountLogin: string;
+  accountType?: string | null;
+  accountAvatarUrl?: string | null;
+  accountUrl?: string | null;
+  status: IntegrationCatalogStatus;
+  resourceCount: number;
+  lastSyncAt?: string | null;
+}
+
+export interface IntegrationCatalogItem {
+  pluginId: string;
+  provider: string;
+  name: string;
+  description: string;
+  icon?: string;
+  status: IntegrationCatalogStatus;
+  connectionCount: number;
+  capabilities: string[];
+  resourceTypes: string[];
+  connections: IntegrationCatalogConnection[];
+}
+
 export type PerformanceReportType = "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface PerformanceReport<TData = unknown> {

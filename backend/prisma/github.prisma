@@ -1,6 +1,10 @@
 model GithubIntegration {
-  integrationId  String @id
-  installationId String @unique
+  integrationId    String  @id
+  installationId   String  @unique
+  accountLogin     String?
+  accountType      String?
+  accountAvatarUrl String?
+  accountUrl       String?
 
   integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
 }

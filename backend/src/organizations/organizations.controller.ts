@@ -174,13 +174,10 @@ export class OrganizationsController {
     @Param('id') organizationId: string,
     @Body() setupGithubDto: SetupGithubDto,
   ) {
-    if (setupGithubDto.state) {
-      return this.githubPluginSetupService.completeSetup(
-        organizationId,
-        setupGithubDto,
-      );
-    }
-    return this.githubService.setup(organizationId, setupGithubDto);
+    return this.githubPluginSetupService.completeSetup(
+      organizationId,
+      setupGithubDto,
+    );
   }
 
   @RequireMembership({
@@ -201,5 +198,15 @@ export class OrganizationsController {
   @Get(':id/integrations')
   findAllIntegrations(@Param('id') organizationId: string) {
     return this.integrationsService.findAllByOrganization(organizationId);
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  @Get(':id/integrations/catalog')
+  findIntegrationCatalog(@Param('id') organizationId: string) {
+    return this.integrationsService.findCatalogByOrganization(organizationId);
   }
 }

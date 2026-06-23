@@ -64,6 +64,7 @@ export class GitHubPluginSetupService {
       }
 
       return {
+        installUrl: result.redirectUrl,
         redirectUrl: result.redirectUrl,
         setupSessionId: result.setupSessionId,
       };
@@ -78,8 +79,7 @@ export class GitHubPluginSetupService {
 
   async completeSetup(organizationId: string, input: SetupGithubDto) {
     if (!input.state) {
-      // TODO: Remove this legacy fallback after the frontend consistently uses setup-start state.
-      return this.githubService.setup(organizationId, input);
+      throw new BadRequestException('GitHub setup completion is missing state');
     }
 
     const setupSession = await this.loadPendingSession(
@@ -109,7 +109,9 @@ export class GitHubPluginSetupService {
         },
       );
 
-      return this.githubService.sync(binding.pluginInstallationId || binding.id);
+      return this.githubService.sync(
+        binding.pluginInstallationId || binding.id,
+      );
     } catch (error) {
       await this.setupSessions.markFailed(
         setupSession.id,
@@ -117,6 +119,19 @@ export class GitHubPluginSetupService {
       );
       throw error;
     }
+  }
+
+  async completeSetupByState(input: SetupGithubDto) {
+    if (!input.state) {
+      throw new BadRequestException('GitHub setup callback is missing state');
+    }
+
+    const setupSession = await this.loadPendingSessionById(input.state);
+    const result = await this.completeSetup(setupSession.organizationId, input);
+    return {
+      organizationId: setupSession.organizationId,
+      result,
+    };
   }
 
   private async githubPlugin(): Promise<PluginDefinition> {
@@ -127,14 +142,21 @@ export class GitHubPluginSetupService {
     organizationId: string,
     setupSessionId: string,
   ): Promise<ConnectionSetupSession> {
-    const setupSession = await this.setupSessions.get(setupSessionId);
-    if (!setupSession) {
-      throw new BadRequestException('GitHub setup session was not found');
-    }
+    const setupSession = await this.loadPendingSessionById(setupSessionId);
     if (setupSession.organizationId !== organizationId) {
       throw new BadRequestException(
         'GitHub setup session does not belong to this organization',
       );
+    }
+    return setupSession;
+  }
+
+  private async loadPendingSessionById(
+    setupSessionId: string,
+  ): Promise<ConnectionSetupSession> {
+    const setupSession = await this.setupSessions.get(setupSessionId);
+    if (!setupSession) {
+      throw new BadRequestException('GitHub setup session was not found');
     }
     if (
       setupSession.pluginId !== GITHUB_PLUGIN_ID ||
@@ -159,9 +181,13 @@ export class GitHubPluginSetupService {
     return {
       create: async (input) => {
         const providerInstallationId = input.providerInstallationId;
-        if (!providerInstallationId) {
+        if (
+          !providerInstallationId ||
+          !Number.isInteger(Number(providerInstallationId)) ||
+          Number(providerInstallationId) <= 0
+        ) {
           throw new BadRequestException(
-            'GitHub setup did not include an installation id',
+            `Invalid GitHub installation id: ${providerInstallationId}`,
           );
         }
 
@@ -172,12 +198,36 @@ export class GitHubPluginSetupService {
         if (existing) {
           await this.prismaService.integration.update({
             where: { id: existing.id },
-            data: { status: 'ACTIVE' },
+            data: {
+              name:
+                input.externalAccountName ||
+                existing.name ||
+                `GitHub Installation ${providerInstallationId}`,
+              status: 'ACTIVE',
+              github: {
+                update: {
+                  accountLogin: input.externalAccountName,
+                  accountType: input.externalAccountType,
+                  accountAvatarUrl: input.externalAccountAvatarUrl,
+                  accountUrl: input.externalAccountUrl,
+                },
+              },
+            },
           });
           return this.toConnectionBinding({
             ...existing,
+            name:
+              input.externalAccountName ||
+              existing.name ||
+              `GitHub Installation ${providerInstallationId}`,
             status: 'ACTIVE',
-            github: { installationId: providerInstallationId },
+            github: {
+              installationId: providerInstallationId,
+              accountLogin: input.externalAccountName ?? null,
+              accountType: input.externalAccountType ?? null,
+              accountAvatarUrl: input.externalAccountAvatarUrl ?? null,
+              accountUrl: input.externalAccountUrl ?? null,
+            },
           });
         }
 
@@ -188,7 +238,8 @@ export class GitHubPluginSetupService {
           });
         if (
           existingInstallation &&
-          existingInstallation.integration.organizationId !== input.organizationId
+          existingInstallation.integration.organizationId !==
+            input.organizationId
         ) {
           throw new BadRequestException(
             'GitHub installation is already connected to another organization',
@@ -198,8 +249,8 @@ export class GitHubPluginSetupService {
         const integration = await this.prismaService.integration.create({
           data: {
             name:
-              input.externalAccountUrl ||
               input.externalAccountName ||
+              input.externalAccountUrl ||
               `GitHub Installation ${providerInstallationId}`,
             provider: 'GITHUB',
             status: 'ACTIVE',
@@ -207,6 +258,10 @@ export class GitHubPluginSetupService {
             github: {
               create: {
                 installationId: providerInstallationId,
+                accountLogin: input.externalAccountName,
+                accountType: input.externalAccountType,
+                accountAvatarUrl: input.externalAccountAvatarUrl,
+                accountUrl: input.externalAccountUrl,
               },
             },
           },
@@ -274,13 +329,20 @@ export class GitHubPluginSetupService {
     status: string;
     createdAt: Date;
     updatedAt: Date;
-    github: { installationId: string } | null;
+    github: {
+      installationId: string;
+      accountLogin?: string | null;
+      accountType?: string | null;
+      accountAvatarUrl?: string | null;
+      accountUrl?: string | null;
+    } | null;
+    name?: string;
   }): ConnectionBinding {
     if (!integration.github) {
       throw new BadRequestException('Integration is not a GitHub integration');
     }
 
-    return {
+    const binding: ConnectionBinding = {
       id: integration.id,
       organizationId: integration.organizationId,
       pluginId: GITHUB_PLUGIN_ID,
@@ -297,5 +359,20 @@ export class GitHubPluginSetupService {
       createdAt: integration.createdAt,
       updatedAt: integration.updatedAt,
     };
+
+    if (integration.github.accountLogin) {
+      binding.externalAccountName = integration.github.accountLogin;
+    }
+    if (integration.github.accountType) {
+      binding.externalAccountType = integration.github.accountType;
+    }
+    if (integration.github.accountAvatarUrl) {
+      binding.externalAccountAvatarUrl = integration.github.accountAvatarUrl;
+    }
+    if (integration.github.accountUrl) {
+      binding.externalAccountUrl = integration.github.accountUrl;
+    }
+
+    return binding;
   }
 }

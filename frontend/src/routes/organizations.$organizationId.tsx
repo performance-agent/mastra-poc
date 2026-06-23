@@ -10,6 +10,7 @@ import {
   FolderTree,
   Boxes,
   Plug,
+  Github,
   RefreshCw,
   MoreHorizontal,
   Pencil,
@@ -52,7 +53,15 @@ import { Label } from "@/components/ui/label";
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
 import { savePendingGithubSetup } from "@/lib/github-setup";
-import type { Integration, Resource, Role, Workspace } from "@/lib/types";
+import type {
+  Integration,
+  IntegrationCatalogConnection,
+  IntegrationCatalogItem,
+  IntegrationCatalogStatus,
+  Resource,
+  Role,
+  Workspace,
+} from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.string().optional(),
@@ -762,57 +771,53 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<IntegrationView | null>(null);
-  const availableQ = useQuery({ queryKey: ["integrations"], queryFn: api.listIntegrations });
-  const connectedQ = useQuery({
-    queryKey: ["organization", organizationId, "integrations"],
-    queryFn: () => api.listOrgIntegrations(organizationId),
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | IntegrationCatalogStatus>("all");
+  const catalogQ = useQuery({
+    queryKey: ["organization", organizationId, "integrations", "catalog"],
+    queryFn: () => api.listOrgIntegrationCatalog(organizationId),
   });
-  const connectedIntegrations = (connectedQ.data ?? []).map((integration, index) =>
-    normalizeIntegration(integration, index, { isConnected: true }),
-  );
-  const availableIntegrations = availableQ.data ?? [];
-  const integrations = connectedIntegrations;
-  const isLoading = availableQ.isLoading || connectedQ.isLoading;
-  const error = availableQ.error ?? connectedQ.error;
+  const catalog = catalogQ.data ?? [];
+  const filteredCatalog = catalog.filter((plugin) => {
+    const haystack = [
+      plugin.name,
+      plugin.description,
+      plugin.provider,
+      ...plugin.capabilities,
+      ...plugin.resourceTypes,
+      ...plugin.connections.map((connection) => connection.accountLogin),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
+    const matchesFilter = filter === "all" || plugin.status === filter;
+    return matchesQuery && matchesFilter;
+  });
+  const isLoading = catalogQ.isLoading;
+  const error = catalogQ.error;
 
-  const handleGithubSetup = async (integration: Integration) => {
+  const handleGithubSetup = async () => {
     try {
       const start = await api.startGithubSetup(organizationId);
       savePendingGithubSetup(organizationId);
-      window.location.assign(start.redirectUrl);
+      window.location.assign(start.installUrl || start.redirectUrl);
       return;
     } catch (error) {
-      if (!integration.setupUrl) {
-        toast.error(errorMessage(error));
-        return;
-      }
+      toast.error(errorMessage(error));
     }
-
-    const setupUrl = integration.setupUrl;
-    if (setupUrl) {
-      savePendingGithubSetup(organizationId);
-      window.location.assign(setupUrl);
-      return;
-    }
-
-    toast.message("No setup URL available", {
-      description: "This integration does not provide a setup link yet.",
-    });
   };
 
-  const handleAddIntegration = (integration: Integration) => {
-    void handleGithubSetup(integration);
-  };
+  const handleSyncConnection = async (connection: IntegrationCatalogConnection) => {
+    if (!connection.id) return;
 
-  const handleSyncIntegration = async (integration: IntegrationView) => {
-    if (!integration.id) return;
-
-    setSyncingId(integration.id);
+    setSyncingId(connection.id);
     try {
-      await api.syncIntegration(integration.id);
-      toast.success(`${integration.name} synced`);
+      await api.syncIntegration(connection.id);
+      toast.success(`${connection.accountLogin} synced`);
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["organization", organizationId, "integrations"] }),
+        qc.invalidateQueries({
+          queryKey: ["organization", organizationId, "integrations", "catalog"],
+        }),
         qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] }),
       ]);
     } catch (e) {
@@ -828,114 +833,102 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     try {
       await api.updateIntegration(editing.id, { name });
       toast.success("Integration updated");
-      await qc.invalidateQueries({ queryKey: ["organization", organizationId, "integrations"] });
+      await qc.invalidateQueries({
+        queryKey: ["organization", organizationId, "integrations", "catalog"],
+      });
     } catch (e) {
       toast.error(errorMessage(e));
     }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold tracking-normal">Integrations</h2>
+          <p className="text-sm text-muted-foreground">
+            Connect tools and import resources into this organization.
+          </p>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button disabled={availableQ.isLoading}>
+            <Button disabled={catalogQ.isLoading}>
               <Plus className="mr-1.5 h-4 w-4" />
               Add integration
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {availableIntegrations.length > 0 ? (
-              availableIntegrations.map((integration) => (
-                <DropdownMenuItem
-                  key={integrationTypeKey(integration)}
-                  onClick={() => handleAddIntegration(integration)}
-                >
-                  <Plug className="mr-2 h-3.5 w-3.5" />
-                  {integrationDisplayName(integration)}
-                </DropdownMenuItem>
-              ))
-            ) : (
-              <DropdownMenuItem disabled>No integrations available</DropdownMenuItem>
-            )}
+            <DropdownMenuItem onClick={() => void handleGithubSetup()}>
+              <Github className="mr-2 h-3.5 w-3.5" />
+              GitHub
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="md:w-full md:max-w-sm">
+          <SearchInput value={query} onChange={setQuery} placeholder="Search plugins" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            ["all", "All"],
+            ["connected", "Connected"],
+            ["available", "Available"],
+            ["needs_attention", "Needs attention"],
+          ].map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={filter === value ? "default" : "outline"}
+              onClick={() => setFilter(value as "all" | IntegrationCatalogStatus)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       {isLoading ? (
         <LoadingState />
       ) : error ? (
         <ErrorState
           message={errorMessage(error)}
           onRetry={() => {
-            availableQ.refetch();
-            connectedQ.refetch();
+            catalogQ.refetch();
           }}
         />
-      ) : integrations.length === 0 ? (
+      ) : filteredCatalog.length === 0 ? (
         <EmptyState
           icon={<Plug className="h-4 w-4" />}
-          title="No integrations connected"
-          description="Add an integration to bring external resources into this organization."
+          title="No plugins found"
+          description="Try another search or filter."
         />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {integrations.map((integration) => (
-            <Card
-              key={integration.key}
-              className="flex flex-col gap-4 rounded-xl p-4 shadow-card sm:flex-row sm:items-start sm:justify-between"
-            >
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Plug className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold">{integration.name}</h3>
-                    <p className="text-[11px] text-muted-foreground">{integration.displayName}</p>
-                  </div>
-                  <IntegrationStatusBadge status={integration.status} />
-                </div>
-                <p className="max-w-xl text-xs text-muted-foreground">{integration.description}</p>
-                {integration.installationId && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Installation ID: {integration.installationId}
-                  </p>
-                )}
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0 text-muted-foreground"
-                    aria-label={`${integration.name} actions`}
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {integration.isConnected && integration.id && (
-                    <DropdownMenuItem
-                      onClick={() => handleSyncIntegration(integration)}
-                      disabled={syncingId === integration.id}
-                    >
-                      <RefreshCw
-                        className={`mr-2 h-3.5 w-3.5 ${
-                          syncingId === integration.id ? "animate-spin" : ""
-                        }`}
-                      />
-                      Sync
-                    </DropdownMenuItem>
-                  )}
-                  {integration.isConnected && integration.id && (
-                    <DropdownMenuItem onClick={() => setEditing(integration)}>
-                      <Pencil className="mr-2 h-3.5 w-3.5" />
-                      Edit
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </Card>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {filteredCatalog.map((plugin) => (
+            <PluginCatalogCard
+              key={plugin.pluginId}
+              plugin={plugin}
+              syncingId={syncingId}
+              onConnect={() => void handleGithubSetup()}
+              onManageConnection={(connection) =>
+                setEditing({
+                  id: connection.id,
+                  key: connection.id,
+                  name: connection.accountLogin,
+                  displayName: plugin.name,
+                  type: plugin.provider.toUpperCase(),
+                  description: plugin.description,
+                  status: connection.status === "connected" ? "ACTIVE" : "DISABLED",
+                  isGithub: plugin.provider === "github",
+                  isConnected: true,
+                  installationId: connection.providerInstallationId,
+                })
+              }
+              onSyncConnection={handleSyncConnection}
+            />
           ))}
         </div>
       )}
@@ -946,4 +939,191 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
       />
     </div>
   );
+}
+
+function PluginCatalogCard({
+  plugin,
+  syncingId,
+  onConnect,
+  onManageConnection,
+  onSyncConnection,
+}: {
+  plugin: IntegrationCatalogItem;
+  syncingId: string | null;
+  onConnect: () => void;
+  onManageConnection: (connection: IntegrationCatalogConnection) => void;
+  onSyncConnection: (connection: IntegrationCatalogConnection) => Promise<void>;
+}) {
+  const connected = plugin.status === "connected";
+  const needsAttention = plugin.status === "needs_attention";
+  const primaryConnection = plugin.connections[0];
+  const actionLabel = needsAttention ? "Fix connection" : connected ? "Manage" : "Connect";
+
+  return (
+    <Card className="rounded-lg p-4 shadow-card">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
+                {plugin.provider === "github" ? (
+                  <Github className="h-5 w-5" />
+                ) : (
+                  <Plug className="h-5 w-5" />
+                )}
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-semibold">{plugin.name}</h3>
+                  <CatalogStatusBadge status={plugin.status} />
+                </div>
+                <p className="max-w-xl text-sm text-muted-foreground">{plugin.description}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {plugin.capabilities.map((capability) => (
+                <span
+                  key={capability}
+                  className="rounded-md border border-border bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
+                >
+                  {capability}
+                </span>
+              ))}
+            </div>
+          </div>
+          <Button
+            onClick={
+              connected && primaryConnection
+                ? () => onManageConnection(primaryConnection)
+                : onConnect
+            }
+            variant={connected ? "outline" : "default"}
+          >
+            {actionLabel}
+          </Button>
+        </div>
+
+        <div className="border-t border-border pt-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-xs font-medium uppercase text-muted-foreground">
+              Connected accounts
+            </p>
+            <span className="text-xs text-muted-foreground">
+              {plugin.connectionCount} {plugin.connectionCount === 1 ? "account" : "accounts"}
+            </span>
+          </div>
+          {plugin.connections.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+              No accounts connected yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-border rounded-lg border border-border">
+              {plugin.connections.map((connection) => (
+                <div
+                  key={connection.id}
+                  className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    {connection.accountAvatarUrl ? (
+                      <img
+                        src={connection.accountAvatarUrl}
+                        alt=""
+                        className="h-9 w-9 rounded-lg border border-border"
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                        <Github className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium">{connection.accountLogin}</p>
+                        <CatalogStatusBadge status={connection.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {connection.accountType ?? "GitHub account"} - Installation{" "}
+                        {connection.providerInstallationId}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                    <span className="text-xs text-muted-foreground">
+                      {connection.resourceCount} resources
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0 text-muted-foreground"
+                          aria-label={`${connection.accountLogin} actions`}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onManageConnection(connection)}>
+                          <Pencil className="mr-2 h-3.5 w-3.5" />
+                          Manage
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => void onSyncConnection(connection)}
+                          disabled={syncingId === connection.id}
+                        >
+                          <RefreshCw
+                            className={`mr-2 h-3.5 w-3.5 ${
+                              syncingId === connection.id ? "animate-spin" : ""
+                            }`}
+                          />
+                          Sync resources
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function CatalogStatusBadge({ status }: { status: IntegrationCatalogStatus }) {
+  const classes = catalogStatusClasses(status);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${classes.shell}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${classes.dot}`} />
+      {catalogStatusLabel(status)}
+    </span>
+  );
+}
+
+function catalogStatusLabel(status: IntegrationCatalogStatus) {
+  if (status === "connected") return "Connected";
+  if (status === "needs_attention") return "Needs attention";
+  return "Not connected";
+}
+
+function catalogStatusClasses(status: IntegrationCatalogStatus) {
+  if (status === "connected") {
+    return {
+      shell: "border-success/20 bg-success/10 text-success",
+      dot: "bg-success",
+    };
+  }
+  if (status === "needs_attention") {
+    return {
+      shell: "border-destructive/20 bg-destructive/10 text-destructive",
+      dot: "bg-destructive",
+    };
+  }
+  return {
+    shell: "border-border bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground/70",
+  };
 }

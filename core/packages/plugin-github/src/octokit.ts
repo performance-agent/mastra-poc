@@ -22,18 +22,30 @@ type OctokitOptions = ConstructorParameters<typeof Octokit>[0];
 type InstallationRepository = Awaited<
   ReturnType<OctokitClient["rest"]["apps"]["listReposAccessibleToInstallation"]>
 >["data"]["repositories"][number];
-type RepositoryIssue = Awaited<ReturnType<OctokitClient["rest"]["issues"]["listForRepo"]>>["data"][number];
-type RepositoryPullRequest = Awaited<ReturnType<OctokitClient["rest"]["pulls"]["list"]>>["data"][number];
-type RepositoryCommit = Awaited<ReturnType<OctokitClient["rest"]["repos"]["listCommits"]>>["data"][number];
-type Installation = Awaited<ReturnType<OctokitClient["rest"]["apps"]["getInstallation"]>>["data"];
-type ListedInstallation = Awaited<ReturnType<OctokitClient["rest"]["apps"]["listInstallations"]>>["data"][number];
+type RepositoryIssue = Awaited<
+  ReturnType<OctokitClient["rest"]["issues"]["listForRepo"]>
+>["data"][number];
+type RepositoryPullRequest = Awaited<
+  ReturnType<OctokitClient["rest"]["pulls"]["list"]>
+>["data"][number];
+type RepositoryCommit = Awaited<
+  ReturnType<OctokitClient["rest"]["repos"]["listCommits"]>
+>["data"][number];
+type Installation = Awaited<
+  ReturnType<OctokitClient["rest"]["apps"]["getInstallation"]>
+>["data"];
+type ListedInstallation = Awaited<
+  ReturnType<OctokitClient["rest"]["apps"]["listInstallations"]>
+>["data"][number];
 type GitHubAppAuthOptions = {
   appId: GitHubAppConfig["appId"];
   privateKey: GitHubAppConfig["privateKey"];
   installationId?: number;
 };
 
-export function createOctokitGitHubClientFactory(config: GitHubAppConfig): GitHubClientFactory {
+export function createOctokitGitHubClientFactory(
+  config: GitHubAppConfig,
+): GitHubClientFactory {
   return new OctokitGitHubClientFactory(config);
 }
 
@@ -45,9 +57,12 @@ class OctokitGitHubClientFactory implements GitHubClientFactory {
   }
 
   async listInstallations(): Promise<readonly GitHubConnectionInstallation[]> {
-    const installations = await this.appOctokit.paginate(this.appOctokit.rest.apps.listInstallations, {
-      per_page: 100,
-    });
+    const installations = await this.appOctokit.paginate(
+      this.appOctokit.rest.apps.listInstallations,
+      {
+        per_page: 100,
+      },
+    );
     return installations.map((installation: ListedInstallation) => {
       const providerInstallationId = String(installation.id);
       return {
@@ -57,8 +72,13 @@ class OctokitGitHubClientFactory implements GitHubClientFactory {
     });
   }
 
-  async createInstallationClient(providerInstallationId: string): Promise<GitHubClient> {
-    const installationId = parsePositiveInteger(providerInstallationId, "GitHub providerInstallationId");
+  async createInstallationClient(
+    providerInstallationId: string,
+  ): Promise<GitHubClient> {
+    const installationId = parsePositiveInteger(
+      providerInstallationId,
+      "GitHub providerInstallationId",
+    );
     return new OctokitGitHubClient(createOctokit(this.config, installationId));
   }
 }
@@ -66,12 +86,19 @@ class OctokitGitHubClientFactory implements GitHubClientFactory {
 class OctokitGitHubClient implements GitHubClient {
   constructor(private readonly octokit: OctokitClient) {}
 
-  async listRepositories(input: ListRepositoriesInput = {}): Promise<readonly GitHubRepository[]> {
-    const repositories = await this.octokit.paginate(this.octokit.rest.apps.listReposAccessibleToInstallation, {
-      per_page: 100,
-    });
+  async listRepositories(
+    input: ListRepositoriesInput = {},
+  ): Promise<readonly GitHubRepository[]> {
+    const repositories = await this.octokit.paginate(
+      this.octokit.rest.apps.listReposAccessibleToInstallation,
+      {
+        per_page: 100,
+      },
+    );
     return repositories
-      .filter((repository: InstallationRepository) => isUpdatedSince(repository.updated_at, input.updatedSince))
+      .filter((repository: InstallationRepository) =>
+        isUpdatedSince(repository.updated_at, input.updatedSince),
+      )
       .map(mapRepository);
   }
 
@@ -85,21 +112,32 @@ class OctokitGitHubClient implements GitHubClient {
     };
     const issues = await this.octokit.paginate(
       this.octokit.rest.issues.listForRepo,
-      input.updatedSince ? { ...request, since: input.updatedSince.toISOString() } : request,
+      input.updatedSince
+        ? { ...request, since: input.updatedSince.toISOString() }
+        : request,
     );
-    return issues.filter((issue: RepositoryIssue) => !issue.pull_request).map(mapIssue);
+    return issues
+      .filter((issue: RepositoryIssue) => !issue.pull_request)
+      .map(mapIssue);
   }
 
-  async listPullRequests(input: ListPullRequestsInput): Promise<readonly GitHubPullRequest[]> {
+  async listPullRequests(
+    input: ListPullRequestsInput,
+  ): Promise<readonly GitHubPullRequest[]> {
     const { owner, repo } = parseRepositoryName(input.repository);
-    const pullRequests = await this.octokit.paginate(this.octokit.rest.pulls.list, {
-      owner,
-      repo,
-      state: "all",
-      per_page: 100,
-    });
+    const pullRequests = await this.octokit.paginate(
+      this.octokit.rest.pulls.list,
+      {
+        owner,
+        repo,
+        state: "all",
+        per_page: 100,
+      },
+    );
     return pullRequests
-      .filter((pullRequest: RepositoryPullRequest) => isUpdatedSince(pullRequest.updated_at, input.updatedSince))
+      .filter((pullRequest: RepositoryPullRequest) =>
+        isUpdatedSince(pullRequest.updated_at, input.updatedSince),
+      )
       .map(mapPullRequest);
   }
 
@@ -120,11 +158,16 @@ class OctokitGitHubClient implements GitHubClient {
     if (input.since) request.since = input.since.toISOString();
     if (input.until) request.until = input.until.toISOString();
     if (input.author) request.author = input.author;
-    const commits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, request);
+    const commits = await this.octokit.paginate(
+      this.octokit.rest.repos.listCommits,
+      request,
+    );
     return commits.map(mapCommit);
   }
 
-  async getInstallation(input: GetInstallationInput): Promise<GitHubInstallation> {
+  async getInstallation(
+    input: GetInstallationInput,
+  ): Promise<GitHubInstallation> {
     const response = await this.octokit.rest.apps.getInstallation({
       installation_id: Number(input.installationId),
     });
@@ -132,13 +175,19 @@ class OctokitGitHubClient implements GitHubClient {
   }
 }
 
-function createOctokit(config: GitHubAppConfig, installationId?: number): OctokitClient {
+function createOctokit(
+  config: GitHubAppConfig,
+  installationId?: number,
+): OctokitClient {
   const auth: GitHubAppAuthOptions = {
     appId: config.appId,
     privateKey: normalizePrivateKey(config.privateKey),
   };
   if (installationId !== undefined) {
-    auth.installationId = parsePositiveInteger(installationId, "GitHub installationId");
+    auth.installationId = parsePositiveInteger(
+      installationId,
+      "GitHub installationId",
+    );
   }
 
   const options: OctokitOptions = {
@@ -169,7 +218,8 @@ function mapRepository(repository: InstallationRepository): GitHubRepository {
     fullName: repository.full_name,
   };
   if (repository.html_url) result.url = repository.html_url;
-  if (repository.default_branch) result.defaultBranch = repository.default_branch;
+  if (repository.default_branch)
+    result.defaultBranch = repository.default_branch;
   if (repository.created_at) result.createdAt = new Date(repository.created_at);
   if (repository.updated_at) result.updatedAt = new Date(repository.updated_at);
   return result;
@@ -181,7 +231,9 @@ function mapIssue(issue: RepositoryIssue): GitHubIssue {
     number: issue.number,
     title: issue.title,
     state: issue.state === "closed" ? "closed" : "open",
-    labels: issue.labels.map(labelName).filter((label): label is string => Boolean(label)),
+    labels: issue.labels
+      .map(labelName)
+      .filter((label): label is string => Boolean(label)),
     assignees: issue.assignees?.map((assignee) => assignee.login) ?? [],
     createdAt: new Date(issue.created_at),
     updatedAt: new Date(issue.updated_at),
@@ -197,8 +249,16 @@ function mapPullRequest(pullRequest: RepositoryPullRequest): GitHubPullRequest {
     id: String(pullRequest.id),
     number: pullRequest.number,
     title: pullRequest.title,
-    state: pullRequest.draft ? "draft" : mergedAt ? "merged" : pullRequest.state === "closed" ? "closed" : "open",
-    labels: pullRequest.labels.map(labelName).filter((label): label is string => Boolean(label)),
+    state: pullRequest.draft
+      ? "draft"
+      : mergedAt
+        ? "merged"
+        : pullRequest.state === "closed"
+          ? "closed"
+          : "open",
+    labels: pullRequest.labels
+      .map(labelName)
+      .filter((label): label is string => Boolean(label)),
     createdAt: new Date(pullRequest.created_at),
     updatedAt: new Date(pullRequest.updated_at),
   };
@@ -240,25 +300,39 @@ function mapInstallation(installation: Installation): GitHubInstallation {
     accountId: account ? String(account.id) : String(installation.id),
     accountName: accountName(account) ?? String(installation.id),
   };
+  const type = accountType(account);
+  if (type) result.accountType = type;
+  const avatarUrl = accountAvatarUrl(account);
+  if (avatarUrl) result.accountAvatarUrl = avatarUrl;
   const url = accountUrl(account);
   if (url) result.accountUrl = url;
   return result;
 }
 
-function parseRepositoryName(repository: string): { owner: string; repo: string } {
+function parseRepositoryName(repository: string): {
+  owner: string;
+  repo: string;
+} {
   const [owner, repo] = repository.split("/");
   if (!owner || !repo) {
-    throw new Error(`GitHub repository must be in owner/repo format: ${repository}`);
+    throw new Error(
+      `GitHub repository must be in owner/repo format: ${repository}`,
+    );
   }
   return { owner, repo };
 }
 
-function isUpdatedSince(updatedAt: string | null | undefined, updatedSince: Date | undefined): boolean {
+function isUpdatedSince(
+  updatedAt: string | null | undefined,
+  updatedSince: Date | undefined,
+): boolean {
   if (!updatedSince || !updatedAt) return true;
   return new Date(updatedAt).getTime() >= updatedSince.getTime();
 }
 
-function labelName(label: RepositoryIssue["labels"][number]): string | undefined {
+function labelName(
+  label: RepositoryIssue["labels"][number],
+): string | undefined {
   return typeof label === "string" ? label : label.name;
 }
 
@@ -271,6 +345,18 @@ function accountName(account: Installation["account"]): string | undefined {
   if ("login" in account && account.login) return account.login;
   if ("name" in account && account.name) return account.name;
   return undefined;
+}
+
+function accountType(account: Installation["account"]): string | undefined {
+  if (!account) return undefined;
+  return "type" in account ? account.type : undefined;
+}
+
+function accountAvatarUrl(
+  account: Installation["account"],
+): string | undefined {
+  if (!account) return undefined;
+  return "avatar_url" in account ? account.avatar_url : undefined;
 }
 
 function accountUrl(account: Installation["account"]): string | undefined {
