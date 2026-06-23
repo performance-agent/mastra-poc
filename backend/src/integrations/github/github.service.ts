@@ -12,6 +12,14 @@ import {
   createOctokitGitHubClientFactory,
   discoverGitHubRepositories,
 } from '@pa/plugin-github';
+import {
+  software,
+  type SoftwareCommit,
+  type SoftwareIssue,
+  type SoftwarePullRequest,
+} from '@pa/packs-software';
+import type { DataRecord } from '@pa/core';
+import { PluginDataQueryService } from '../../plugin-runtime/plugin-data-query.service';
 import { GithubLegacyRepositoryResourceAdapter } from './github-legacy-repository-resource.adapter';
 import {
   GithubCommitActivity,
@@ -41,6 +49,8 @@ export class GithubService {
     private readonly repositoryResourceAdapter?: GithubLegacyRepositoryResourceAdapter,
     @Optional()
     private readonly configService?: ConfigService,
+    @Optional()
+    private readonly pluginDataQueryService?: PluginDataQueryService,
   ) {}
 
   private createInstallationClient(installationId: string) {
@@ -143,76 +153,97 @@ export class GithubService {
     const since = new Date();
     since.setDate(since.getDate() - 14);
 
-    const [
-      openPullRequests,
-      recentlyClosedPullRequests,
-      openIssues,
-      recentlyClosedIssues,
-      recentCommits,
-    ] = await Promise.all([
-      github.paginate(github.rest.pulls.list, {
-        owner,
-        repo,
-        state: 'open',
-        sort: 'updated',
-        direction: 'desc',
-        per_page: 50,
-      }),
+    const canonicalActivity = this.pluginDataQueryService
+      ? await this.getCanonicalRepositoryActivity(resource.id, since)
+      : null;
 
-      github.paginate(github.rest.pulls.list, {
-        owner,
-        repo,
-        state: 'closed',
-        sort: 'updated',
-        direction: 'desc',
-        per_page: 50,
-      }),
+    let mappedOpenPullRequests: GithubPullRequestActivity[];
+    let mappedRecentlyClosedPullRequests: GithubPullRequestActivity[];
+    let mappedRecentlyMergedPullRequests: GithubPullRequestActivity[];
+    let mappedOpenIssues: GithubIssueActivity[];
+    let mappedRecentlyClosedIssues: GithubIssueActivity[];
+    let mappedRecentCommits: GithubCommitActivity[];
 
-      github.paginate(github.rest.issues.listForRepo, {
-        owner,
-        repo,
-        state: 'open',
-        sort: 'updated',
-        direction: 'desc',
-        per_page: 50,
-      }),
+    if (canonicalActivity) {
+      mappedOpenPullRequests = canonicalActivity.openPullRequests;
+      mappedRecentlyClosedPullRequests = canonicalActivity.recentlyClosedPullRequests;
+      mappedRecentlyMergedPullRequests =
+        mappedRecentlyClosedPullRequests.filter((pr) => pr.state === 'MERGED');
+      mappedOpenIssues = canonicalActivity.openIssues;
+      mappedRecentlyClosedIssues = canonicalActivity.recentlyClosedIssues;
+      mappedRecentCommits = canonicalActivity.recentCommits;
+    } else {
+      // TODO: Remove this fallback after canonical providers cover all activity call sites in tests.
+      const [
+        openPullRequests,
+        recentlyClosedPullRequests,
+        openIssues,
+        recentlyClosedIssues,
+        recentCommits,
+      ] = await Promise.all([
+        github.paginate(github.rest.pulls.list, {
+          owner,
+          repo,
+          state: 'open',
+          sort: 'updated',
+          direction: 'desc',
+          per_page: 50,
+        }),
 
-      github.paginate(github.rest.issues.listForRepo, {
-        owner,
-        repo,
-        state: 'closed',
-        sort: 'updated',
-        direction: 'desc',
-        since: since.toISOString(),
-        per_page: 50,
-      }),
+        github.paginate(github.rest.pulls.list, {
+          owner,
+          repo,
+          state: 'closed',
+          sort: 'updated',
+          direction: 'desc',
+          per_page: 50,
+        }),
 
-      github.paginate(github.rest.repos.listCommits, {
-        owner,
-        repo,
-        since: since.toISOString(),
-        per_page: 100,
-      }),
-    ]);
+        github.paginate(github.rest.issues.listForRepo, {
+          owner,
+          repo,
+          state: 'open',
+          sort: 'updated',
+          direction: 'desc',
+          per_page: 50,
+        }),
 
-    const mappedOpenPullRequests = openPullRequests.map((pr) =>
-      this.mapPullRequest(pr),
-    );
+        github.paginate(github.rest.issues.listForRepo, {
+          owner,
+          repo,
+          state: 'closed',
+          sort: 'updated',
+          direction: 'desc',
+          since: since.toISOString(),
+          per_page: 50,
+        }),
 
-    const mappedRecentlyClosedPullRequests = recentlyClosedPullRequests.map(
-      (pr) => this.mapPullRequest(pr),
-    );
+        github.paginate(github.rest.repos.listCommits, {
+          owner,
+          repo,
+          since: since.toISOString(),
+          per_page: 100,
+        }),
+      ]);
 
-    const mappedRecentlyMergedPullRequests =
-      mappedRecentlyClosedPullRequests.filter((pr) => pr.state === 'MERGED');
-
-    const mappedOpenIssues = openIssues
-      .filter((issue) => !issue.pull_request)
-      .map((issue) => this.mapIssue(issue));
-
-    const mappedRecentlyClosedIssues = recentlyClosedIssues
-      .filter((issue) => !issue.pull_request)
-      .map((issue) => this.mapIssue(issue));
+      mappedOpenPullRequests = openPullRequests.map((pr) =>
+        this.mapPullRequest(pr),
+      );
+      mappedRecentlyClosedPullRequests = recentlyClosedPullRequests.map((pr) =>
+        this.mapPullRequest(pr),
+      );
+      mappedRecentlyMergedPullRequests =
+        mappedRecentlyClosedPullRequests.filter((pr) => pr.state === 'MERGED');
+      mappedOpenIssues = openIssues
+        .filter((issue) => !issue.pull_request)
+        .map((issue) => this.mapIssue(issue));
+      mappedRecentlyClosedIssues = recentlyClosedIssues
+        .filter((issue) => !issue.pull_request)
+        .map((issue) => this.mapIssue(issue));
+      mappedRecentCommits = recentCommits.map((commit) =>
+        this.mapCommit(commit),
+      );
+    }
 
     return {
       resourceId: resource.id,
@@ -232,7 +263,53 @@ export class GithubService {
         open: mappedOpenIssues,
         recentlyClosed: mappedRecentlyClosedIssues,
       },
-      commits: recentCommits.map((commit) => this.mapCommit(commit)),
+      commits: mappedRecentCommits,
+    };
+  }
+
+  private async getCanonicalRepositoryActivity(resourceId: string, since: Date) {
+    if (!this.pluginDataQueryService) {
+      return null;
+    }
+
+    const [
+      openPullRequests,
+      recentlyClosedPullRequests,
+      openIssues,
+      recentlyClosedIssues,
+      recentCommits,
+    ] = await Promise.all([
+      this.pluginDataQueryService.queryGitHubResource(resourceId, software.pullRequest.v1, {
+        where: { status: ['open'] },
+      }),
+      this.pluginDataQueryService.queryGitHubResource(resourceId, software.pullRequest.v1, {
+        where: { status: ['closed', 'merged'] },
+      }),
+      this.pluginDataQueryService.queryGitHubResource(resourceId, software.issue.v1, {
+        where: { status: ['open'] },
+      }),
+      this.pluginDataQueryService.queryGitHubResource(resourceId, software.issue.v1, {
+        where: { status: ['closed'], updatedSince: since },
+      }),
+      this.pluginDataQueryService.queryGitHubResource(resourceId, software.commit.v1, {
+        where: { since },
+      }),
+    ]);
+
+    return {
+      openPullRequests: openPullRequests.map((record) =>
+        this.mapCanonicalPullRequest(record),
+      ),
+      recentlyClosedPullRequests: recentlyClosedPullRequests.map((record) =>
+        this.mapCanonicalPullRequest(record),
+      ),
+      openIssues: openIssues.map((record) => this.mapCanonicalIssue(record)),
+      recentlyClosedIssues: recentlyClosedIssues.map((record) =>
+        this.mapCanonicalIssue(record),
+      ),
+      recentCommits: recentCommits.map((record) =>
+        this.mapCanonicalCommit(record),
+      ),
     };
   }
 
@@ -699,6 +776,35 @@ export class GithubService {
     };
   }
 
+  private mapCanonicalPullRequest(
+    record: DataRecord<SoftwarePullRequest>,
+  ): GithubPullRequestActivity {
+    const pr = record.data;
+    return {
+      number: pr.number,
+      title: pr.title,
+      author: pr.author ?? null,
+      state:
+        pr.status === 'merged'
+          ? 'MERGED'
+          : pr.status === 'open' || pr.status === 'draft'
+            ? 'OPEN'
+            : 'CLOSED',
+      createdAt: pr.createdAt.toISOString(),
+      updatedAt: pr.updatedAt.toISOString(),
+      closedAt: pr.closedAt?.toISOString() ?? null,
+      mergedAt: pr.mergedAt?.toISOString() ?? null,
+      draft: pr.status === 'draft',
+      // TODO: Extend canonical pull request contracts with review/comment/file stats.
+      comments: 0,
+      reviewComments: 0,
+      additions: null,
+      deletions: null,
+      changedFiles: null,
+      url: pr.source.url ?? '',
+    };
+  }
+
   private mapIssue(issue: any): GithubIssueActivity {
     return {
       number: issue.number,
@@ -716,6 +822,25 @@ export class GithubService {
     };
   }
 
+  private mapCanonicalIssue(
+    record: DataRecord<SoftwareIssue>,
+  ): GithubIssueActivity {
+    const issue = record.data;
+    return {
+      number: Number(issue.source.externalId),
+      title: issue.title,
+      author: issue.assignees[0] ?? null,
+      state: issue.status === 'closed' ? 'CLOSED' : 'OPEN',
+      createdAt: issue.createdAt.toISOString(),
+      updatedAt: issue.updatedAt.toISOString(),
+      closedAt: issue.status === 'closed' ? issue.updatedAt.toISOString() : null,
+      labels: [...issue.labels],
+      // TODO: Extend canonical issue contracts with comment counts and explicit author.
+      comments: 0,
+      url: issue.source.url ?? '',
+    };
+  }
+
   private mapCommit(commit: any): GithubCommitActivity {
     return {
       sha: commit.sha,
@@ -725,6 +850,24 @@ export class GithubService {
       githubLogin: commit.author?.login ?? null,
       date: commit.commit.author?.date ?? null,
       url: commit.html_url,
+    };
+  }
+
+  private mapCanonicalCommit(
+    record: DataRecord<SoftwareCommit>,
+  ): GithubCommitActivity {
+    const commit = record.data;
+    return {
+      sha: commit.sha,
+      message: commit.message,
+      authorName: commit.author?.name ?? null,
+      authorEmail: commit.author?.email ?? null,
+      githubLogin: commit.author?.login ?? null,
+      date:
+        commit.authoredAt?.toISOString() ??
+        commit.committedAt?.toISOString() ??
+        null,
+      url: commit.source.url ?? '',
     };
   }
 

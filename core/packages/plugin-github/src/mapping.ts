@@ -174,7 +174,7 @@ export function mapGitHubIssueRecord(input: {
       connectionId: input.connectionId,
       resourceType: input.repositoryResource.type,
       resourceId: input.repositoryResource.id,
-      externalId: input.issue.id,
+      externalId: String(input.issue.number),
     },
     title: input.issue.title,
     status: input.issue.state === "open" ? "open" : "closed",
@@ -194,7 +194,7 @@ export function mapGitHubIssueRecord(input: {
       connectionId: input.connectionId,
       resourceType: input.repositoryResource.type,
       resourceId: input.repositoryResource.id,
-      externalId: input.issue.id,
+      externalId: String(input.issue.number),
       fetchedAt: input.fetchedAt,
     },
   });
