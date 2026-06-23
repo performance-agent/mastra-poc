@@ -3,32 +3,42 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy core first because backend depends on local @pa/* packages
+COPY core ./core
 
+# Build core packages
+WORKDIR /app/core
+RUN npm ci
+RUN npm run build
+
+# Install and build backend
+WORKDIR /app/backend
+COPY backend/package*.json ./
 RUN npm ci
 
-COPY . .
+COPY backend ./
 
 RUN npx prisma generate
-
 RUN npm run build
+
+# Remove dev dependencies for production image
+RUN npm prune --omit=dev
 
 
 # ---------- Production stage ----------
 FROM node:22-alpine AS production
 
-WORKDIR /app
+WORKDIR /app/backend
 
 ENV NODE_ENV=production
 
-COPY package*.json ./
-
-RUN npm ci --omit=dev
-
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/generated ./generated
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/core /app/core
+COPY --from=builder /app/backend/package*.json ./
+COPY --from=builder /app/backend/node_modules ./node_modules
+COPY --from=builder /app/backend/dist ./dist
+COPY --from=builder /app/backend/prisma ./prisma
+COPY --from=builder /app/backend/generated ./generated
+COPY --from=builder /app/backend/prisma.config.ts ./prisma.config.ts
 
 EXPOSE 3000
 
