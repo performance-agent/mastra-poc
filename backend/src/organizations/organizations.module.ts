@@ -7,6 +7,7 @@ import { ResourcesModule } from '../resources/resources.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { GithubModule } from '../integrations/github/github.module';
 import { AccessControlModule } from '../access-control/access-control.module';
+import { PluginRuntimeModule } from '../plugin-runtime/plugin-runtime.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AccessControlModule } from '../access-control/access-control.module';
     ResourcesModule,
     IntegrationsModule,
     AccessControlModule,
+    PluginRuntimeModule,
   ],
   controllers: [OrganizationsController],
   providers: [OrganizationsService],

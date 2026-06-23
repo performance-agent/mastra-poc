@@ -75,6 +75,7 @@ export interface Integration {
   organizationId?: string;
   description?: string;
   setupUrl?: string;
+  setupStartUrl?: string;
   status?: "connected" | "available" | "error" | "PENDING" | "ACTIVE" | "DISABLED" | "REVOKED";
   createdAt?: string;
   updatedAt?: string;

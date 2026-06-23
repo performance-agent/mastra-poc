@@ -17,6 +17,7 @@ export class IntegrationsService {
       {
         provider: IntegrationProvider.GITHUB,
         setupUrl: process.env.GITHUB_SETUP_URL,
+        setupStartUrl: '/organizations/:organizationId/integrations/github/setup/start',
         displayName: this.getIntegrationDisplayName(IntegrationProvider.GITHUB),
       },
     ];

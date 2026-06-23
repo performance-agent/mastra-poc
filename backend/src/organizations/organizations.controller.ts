@@ -19,6 +19,7 @@ import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
 import { GithubService } from '../integrations/github/github.service';
 import { ResourcesService } from '../resources/resources.service';
 import { IntegrationsService } from '../integrations/integrations.service';
+import { GitHubPluginSetupService } from '../plugin-runtime/github-plugin-setup.service';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { RequireMembership } from '../access-control/require-membership.decorator';
@@ -32,6 +33,7 @@ export class OrganizationsController {
     private readonly githubService: GithubService,
     private readonly resourcesService: ResourcesService,
     private readonly integrationsService: IntegrationsService,
+    private readonly githubPluginSetupService: GitHubPluginSetupService,
   ) {}
 
   @Post()
@@ -154,11 +156,30 @@ export class OrganizationsController {
     param: 'id',
     roles: ['OWNER', 'ADMIN'],
   })
+  @Post(':id/integrations/github/setup/start')
+  startGithubSetup(
+    @CurrentUser() user: User,
+    @Param('id') organizationId: string,
+  ) {
+    return this.githubPluginSetupService.startSetup(organizationId, user.id);
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
   @Post(':id/integrations/github/setup')
   setup(
     @Param('id') organizationId: string,
     @Body() setupGithubDto: SetupGithubDto,
   ) {
+    if (setupGithubDto.state) {
+      return this.githubPluginSetupService.completeSetup(
+        organizationId,
+        setupGithubDto,
+      );
+    }
     return this.githubService.setup(organizationId, setupGithubDto);
   }
 

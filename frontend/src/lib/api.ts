@@ -115,6 +115,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  startGithubSetup: (organizationId: string) =>
+    request<{ redirectUrl: string; setupSessionId: string }>(
+      `/organizations/${organizationId}/integrations/github/setup/start`,
+      {
+        method: "POST",
+      },
+    ),
 
   // Workspaces → groups
   listWorkspaceGroups: (id: string) => request<Group[]>(`/workspaces/${id}/groups`),

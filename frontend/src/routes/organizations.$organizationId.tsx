@@ -606,6 +606,7 @@ type IntegrationView = {
   type: string;
   description: string;
   setupUrl?: string;
+  setupStartUrl?: string;
   status: NonNullable<Integration["status"]> | "available";
   isGithub: boolean;
   isConnected: boolean;
@@ -652,6 +653,7 @@ function normalizeIntegration(
         ? "Connect a GitHub App installation to import repositories as resources."
         : "Connect this integration to bring external resources into the workspace."),
     setupUrl: integration.setupUrl ?? options?.setupUrl,
+    setupStartUrl: integration.setupStartUrl,
     status,
     isGithub: type.includes("GITHUB") || displayName.toLowerCase().includes("github"),
     isConnected: options?.isConnected ?? false,
@@ -773,7 +775,20 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
   const isLoading = availableQ.isLoading || connectedQ.isLoading;
   const error = availableQ.error ?? connectedQ.error;
 
-  const handleGithubSetup = (setupUrl?: string) => {
+  const handleGithubSetup = async (integration: Integration) => {
+    try {
+      const start = await api.startGithubSetup(organizationId);
+      savePendingGithubSetup(organizationId);
+      window.location.assign(start.redirectUrl);
+      return;
+    } catch (error) {
+      if (!integration.setupUrl) {
+        toast.error(errorMessage(error));
+        return;
+      }
+    }
+
+    const setupUrl = integration.setupUrl;
     if (setupUrl) {
       savePendingGithubSetup(organizationId);
       window.location.assign(setupUrl);
@@ -786,7 +801,7 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
   };
 
   const handleAddIntegration = (integration: Integration) => {
-    handleGithubSetup(integration.setupUrl);
+    void handleGithubSetup(integration);
   };
 
   const handleSyncIntegration = async (integration: IntegrationView) => {

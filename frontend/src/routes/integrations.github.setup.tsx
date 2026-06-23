@@ -24,6 +24,7 @@ function getGithubSetupParams() {
   return {
     installationId: params.get("installation_id") || params.get("installationId") || "",
     setupAction: params.get("setup_action") || params.get("setupAction") || "",
+    state: params.get("state") || "",
   };
 }
 
@@ -36,7 +37,7 @@ function GithubSetupPage() {
 
     async function completeSetup() {
       const pending = readPendingGithubSetup();
-      const { installationId, setupAction } = getGithubSetupParams();
+      const { installationId, setupAction, state } = getGithubSetupParams();
 
       if (!pending?.organizationId) {
         setStatus("error");
@@ -54,6 +55,7 @@ function GithubSetupPage() {
         await api.setupGithub(pending.organizationId, {
           installationId,
           setupAction: setupAction || "install",
+          ...(state ? { state } : {}),
         });
         clearPendingGithubSetup();
         if (cancelled) return;
