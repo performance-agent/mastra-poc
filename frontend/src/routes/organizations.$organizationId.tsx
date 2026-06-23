@@ -943,7 +943,7 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
                   status: connection.status === "connected" ? "ACTIVE" : "DISABLED",
                   isGithub: plugin.provider === "github",
                   isConnected: true,
-                  installationId: connection.providerInstallationId,
+                  installationId: connection.providerInstallationId ?? undefined,
                 })
               }
               onSyncConnection={handleSyncConnection}

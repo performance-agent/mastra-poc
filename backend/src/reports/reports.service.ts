@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
-import { PluginDataQueryService } from '../plugin-runtime/plugin-data-query.service';
+import { SoftwareReportDataService } from './software-report-data.service';
 import { PluginRegistryService } from '../plugin-runtime/plugin-registry.service';
 
 @Injectable()
@@ -16,7 +16,7 @@ export class ReportsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly pluginRegistry: PluginRegistryService,
-    private readonly pluginDataQueryService: PluginDataQueryService,
+    private readonly softwareReportDataService: SoftwareReportDataService,
   ) {}
 
   /**
@@ -34,16 +34,19 @@ export class ReportsService {
     const plugin = await this.pluginRegistry.requirePlugin('software-reports');
     const report = plugin.reports?.[reportKey];
     if (!report) {
-      throw new BadRequestException(`Software report is not available: ${reportKey}`);
+      throw new BadRequestException(
+        `Software report is not available: ${reportKey}`,
+      );
     }
 
     const reportData = await report.run(
-      this.pluginDataQueryService.createContext({
+      this.softwareReportDataService.createContext({
         organizationId: group.workspace.organizationId,
         pluginId: plugin.manifest.id,
         scope: { type: 'group', id: groupId },
       }),
     );
+
     const jsonReportData = JSON.parse(JSON.stringify(reportData));
 
     return this.prismaService.performanceReport.create({

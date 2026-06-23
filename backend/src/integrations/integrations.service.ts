@@ -56,8 +56,8 @@ export class IntegrationsService {
   async findCatalogByOrganization(organizationId: string) {
     await this.connectionBindings.migrateLegacyOrganization(organizationId);
 
-    const connections =
-      await this.prismaService.integrationConnection.findMany({
+    const connections = await this.prismaService.integrationConnection.findMany(
+      {
         where: { organizationId },
         include: {
           _count: {
@@ -65,7 +65,8 @@ export class IntegrationsService {
           },
         },
         orderBy: { createdAt: 'asc' },
-      });
+      },
+    );
 
     return this.pluginRegistry.getRegisteredPlugins().map((plugin) => {
       const pluginConnections = connections.filter(
@@ -120,7 +121,9 @@ export class IntegrationsService {
     const connectionName = this.requirePrimaryConnectionName(plugin);
     const setup = plugin.connections?.[connectionName]?.setup;
     if (!setup?.start) {
-      throw new BadRequestException(`${plugin.manifest.name} setup is not available`);
+      throw new BadRequestException(
+        `${plugin.manifest.name} setup is not available`,
+      );
     }
 
     const setupSession = await this.createSetupSession(
@@ -194,7 +197,8 @@ export class IntegrationsService {
         where: { id: integrationId },
       });
 
-    const legacyIntegrationId = connection?.legacyIntegrationId ?? integrationId;
+    const legacyIntegrationId =
+      connection?.legacyIntegrationId ?? integrationId;
     const integration = await this.prismaService.integration.findUnique({
       where: { id: legacyIntegrationId },
       include: { github: true },
@@ -261,7 +265,8 @@ export class IntegrationsService {
     setupSessionId: string,
   ): Promise<ConnectionSetupSession> {
     const setupSession = await this.setupSessions.get(setupSessionId);
-    if (!setupSession) throw new BadRequestException('Setup session was not found');
+    if (!setupSession)
+      throw new BadRequestException('Setup session was not found');
     if (
       setupSession.organizationId !== organizationId ||
       setupSession.pluginId !== pluginId ||
@@ -304,7 +309,9 @@ export class IntegrationsService {
   private capabilitiesForPlugin(plugin: PluginDefinition) {
     return [
       ...new Set(
-        plugin.permissions.map((permission) => this.capabilityLabel(permission)),
+        plugin.permissions.map((permission) =>
+          this.capabilityLabel(permission),
+        ),
       ),
     ];
   }
@@ -366,5 +373,4 @@ export class IntegrationsService {
   private catalogConnectionStatus(status: string): IntegrationCatalogStatus {
     return status === 'active' ? 'connected' : 'needs_attention';
   }
-
 }

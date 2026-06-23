@@ -1,8 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type {
-  ConnectionSetupSession,
-  PluginDefinition,
-} from '@pa/core';
+import type { ConnectionSetupSession, PluginDefinition } from '@pa/core';
 import { GithubService } from '../integrations/github/github.service';
 import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
 import { PluginRegistryService } from './plugin-registry.service';

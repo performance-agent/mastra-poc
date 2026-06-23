@@ -27,7 +27,9 @@ type GithubRepositoryResourceForReport = {
 
 @Injectable()
 export class ReportDataService {
-  constructor(private readonly pluginDataQueryService: PluginDataQueryService) {}
+  constructor(
+    private readonly pluginDataQueryService: PluginDataQueryService,
+  ) {}
 
   async getGithubActivityForResources(
     resources: readonly GithubRepositoryResourceForReport[],
@@ -50,21 +52,41 @@ export class ReportDataService {
       recentlyClosedIssues,
       recentCommits,
     ] = await Promise.all([
-      this.pluginDataQueryService.queryGitHubResource(resource.id, software.pullRequest.v1, {
-        where: { status: ['open'] },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resource.id, software.pullRequest.v1, {
-        where: { status: ['closed', 'merged'] },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resource.id, software.issue.v1, {
-        where: { status: ['open'] },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resource.id, software.issue.v1, {
-        where: { status: ['closed'], updatedSince: since },
-      }),
-      this.pluginDataQueryService.queryGitHubResource(resource.id, software.commit.v1, {
-        where: { since },
-      }),
+      this.pluginDataQueryService.queryGitHubResource(
+        resource.id,
+        software.pullRequest.v1,
+        {
+          where: { status: ['open'] },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resource.id,
+        software.pullRequest.v1,
+        {
+          where: { status: ['closed', 'merged'] },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resource.id,
+        software.issue.v1,
+        {
+          where: { status: ['open'] },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resource.id,
+        software.issue.v1,
+        {
+          where: { status: ['closed'], updatedSince: since },
+        },
+      ),
+      this.pluginDataQueryService.queryGitHubResource(
+        resource.id,
+        software.commit.v1,
+        {
+          where: { since },
+        },
+      ),
     ]);
 
     const recentlyClosed = recentlyClosedPullRequests.map((record) =>
@@ -133,7 +155,8 @@ export class ReportDataService {
       state: issue.status === 'closed' ? 'CLOSED' : 'OPEN',
       createdAt: issue.createdAt.toISOString(),
       updatedAt: issue.updatedAt.toISOString(),
-      closedAt: issue.status === 'closed' ? issue.updatedAt.toISOString() : null,
+      closedAt:
+        issue.status === 'closed' ? issue.updatedAt.toISOString() : null,
       labels: [...issue.labels],
       // TODO: Extend canonical issue contracts with comment counts and explicit author.
       comments: 0,

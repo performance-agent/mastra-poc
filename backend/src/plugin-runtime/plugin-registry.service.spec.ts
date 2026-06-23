@@ -45,7 +45,10 @@ describe('PluginRegistryService', () => {
   const config = new Map<string, string>([
     ['GITHUB_APP_ID', '123'],
     ['GITHUB_PRIVATE_KEY', 'private-key'],
-    ['GITHUB_SETUP_URL', 'https://github.com/apps/performance-agent/installations/new'],
+    [
+      'GITHUB_SETUP_URL',
+      'https://github.com/apps/performance-agent/installations/new',
+    ],
     ['GITHUB_APP_SLUG', 'performance-agent'],
     ['GITHUB_WEBHOOK_SECRET', 'webhook-secret'],
   ]);

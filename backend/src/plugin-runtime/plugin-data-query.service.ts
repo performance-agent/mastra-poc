@@ -63,7 +63,9 @@ export class PluginDataQueryService {
           ),
         );
       if (!hasProvider) {
-        throw new Error(`No provider is installed for contract: ${contract.key}`);
+        throw new Error(
+          `No provider is installed for contract: ${contract.key}`,
+        );
       }
     }
 

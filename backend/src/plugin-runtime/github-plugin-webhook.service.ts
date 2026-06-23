@@ -62,12 +62,14 @@ export class GitHubPluginWebhookService {
     }
 
     const providerInstallationId = String(providerEvent.installation.id);
-    const connection = await this.prismaService.integrationConnection.findFirst({
-      where: {
-        provider: 'github',
-        providerInstallationId,
+    const connection = await this.prismaService.integrationConnection.findFirst(
+      {
+        where: {
+          provider: 'github',
+          providerInstallationId,
+        },
       },
-    });
+    );
 
     const githubIntegration = connection
       ? undefined
@@ -85,8 +87,10 @@ export class GitHubPluginWebhookService {
     }
 
     const organizationId =
-      connection?.organizationId ?? githubIntegration!.integration.organizationId;
-    const pluginInstallationId = connection?.id ?? githubIntegration!.integrationId;
+      connection?.organizationId ??
+      githubIntegration!.integration.organizationId;
+    const pluginInstallationId =
+      connection?.id ?? githubIntegration!.integrationId;
 
     if (!connection && githubIntegration) {
       await this.connectionBindings.migrateLegacyOrganization(organizationId);
@@ -208,5 +212,4 @@ export class GitHubPluginWebhookService {
             : undefined,
       }));
   }
-
 }

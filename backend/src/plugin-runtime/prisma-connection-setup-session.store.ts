@@ -18,9 +18,7 @@ type PersistedConnectionSetupSession = {
 };
 
 @Injectable()
-export class PrismaConnectionSetupSessionStore
-  implements ConnectionSetupSessionStore
-{
+export class PrismaConnectionSetupSessionStore implements ConnectionSetupSessionStore {
   constructor(private readonly prismaService: PrismaService) {}
 
   async create(
