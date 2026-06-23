@@ -146,6 +146,7 @@ export type GitHubRepositoryResource = {
     providerInstallationId: string;
     fullName: string;
     connectionId?: string;
+    defaultBranch?: string;
   };
 };
 

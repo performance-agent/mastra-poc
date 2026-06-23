@@ -2,11 +2,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SetupGithubDto } from './dto/setup-github.dto';
 import { Octokit } from 'octokit';
 import { createAppAuth } from '@octokit/auth-app';
+import {
+  createOctokitGitHubClientFactory,
+  discoverGitHubRepositories,
+} from '@pa/plugin-github';
+import { GithubLegacyRepositoryResourceAdapter } from './github-legacy-repository-resource.adapter';
 import {
   GithubCommitActivity,
   GithubHistoryBucket,
@@ -29,7 +35,13 @@ const HISTORY_LIMITS = {
 
 @Injectable()
 export class GithubService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(
+    private readonly prismaService: PrismaService,
+    @Optional()
+    private readonly repositoryResourceAdapter?: GithubLegacyRepositoryResourceAdapter,
+    @Optional()
+    private readonly configService?: ConfigService,
+  ) {}
 
   private createInstallationClient(installationId: string) {
     return new Octokit({
@@ -86,98 +98,40 @@ export class GithubService {
       throw new BadRequestException(`Integration not found: ${integrationId}`);
     }
 
-    const github = this.createInstallationClient(
-      integration.github.installationId,
+    const repositories = await discoverGitHubRepositories({
+      clientFactory: this.createPluginGitHubClientFactory(),
+      providerInstallationId: integration.github.installationId,
+      connectionId: integration.id,
+    });
+
+    return this.getRepositoryResourceAdapter().persistDiscoveredRepositories(
+      integrationId,
+      repositories,
     );
+  }
 
-    const repos = await github.paginate(
-      github.rest.apps.listReposAccessibleToInstallation,
-      {
-        per_page: 100,
-      },
+  private createPluginGitHubClientFactory() {
+    return createOctokitGitHubClientFactory({
+      appId: this.getConfig('GITHUB_APP_ID'),
+      privateKey: this.getConfig('GITHUB_PRIVATE_KEY'),
+      appSlug: this.getOptionalConfig('GITHUB_APP_SLUG'),
+      webhookSecret: this.getOptionalConfig('GITHUB_WEBHOOK_SECRET'),
+    });
+  }
+
+  private getRepositoryResourceAdapter() {
+    return (
+      this.repositoryResourceAdapter ??
+      new GithubLegacyRepositoryResourceAdapter(this.prismaService)
     );
+  }
 
-    const externalIds = repos.map((repo) => repo.id.toString());
+  private getConfig(key: string) {
+    return this.configService?.get<string>(key) ?? process.env[key] ?? '';
+  }
 
-    return this.prismaService.$transaction(
-      async (tx) => {
-        await tx.integrationResource.deleteMany({
-          where: {
-            integrationId,
-            type: 'REPOSITORY',
-            externalId: {
-              notIn: externalIds,
-            },
-          },
-        });
-
-        for (const repo of repos) {
-          const externalId = repo.id.toString();
-
-          await tx.integrationResource.upsert({
-            where: {
-              integrationId_externalId: {
-                integrationId,
-                externalId,
-              },
-            },
-            create: {
-              integrationId,
-              name: repo.name,
-              type: 'REPOSITORY',
-              externalId,
-              githubRepository: {
-                create: {
-                  fullName: repo.full_name,
-                  defaultBranch: repo.default_branch,
-                  htmlUrl: repo.html_url,
-                  isPrivate: repo.private,
-                },
-              },
-            },
-            update: {
-              name: repo.name,
-              githubRepository: {
-                upsert: {
-                  create: {
-                    fullName: repo.full_name,
-                    defaultBranch: repo.default_branch,
-                    htmlUrl: repo.html_url,
-                    isPrivate: repo.private,
-                  },
-                  update: {
-                    fullName: repo.full_name,
-                    defaultBranch: repo.default_branch,
-                    htmlUrl: repo.html_url,
-                    isPrivate: repo.private,
-                  },
-                },
-              },
-            },
-          });
-        }
-
-        return tx.integration.findUnique({
-          where: {
-            id: integrationId,
-          },
-          include: {
-            github: true,
-            integrationResources: {
-              include: {
-                githubRepository: true,
-              },
-              orderBy: {
-                name: 'asc',
-              },
-            },
-          },
-        });
-      },
-      {
-        timeout: 10000,
-      },
-    );
+  private getOptionalConfig(key: string) {
+    return this.configService?.get<string>(key) || process.env[key] || undefined;
   }
 
   async getRepositoryActivity(

@@ -30,6 +30,7 @@ export function mapGitHubRepositoryResource(
     },
   };
   if (connectionId) resource.metadata.connectionId = connectionId;
+  if (repository.defaultBranch) resource.metadata.defaultBranch = repository.defaultBranch;
   if (repository.url) resource.url = repository.url;
   return resource;
 }
