@@ -33,6 +33,10 @@ export class PluginRuntimeConfigService {
     };
   }
 
+  getGitHubWebhookSecret() {
+    return this.require('GITHUB_WEBHOOK_SECRET');
+  }
+
   private require(key: string) {
     const value = this.configService.get<string>(key);
     if (!value) {
