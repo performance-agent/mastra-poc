@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { GithubService } from '../integrations/github/github.service';
 import type {
   GithubCommitActivity,
   GithubIssueActivity,
@@ -7,7 +6,12 @@ import type {
   GithubRepositoryActivity,
 } from '../integrations/github/types/github.types';
 import { PluginDataQueryService } from '../plugin-runtime/plugin-data-query.service';
-import { software, type SoftwareCommit, type SoftwareIssue, type SoftwarePullRequest } from '@pa/packs-software';
+import {
+  software,
+  type SoftwareCommit,
+  type SoftwareIssue,
+  type SoftwarePullRequest,
+} from '@pa/packs-software';
 import type { DataRecord } from '@pa/core';
 
 type GithubRepositoryResourceForReport = {
@@ -23,23 +27,13 @@ type GithubRepositoryResourceForReport = {
 
 @Injectable()
 export class ReportDataService {
-  constructor(
-    private readonly pluginDataQueryService: PluginDataQueryService,
-    private readonly githubService: GithubService,
-  ) {}
+  constructor(private readonly pluginDataQueryService: PluginDataQueryService) {}
 
   async getGithubActivityForResources(
     resources: readonly GithubRepositoryResourceForReport[],
   ): Promise<GithubRepositoryActivity[]> {
     return Promise.all(
-      resources.map(async (resource) => {
-        try {
-          return await this.getCanonicalGithubActivity(resource);
-        } catch (error) {
-          // TODO: Remove this compatibility fallback after canonical report data has parity tests.
-          return this.githubService.getRepositoryActivity(resource.id);
-        }
-      }),
+      resources.map((resource) => this.getCanonicalGithubActivity(resource)),
     );
   }
 

@@ -3,7 +3,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -25,8 +24,7 @@ export class ReportsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly githubService: GithubService,
-    @Optional()
-    private readonly reportDataService?: ReportDataService,
+    private readonly reportDataService: ReportDataService,
   ) {}
 
   private readonly groupGithubActivityReportAgent = mastra.getAgent(
@@ -69,15 +67,10 @@ export class ReportsService {
     const { group, githubRepositoryResources } =
       await this.getGroupGithubRepositoryResources(groupId);
 
-    const repositoryActivities = this.reportDataService
-      ? await this.reportDataService.getGithubActivityForResources(
-          githubRepositoryResources,
-        )
-      : await Promise.all(
-          githubRepositoryResources.map((resource) =>
-            this.githubService.getRepositoryActivity(resource.id),
-          ),
-        );
+    const repositoryActivities =
+      await this.reportDataService.getGithubActivityForResources(
+        githubRepositoryResources,
+      );
 
     const reportInput = this.buildGroupGithubReportInput({
       group: {
@@ -125,6 +118,7 @@ ${JSON.stringify(reportInput)}
     const { group, githubRepositoryResources } =
       await this.getGroupGithubRepositoryResources(groupId);
 
+    // TODO: Move history-specific analytics once canonical contracts expose the required GitHub stats.
     const repositoryHistories = await Promise.all(
       githubRepositoryResources.map((resource) =>
         this.githubService.getRepositoryHistory(resource.id),
