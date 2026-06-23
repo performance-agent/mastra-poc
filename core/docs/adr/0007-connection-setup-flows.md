@@ -19,6 +19,7 @@ The main concepts are:
 - `ConnectionSetupSession`, which tracks an in-progress setup attempt.
 - `ConnectionBinding`, which records a completed connection for a plugin installation.
 - A setup start handler, which initiates redirect or form-based setup.
+- Token-based setup, where the platform creates a setup session token that a provider-side app can send back to complete the connection.
 - A setup complete handler, which validates completion input and creates the binding.
 - A provider event handler, which reconciles an existing binding after provider events.
 - Declarative setup metadata in manifests.
@@ -30,6 +31,7 @@ Setup handlers are runtime code and must not be serialized into manifests.
 - The frontend may initiate and display a setup flow, but it does not authoritatively create the connection binding.
 - Provider webhooks must not create access or bindings without a known setup session or existing binding.
 - GitHub App setup can be represented as a generic `webhook-assisted` setup flow instead of a provider-specific platform service.
+- Jira Forge setup can be represented as a generic `token` setup flow, where Forge completes the setup with a cloud/site identity.
 - The same setup model can support OAuth, manual credentials and other provider-specific flows.
 - Plugin isolation is preserved: provider plugins own their connections, and consumer plugins read canonical data contracts instead of provider connections.
 - This decision does not implement the GitHub plugin, OAuth, Nest, Prisma or real webhooks.

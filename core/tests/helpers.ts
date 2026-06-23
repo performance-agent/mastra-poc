@@ -133,7 +133,10 @@ export function storagePlugin(id = "storage-plugin"): PluginDefinition {
   });
 }
 
-export function sampleIssue(title: string): Omit<SoftwareIssue, "id" | "source"> {
+export function sampleIssue(
+  title: string,
+  patch: Partial<Omit<SoftwareIssue, "id" | "source" | "title">> = {},
+): Omit<SoftwareIssue, "id" | "source"> {
   return {
     title,
     description: title,
@@ -143,6 +146,7 @@ export function sampleIssue(title: string): Omit<SoftwareIssue, "id" | "source">
     labels: [],
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    ...patch,
   };
 }
 

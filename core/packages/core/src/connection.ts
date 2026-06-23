@@ -2,6 +2,7 @@ import type { SetupFieldDefinition } from "./setup.js";
 
 export type ConnectionSetupKind =
   | "redirect"
+  | "token"
   | "oauth2"
   | "manual"
   | "webhook-assisted";
@@ -16,6 +17,12 @@ export type ConnectionSetupStartResult =
       type: "form";
       fields: readonly SetupFieldDefinition[];
       setupSessionId: string;
+    }
+  | {
+      type: "token";
+      setupToken: string;
+      setupSessionId: string;
+      expiresAt: Date;
     };
 
 export type ConnectionSetupSessionStatus =
