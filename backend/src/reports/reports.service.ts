@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -15,6 +16,7 @@ import {
 import { groupGithubActivityReportSchema } from '../mastra/schemas/group-github-activity-report.schema';
 import { groupGithubHistoryReportSchema } from '../mastra/schemas/group-github-history-report.schema';
 import { mastra } from '../mastra';
+import { ReportDataService } from './report-data.service';
 
 @Injectable()
 export class ReportsService {
@@ -23,6 +25,8 @@ export class ReportsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly githubService: GithubService,
+    @Optional()
+    private readonly reportDataService?: ReportDataService,
   ) {}
 
   private readonly groupGithubActivityReportAgent = mastra.getAgent(
@@ -65,11 +69,15 @@ export class ReportsService {
     const { group, githubRepositoryResources } =
       await this.getGroupGithubRepositoryResources(groupId);
 
-    const repositoryActivities = await Promise.all(
-      githubRepositoryResources.map((resource) =>
-        this.githubService.getRepositoryActivity(resource.id),
-      ),
-    );
+    const repositoryActivities = this.reportDataService
+      ? await this.reportDataService.getGithubActivityForResources(
+          githubRepositoryResources,
+        )
+      : await Promise.all(
+          githubRepositoryResources.map((resource) =>
+            this.githubService.getRepositoryActivity(resource.id),
+          ),
+        );
 
     const reportInput = this.buildGroupGithubReportInput({
       group: {
