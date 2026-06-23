@@ -89,15 +89,19 @@ export type IntegrationCatalogStatus = "connected" | "available" | "needs_attent
 
 export interface IntegrationCatalogConnection {
   id: string;
+  legacyIntegrationId?: string | null;
   provider: string;
-  providerInstallationId: string;
-  accountLogin: string;
+  providerInstallationId?: string | null;
+  cloudId?: string | null;
+  accountLogin?: string | null;
   accountType?: string | null;
   accountAvatarUrl?: string | null;
   accountUrl?: string | null;
+  siteUrl?: string | null;
   status: IntegrationCatalogStatus;
   resourceCount: number;
   lastSyncAt?: string | null;
+  setupKind?: string;
 }
 
 export interface IntegrationCatalogItem {
@@ -107,6 +111,7 @@ export interface IntegrationCatalogItem {
   description: string;
   icon?: string;
   status: IntegrationCatalogStatus;
+  setupKind?: "redirect" | "token" | "oauth2" | "manual" | "webhook-assisted" | "internal" | string;
   connectionCount: number;
   capabilities: string[];
   resourceTypes: string[];

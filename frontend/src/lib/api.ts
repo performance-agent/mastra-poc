@@ -125,6 +125,23 @@ export const api = {
         method: "POST",
       },
     ),
+  startPluginSetup: (organizationId: string, pluginId: string) =>
+    request<
+      | { type: "redirect"; redirectUrl: string; setupSessionId: string }
+      | { type: "token"; setupToken: string; setupSessionId: string; expiresAt: string }
+      | { type: "form"; fields: unknown[]; setupSessionId: string }
+    >(`/organizations/${organizationId}/integrations/${pluginId}/setup/start`, {
+      method: "POST",
+    }),
+  completePluginSetup: (
+    organizationId: string,
+    pluginId: string,
+    body: Record<string, unknown>,
+  ) =>
+    request<unknown>(`/organizations/${organizationId}/integrations/${pluginId}/setup/complete`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // Workspaces → groups
   listWorkspaceGroups: (id: string) => request<Group[]>(`/workspaces/${id}/groups`),

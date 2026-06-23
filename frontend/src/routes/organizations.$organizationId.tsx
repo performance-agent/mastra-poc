@@ -771,6 +771,11 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<IntegrationView | null>(null);
+  const [tokenSetup, setTokenSetup] = useState<{
+    pluginId: string;
+    pluginName: string;
+    setupToken: string;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | IntegrationCatalogStatus>("all");
   const catalogQ = useQuery({
@@ -802,6 +807,34 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
       savePendingGithubSetup(organizationId);
       window.location.assign(start.installUrl || start.redirectUrl);
       return;
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const handleConnectPlugin = async (plugin: IntegrationCatalogItem) => {
+    if (plugin.provider === "internal" || plugin.setupKind === "internal") return;
+
+    if (plugin.pluginId === "github" || plugin.setupKind === "redirect") {
+      await handleGithubSetup();
+      return;
+    }
+
+    try {
+      const start = await api.startPluginSetup(organizationId, plugin.pluginId);
+      if (start.type === "redirect") {
+        window.location.assign(start.redirectUrl);
+        return;
+      }
+      if (start.type === "token") {
+        setTokenSetup({
+          pluginId: plugin.pluginId,
+          pluginName: plugin.name,
+          setupToken: start.setupToken,
+        });
+        return;
+      }
+      toast.info(`${plugin.name} setup is not supported in this UI yet`);
     } catch (error) {
       toast.error(errorMessage(error));
     }
@@ -845,25 +878,11 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-1">
-          <h2 className="text-xl font-semibold tracking-normal">Integrations</h2>
+          <h2 className="text-xl font-semibold tracking-normal">Plugin catalog</h2>
           <p className="text-sm text-muted-foreground">
-            Connect tools and import resources into this organization.
+            Runtime plugins, external connections, and internal capabilities for this organization.
           </p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button disabled={catalogQ.isLoading}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add integration
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => void handleGithubSetup()}>
-              <Github className="mr-2 h-3.5 w-3.5" />
-              GitHub
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -912,12 +931,12 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
               key={plugin.pluginId}
               plugin={plugin}
               syncingId={syncingId}
-              onConnect={() => void handleGithubSetup()}
+              onConnect={() => void handleConnectPlugin(plugin)}
               onManageConnection={(connection) =>
                 setEditing({
                   id: connection.id,
                   key: connection.id,
-                  name: connection.accountLogin,
+                  name: connection.accountLogin ?? connection.siteUrl ?? plugin.name,
                   displayName: plugin.name,
                   type: plugin.provider.toUpperCase(),
                   description: plugin.description,
@@ -937,7 +956,104 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
         onOpenChange={(open) => !open && setEditing(null)}
         onSubmit={handleUpdateIntegration}
       />
+      <TokenSetupDialog
+        setup={tokenSetup}
+        onOpenChange={(open) => !open && setTokenSetup(null)}
+        onSubmit={async (input) => {
+          if (!tokenSetup) return;
+          try {
+            await api.completePluginSetup(organizationId, tokenSetup.pluginId, {
+              setupToken: tokenSetup.setupToken,
+              ...input,
+            });
+            toast.success(`${tokenSetup.pluginName} connected`);
+            setTokenSetup(null);
+            await qc.invalidateQueries({
+              queryKey: ["organization", organizationId, "integrations", "catalog"],
+            });
+          } catch (error) {
+            toast.error(errorMessage(error));
+          }
+        }}
+      />
     </div>
+  );
+}
+
+function TokenSetupDialog({
+  setup,
+  onOpenChange,
+  onSubmit,
+}: {
+  setup: { pluginName: string; setupToken: string } | null;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (input: { cloudId: string; siteUrl: string; siteName?: string }) => Promise<void>;
+}) {
+  const [cloudId, setCloudId] = useState("");
+  const [siteUrl, setSiteUrl] = useState("");
+  const [siteName, setSiteName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (setup) {
+      setCloudId("");
+      setSiteUrl("");
+      setSiteName("");
+    }
+  }, [setup]);
+
+  return (
+    <FormModal
+      open={!!setup}
+      onOpenChange={onOpenChange}
+      title={setup ? `Connect ${setup.pluginName}` : "Connect plugin"}
+      submitLabel="Connect"
+      submitting={submitting}
+      onSubmit={async () => {
+        if (!cloudId.trim() || !siteUrl.trim()) return;
+        setSubmitting(true);
+        try {
+          await onSubmit({
+            cloudId: cloudId.trim(),
+            siteUrl: siteUrl.trim(),
+            siteName: siteName.trim() || undefined,
+          });
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    >
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="plugin-cloud-id">Cloud ID</Label>
+          <Input
+            id="plugin-cloud-id"
+            value={cloudId}
+            onChange={(event) => setCloudId(event.target.value)}
+            required
+            autoFocus
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="plugin-site-url">Site URL</Label>
+          <Input
+            id="plugin-site-url"
+            value={siteUrl}
+            onChange={(event) => setSiteUrl(event.target.value)}
+            placeholder="https://example.atlassian.net"
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="plugin-site-name">Site name</Label>
+          <Input
+            id="plugin-site-name"
+            value={siteName}
+            onChange={(event) => setSiteName(event.target.value)}
+          />
+        </div>
+      </div>
+    </FormModal>
   );
 }
 
@@ -956,8 +1072,9 @@ function PluginCatalogCard({
 }) {
   const connected = plugin.status === "connected";
   const needsAttention = plugin.status === "needs_attention";
-  const primaryConnection = plugin.connections[0];
-  const actionLabel = needsAttention ? "Fix connection" : connected ? "Manage" : "Connect";
+  const isInternal = plugin.provider === "internal" || plugin.setupKind === "internal";
+  const actionLabel = connected ? "Connect another" : needsAttention ? "Reconnect" : "Connect";
+  const resourceTypes = plugin.resourceTypes.length > 0 ? plugin.resourceTypes : ["internal"];
 
   return (
     <Card className="rounded-lg p-4 shadow-card">
@@ -991,30 +1108,38 @@ function PluginCatalogCard({
               ))}
             </div>
           </div>
-          <Button
-            onClick={
-              connected && primaryConnection
-                ? () => onManageConnection(primaryConnection)
-                : onConnect
-            }
-            variant={connected ? "outline" : "default"}
-          >
-            {actionLabel}
-          </Button>
+          {isInternal ? (
+            <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
+              Internal plugin
+            </div>
+          ) : (
+            <Button onClick={onConnect} variant={connected ? "outline" : "default"}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              {actionLabel}
+            </Button>
+          )}
         </div>
 
         <div className="border-t border-border pt-3">
           <div className="mb-2 flex items-center justify-between gap-3">
             <p className="text-xs font-medium uppercase text-muted-foreground">
-              Connected accounts
+              {isInternal ? "Runtime capability" : "Connections"}
             </p>
             <span className="text-xs text-muted-foreground">
-              {plugin.connectionCount} {plugin.connectionCount === 1 ? "account" : "accounts"}
+              {isInternal
+                ? "No connection required"
+                : `${plugin.connectionCount} ${
+                    plugin.connectionCount === 1 ? "connection" : "connections"
+                  }`}
             </span>
           </div>
-          {plugin.connections.length === 0 ? (
+          {isInternal ? (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+              Available to reports and workflows through the plugin runtime.
+            </div>
+          ) : plugin.connections.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
-              No accounts connected yet.
+              No connections yet. Connect this plugin to start importing resources.
             </div>
           ) : (
             <div className="divide-y divide-border rounded-lg border border-border">
@@ -1037,12 +1162,18 @@ function PluginCatalogCard({
                     )}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium">{connection.accountLogin}</p>
+                        <p className="truncate text-sm font-medium">
+                          {connection.accountLogin ?? connection.siteUrl ?? "Connected account"}
+                        </p>
                         <CatalogStatusBadge status={connection.status} />
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {connection.accountType ?? "GitHub account"} - Installation{" "}
-                        {connection.providerInstallationId}
+                        {connection.accountType ?? titleCaseProvider(connection.provider)}{" "}
+                        {connection.providerInstallationId
+                          ? `- Installation ${connection.providerInstallationId}`
+                          : connection.cloudId
+                            ? `- Cloud ${connection.cloudId}`
+                            : ""}
                       </p>
                     </div>
                   </div>
@@ -1056,7 +1187,9 @@ function PluginCatalogCard({
                           size="icon"
                           variant="ghost"
                           className="h-8 w-8 shrink-0 text-muted-foreground"
-                          aria-label={`${connection.accountLogin} actions`}
+                          aria-label={`${
+                            connection.accountLogin ?? connection.siteUrl ?? "Connection"
+                          } actions`}
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
@@ -1084,6 +1217,16 @@ function PluginCatalogCard({
               ))}
             </div>
           )}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {resourceTypes.map((resourceType) => (
+              <span
+                key={resourceType}
+                className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground"
+              >
+                {resourceType}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </Card>
