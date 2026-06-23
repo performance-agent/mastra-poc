@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "declaration": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@pa/core": ["packages/core/src/index.ts"],
+      "@pa/sdk": ["packages/sdk/src/index.ts"],
+      "@pa/testing": ["packages/testing/src/index.ts"],
+      "@pa/packs-software": ["packages/packs-software/src/index.ts"],
+      "@pa/plugin-github": ["packages/plugin-github/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*.ts", "tests/**/*.ts", "examples/**/*.ts"]
+}
