@@ -77,6 +77,8 @@ type DefaultConnectionBindingInput = {
   provider: string;
   externalAccountId?: string;
   externalAccountName?: string;
+  externalAccountType?: string;
+  externalAccountAvatarUrl?: string;
   externalAccountUrl?: string;
   providerInstallationId?: string;
 };
@@ -219,6 +221,8 @@ export class FakeRuntime {
     };
     if (bindingInput.externalAccountId) createBindingInput.externalAccountId = bindingInput.externalAccountId;
     if (bindingInput.externalAccountName) createBindingInput.externalAccountName = bindingInput.externalAccountName;
+    if (bindingInput.externalAccountType) createBindingInput.externalAccountType = bindingInput.externalAccountType;
+    if (bindingInput.externalAccountAvatarUrl) createBindingInput.externalAccountAvatarUrl = bindingInput.externalAccountAvatarUrl;
     if (bindingInput.externalAccountUrl) createBindingInput.externalAccountUrl = bindingInput.externalAccountUrl;
     if (bindingInput.providerInstallationId) createBindingInput.providerInstallationId = bindingInput.providerInstallationId;
     const binding = await this.bindingStore().create(createBindingInput);
@@ -552,6 +556,8 @@ export class FakeRuntime {
         };
         if (input.externalAccountId) binding.externalAccountId = input.externalAccountId;
         if (input.externalAccountName) binding.externalAccountName = input.externalAccountName;
+        if (input.externalAccountType) binding.externalAccountType = input.externalAccountType;
+        if (input.externalAccountAvatarUrl) binding.externalAccountAvatarUrl = input.externalAccountAvatarUrl;
         if (input.externalAccountUrl) binding.externalAccountUrl = input.externalAccountUrl;
         if (input.providerInstallationId) binding.providerInstallationId = input.providerInstallationId;
         this.connectionBindings.set(binding.id, binding);

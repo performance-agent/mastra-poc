@@ -1,6 +1,11 @@
 import type { SetupFieldDefinition } from "./setup.js";
 
-export type ConnectionSetupKind = "redirect" | "oauth2" | "manual" | "webhook-assisted";
+export type ConnectionSetupKind =
+  | "redirect"
+  | "token"
+  | "oauth2"
+  | "manual"
+  | "webhook-assisted";
 
 export type ConnectionSetupStartResult =
   | {
@@ -12,9 +17,19 @@ export type ConnectionSetupStartResult =
       type: "form";
       fields: readonly SetupFieldDefinition[];
       setupSessionId: string;
+    }
+  | {
+      type: "token";
+      setupToken: string;
+      setupSessionId: string;
+      expiresAt: Date;
     };
 
-export type ConnectionSetupSessionStatus = "pending" | "completed" | "expired" | "failed";
+export type ConnectionSetupSessionStatus =
+  | "pending"
+  | "completed"
+  | "expired"
+  | "failed";
 
 export type ConnectionSetupSession = {
   id: string;
@@ -37,6 +52,8 @@ export type ConnectionBinding = {
   status: "active" | "disconnected" | "failed";
   externalAccountId?: string;
   externalAccountName?: string;
+  externalAccountType?: string;
+  externalAccountAvatarUrl?: string;
   externalAccountUrl?: string;
   providerInstallationId?: string;
   createdAt: Date;
@@ -50,13 +67,20 @@ export type ConnectionSetupLogger = {
 };
 
 export type ConnectionSetupSessionStore = {
-  create(input: Omit<ConnectionSetupSession, "id" | "status" | "createdAt">): Promise<ConnectionSetupSession>;
+  create(
+    input: Omit<ConnectionSetupSession, "id" | "status" | "createdAt">,
+  ): Promise<ConnectionSetupSession>;
   get(id: string): Promise<ConnectionSetupSession | undefined>;
-  updateStatus(id: string, status: ConnectionSetupSessionStatus): Promise<ConnectionSetupSession>;
+  updateStatus(
+    id: string,
+    status: ConnectionSetupSessionStatus,
+  ): Promise<ConnectionSetupSession>;
 };
 
 export type ConnectionBindingStore = {
-  create(input: Omit<ConnectionBinding, "id" | "createdAt" | "updatedAt">): Promise<ConnectionBinding>;
+  create(
+    input: Omit<ConnectionBinding, "id" | "createdAt" | "updatedAt">,
+  ): Promise<ConnectionBinding>;
   get(id: string): Promise<ConnectionBinding | undefined>;
   find(input: {
     organizationId: string;
@@ -65,7 +89,10 @@ export type ConnectionBindingStore = {
     providerInstallationId?: string;
     externalAccountId?: string;
   }): Promise<ConnectionBinding | undefined>;
-  update(id: string, patch: Partial<Omit<ConnectionBinding, "id" | "createdAt">>): Promise<ConnectionBinding>;
+  update(
+    id: string,
+    patch: Partial<Omit<ConnectionBinding, "id" | "createdAt">>,
+  ): Promise<ConnectionBinding>;
 };
 
 export type ConnectionSetupPorts = {
@@ -98,15 +125,24 @@ export type ConnectionProviderEventContext = {
 };
 
 export type ConnectionSetupStartHandler<TStartInput = unknown> = {
-  bivarianceHack(ctx: ConnectionSetupStartContext, input: TStartInput): Promise<ConnectionSetupStartResult>;
+  bivarianceHack(
+    ctx: ConnectionSetupStartContext,
+    input: TStartInput,
+  ): Promise<ConnectionSetupStartResult>;
 }["bivarianceHack"];
 
 export type ConnectionSetupCompleteHandler<TCompleteInput = unknown> = {
-  bivarianceHack(ctx: ConnectionSetupCompleteContext, input: TCompleteInput): Promise<ConnectionBinding>;
+  bivarianceHack(
+    ctx: ConnectionSetupCompleteContext,
+    input: TCompleteInput,
+  ): Promise<ConnectionBinding>;
 }["bivarianceHack"];
 
 export type ConnectionProviderEventHandler<TProviderEvent = unknown> = {
-  bivarianceHack(ctx: ConnectionProviderEventContext, event: TProviderEvent): Promise<ConnectionBinding | undefined>;
+  bivarianceHack(
+    ctx: ConnectionProviderEventContext,
+    event: TProviderEvent,
+  ): Promise<ConnectionBinding | undefined>;
 }["bivarianceHack"];
 
 export interface ConnectionSetupDefinition<
@@ -137,5 +173,8 @@ export type ConnectionManifestDefinition = {
 
 export type ConnectionProvider<TClient = unknown> = {
   name: string;
-  createClient(input: { installationId: string; connectionId: string }): Promise<TClient>;
+  createClient(input: {
+    installationId: string;
+    connectionId: string;
+  }): Promise<TClient>;
 };

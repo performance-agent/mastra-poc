@@ -30,6 +30,7 @@ export function mapGitHubRepositoryResource(
     },
   };
   if (connectionId) resource.metadata.connectionId = connectionId;
+  if (repository.defaultBranch) resource.metadata.defaultBranch = repository.defaultBranch;
   if (repository.url) resource.url = repository.url;
   return resource;
 }
@@ -173,7 +174,7 @@ export function mapGitHubIssueRecord(input: {
       connectionId: input.connectionId,
       resourceType: input.repositoryResource.type,
       resourceId: input.repositoryResource.id,
-      externalId: input.issue.id,
+      externalId: String(input.issue.number),
     },
     title: input.issue.title,
     status: input.issue.state === "open" ? "open" : "closed",
@@ -193,7 +194,7 @@ export function mapGitHubIssueRecord(input: {
       connectionId: input.connectionId,
       resourceType: input.repositoryResource.type,
       resourceId: input.repositoryResource.id,
-      externalId: input.issue.id,
+      externalId: String(input.issue.number),
       fetchedAt: input.fetchedAt,
     },
   });

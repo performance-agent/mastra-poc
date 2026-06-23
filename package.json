@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build -w @pa/core && npm run build -w @pa/sdk && npm run build -w @pa/packs-software && npm run build -w @pa/plugin-github && npm run build -w @pa/plugin-jira && npm run build -w @pa/plugin-software-reports && npm run build -w @pa/testing",
+    "clean": "npm run clean -w @pa/core && npm run clean -w @pa/sdk && npm run clean -w @pa/packs-software && npm run clean -w @pa/plugin-github && npm run clean -w @pa/plugin-jira && npm run clean -w @pa/plugin-software-reports && npm run clean -w @pa/testing",
     "example:issue-inventory": "tsx examples/issue-inventory/run.ts",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

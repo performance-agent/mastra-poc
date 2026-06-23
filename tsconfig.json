@@ -20,7 +20,9 @@
       "@pa/sdk": ["packages/sdk/src/index.ts"],
       "@pa/testing": ["packages/testing/src/index.ts"],
       "@pa/packs-software": ["packages/packs-software/src/index.ts"],
-      "@pa/plugin-github": ["packages/plugin-github/src/index.ts"]
+      "@pa/plugin-github": ["packages/plugin-github/src/index.ts"],
+      "@pa/plugin-jira": ["packages/plugin-jira/src/index.ts"],
+      "@pa/plugin-software-reports": ["packages/plugin-software-reports/src/index.ts"]
     }
   },
   "include": ["packages/**/*.ts", "tests/**/*.ts", "examples/**/*.ts"]

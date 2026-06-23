@@ -1,5 +1,5 @@
-import { PlatformError, type DiscoveredResource, type RuntimeContext, type RuntimeScope } from "@pa/core";
-import { software } from "@pa/packs-software";
+import { PlatformError, type DataRecord, type DiscoveredResource, type RuntimeContext, type RuntimeScope } from "@pa/core";
+import { software, type SoftwareCommit, type SoftwareIssue, type SoftwarePullRequest, type SoftwareRepository } from "@pa/packs-software";
 import { defineConnection, definePlugin, permission, providesData } from "@pa/sdk";
 import { discoverGitHubRepositories } from "./discovery.js";
 import {
@@ -50,7 +50,7 @@ export function createGitHubPlugin(options: GitHubPluginOptions) {
           const connection = ctx.connections.github;
           const clientFactory = await connection.client();
           const fetchedAt = new Date();
-          const records = [];
+          const records: DataRecord<SoftwareRepository>[] = [];
           for (const installation of await clientFactory.listInstallations()) {
             const client = await clientFactory.createInstallationClient(installation.providerInstallationId);
             const repositories = await client.listRepositories();
@@ -75,7 +75,7 @@ export function createGitHubPlugin(options: GitHubPluginOptions) {
         async query(ctx, query) {
           const connection = ctx.connections.github;
           const clientFactory = await connection.client();
-          const records = [];
+          const records: DataRecord<SoftwareIssue>[] = [];
           const fetchedAt = new Date();
           for (const repositoryResource of await assignedRepositoryResources(ctx, query.scope)) {
             const providerInstallationId = providerInstallationIdFromResource(repositoryResource);
@@ -108,7 +108,7 @@ export function createGitHubPlugin(options: GitHubPluginOptions) {
         async query(ctx, query) {
           const connection = ctx.connections.github;
           const clientFactory = await connection.client();
-          const records = [];
+          const records: DataRecord<SoftwarePullRequest>[] = [];
           const fetchedAt = new Date();
           for (const repositoryResource of await assignedRepositoryResources(ctx, query.scope)) {
             const providerInstallationId = providerInstallationIdFromResource(repositoryResource);
@@ -141,7 +141,7 @@ export function createGitHubPlugin(options: GitHubPluginOptions) {
         async query(ctx, query) {
           const connection = ctx.connections.github;
           const clientFactory = await connection.client();
-          const records = [];
+          const records: DataRecord<SoftwareCommit>[] = [];
           const fetchedAt = new Date();
           for (const repositoryResource of await assignedRepositoryResources(ctx, query.scope)) {
             const providerInstallationId = providerInstallationIdFromResource(repositoryResource);
