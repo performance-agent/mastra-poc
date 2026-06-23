@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "backend/**"
+      - "core/**"
       - ".github/workflows/backend-docker-publish.yml"
   workflow_dispatch:
 
@@ -34,9 +35,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            core/package-lock.json
+            backend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install core dependencies
+        working-directory: core
+        run: npm ci
+
+      - name: Build core packages
+        working-directory: core
+        run: npm run build
+
+      - name: Install backend dependencies
         run: npm ci
 
       - name: Generate Prisma client
