@@ -18,6 +18,7 @@ import { ReportsModule } from './reports/reports.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { MembershipGuard } from './access-control/membership.guard';
+import { DataTypesModule } from './data-types/data-types.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { MembershipGuard } from './access-control/membership.guard';
     PrismaModule,
     AccessControlModule,
     ReportsModule,
+    DataTypesModule,
   ],
   controllers: [AppController],
   providers: [
