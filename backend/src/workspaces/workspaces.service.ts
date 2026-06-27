@@ -64,8 +64,25 @@ export class WorkspacesService {
     }
   }
 
-  assignResource(id: string, resourceId: string) {
-    return this.prismaService.integrationResourceAssignment.upsert({
+  async assignResource(id: string, resourceId: string) {
+    const [workspace, resource] = await Promise.all([
+      this.prismaService.workspace.findUnique({ where: { id } }),
+      this.prismaService.pluginInstallationResource.findUnique({
+        where: { id: resourceId },
+        include: { pluginInstallation: true },
+      }),
+    ]);
+    if (
+      !workspace ||
+      !resource ||
+      !resource.active ||
+      workspace.organizationId !== resource.pluginInstallation.organizationId
+    ) {
+      throw new BadRequestException(
+        'Resource and workspace must belong to the same organization',
+      );
+    }
+    return this.prismaService.pluginInstallationResourceAssignment.upsert({
       where: {
         resourceId_workspaceId: {
           resourceId,
@@ -82,7 +99,7 @@ export class WorkspacesService {
   }
 
   removeResource(id: string, resourceId: string) {
-    return this.prismaService.integrationResourceAssignment.delete({
+    return this.prismaService.pluginInstallationResourceAssignment.delete({
       where: {
         resourceId_workspaceId: {
           resourceId,

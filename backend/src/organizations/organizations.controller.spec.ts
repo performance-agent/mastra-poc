@@ -15,9 +15,9 @@ import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { MembersService } from '../members/members.service';
-import { GithubService } from '../integrations/github/github.service';
 import { ResourcesService } from '../resources/resources.service';
-import { IntegrationsService } from '../integrations/integrations.service';
+import { PluginInstallationsService } from '../plugin-installations/plugin-installations.service';
+import { DataTypesService } from '../data-types/data-types.service';
 
 describe('OrganizationsController', () => {
   let controller: OrganizationsController;
@@ -29,9 +29,9 @@ describe('OrganizationsController', () => {
         { provide: OrganizationsService, useValue: {} },
         { provide: WorkspacesService, useValue: {} },
         { provide: MembersService, useValue: {} },
-        { provide: GithubService, useValue: {} },
         { provide: ResourcesService, useValue: {} },
-        { provide: IntegrationsService, useValue: {} },
+        { provide: PluginInstallationsService, useValue: {} },
+        { provide: DataTypesService, useValue: {} },
       ],
     }).compile();
 

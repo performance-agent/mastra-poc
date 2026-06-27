@@ -1,9 +1,11 @@
 model PluginInstallationResource {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
   externalId  String
   type        String
+  active      Boolean  @default(true)
+  lastSeenAt  DateTime @default(now()) @db.Timestamptz(3)
 
   installationId     String
   pluginInstallation PluginInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)

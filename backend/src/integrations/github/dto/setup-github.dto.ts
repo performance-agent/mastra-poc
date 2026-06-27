@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString } from 'class-validator';
 
 export class SetupGithubDto {
   @IsNotEmpty()
@@ -7,5 +7,6 @@ export class SetupGithubDto {
 
   @IsNotEmpty()
   @IsString()
-  setupAction!: string;
+  @IsIn(['install', 'update'])
+  setupAction!: 'install' | 'update';
 }

@@ -31,16 +31,14 @@ describe('ReportsService', () => {
   const group = {
     id: 'group-1',
     name: 'Core team',
-    integrationResourceAssignments: [
+    resourceAssignments: [
       {
         resource: {
           id: 'resource-1',
           name: 'repo',
-          type: 'REPOSITORY',
-          integration: {
-            provider: 'GITHUB',
-            github: { installationId: 'installation-1' },
-          },
+          type: 'github.repository',
+          active: true,
+          pluginInstallation: { pluginId: 'github' },
           githubRepository: {
             fullName: 'acme/repo',
             defaultBranch: 'main',
@@ -78,7 +76,7 @@ describe('ReportsService', () => {
   it('rejects groups without assigned GitHub repositories', async () => {
     prismaService.group.findUnique.mockResolvedValue({
       ...group,
-      integrationResourceAssignments: [],
+      resourceAssignments: [],
     });
 
     await expect(
@@ -90,8 +88,7 @@ describe('ReportsService', () => {
     prismaService.group.findUnique.mockResolvedValue(group);
     githubService.getRepositoryActivity.mockResolvedValue({
       resourceId: 'resource-1',
-      repository:
-        group.integrationResourceAssignments[0].resource.githubRepository,
+      repository: group.resourceAssignments[0].resource.githubRepository,
       pullRequests: { open: [], recentlyClosed: [], recentlyMerged: [] },
       issues: { open: [], recentlyClosed: [] },
       commits: [],
@@ -120,8 +117,7 @@ describe('ReportsService', () => {
     prismaService.group.findUnique.mockResolvedValue(group);
     githubService.getRepositoryHistory.mockResolvedValue({
       resourceId: 'resource-1',
-      repository:
-        group.integrationResourceAssignments[0].resource.githubRepository,
+      repository: group.resourceAssignments[0].resource.githubRepository,
       period: {
         firstActivityAt: '2024-01-01T00:00:00.000Z',
         lastActivityAt: '2024-03-01T00:00:00.000Z',

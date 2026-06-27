@@ -15,7 +15,7 @@ jest.mock('@octokit/auth-app', () => ({
 
 describe('GithubService', () => {
   const prismaService = {
-    integrationResource: {
+    pluginInstallationResource: {
       findUnique: jest.fn(),
     },
   };
@@ -28,14 +28,11 @@ describe('GithubService', () => {
   });
 
   it('rejects non GitHub repository resources', async () => {
-    prismaService.integrationResource.findUnique.mockResolvedValue({
+    prismaService.pluginInstallationResource.findUnique.mockResolvedValue({
       id: 'resource-1',
-      type: 'REPOSITORY',
-      integration: {
-        provider: 'JIRA',
-        github: null,
-      },
-      githubRepository: null,
+      type: 'jira.project',
+      externalId: 'acme/project',
+      pluginInstallation: { pluginId: 'jira', externalId: '1' },
     });
 
     await expect(
@@ -44,20 +41,12 @@ describe('GithubService', () => {
   });
 
   it('aggregates repository history without returning raw oversized lists', async () => {
-    prismaService.integrationResource.findUnique.mockResolvedValue({
+    prismaService.pluginInstallationResource.findUnique.mockResolvedValue({
       id: 'resource-1',
       name: 'repo',
-      type: 'REPOSITORY',
-      integration: {
-        provider: 'GITHUB',
-        github: { installationId: 'installation-1' },
-      },
-      githubRepository: {
-        fullName: 'acme/repo',
-        defaultBranch: 'main',
-        htmlUrl: 'https://github.com/acme/repo',
-        isPrivate: false,
-      },
+      type: 'github.repository',
+      externalId: 'acme/repo',
+      pluginInstallation: { pluginId: 'github', externalId: 'installation-1' },
     });
 
     const github = {
@@ -198,20 +187,12 @@ describe('GithubService', () => {
   });
 
   it('keeps activity mapping shape unchanged', async () => {
-    prismaService.integrationResource.findUnique.mockResolvedValue({
+    prismaService.pluginInstallationResource.findUnique.mockResolvedValue({
       id: 'resource-1',
       name: 'repo',
-      type: 'REPOSITORY',
-      integration: {
-        provider: 'GITHUB',
-        github: { installationId: 'installation-1' },
-      },
-      githubRepository: {
-        fullName: 'acme/repo',
-        defaultBranch: 'main',
-        htmlUrl: 'https://github.com/acme/repo',
-        isPrivate: false,
-      },
+      type: 'github.repository',
+      externalId: 'acme/repo',
+      pluginInstallation: { pluginId: 'github', externalId: 'installation-1' },
     });
 
     const github = {

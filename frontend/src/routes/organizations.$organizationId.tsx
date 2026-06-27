@@ -54,7 +54,14 @@ import { Label } from "@/components/ui/label";
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
 import { savePendingGithubSetup } from "@/lib/github-setup";
-import type { DataType, Integration, Resource, Role, Workspace } from "@/lib/types";
+import type {
+  DataType,
+  PluginCatalogItem,
+  PluginInstallation,
+  Resource,
+  Role,
+  Workspace,
+} from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.string().optional(),
@@ -64,7 +71,7 @@ const organizationTabs = [
   "workspaces",
   "members",
   "resources",
-  "integrations",
+  "plugins",
   "data-types",
 ] as const;
 type OrganizationTab = (typeof organizationTabs)[number];
@@ -91,11 +98,18 @@ function OrganizationPage() {
   });
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const tab = organizationTabs.includes(search.tab as OrganizationTab)
-    ? (search.tab as OrganizationTab)
+  const normalizedTab = search.tab === "integrations" ? "plugins" : search.tab;
+  const tab = organizationTabs.includes(normalizedTab as OrganizationTab)
+    ? (normalizedTab as OrganizationTab)
     : "overview";
   const setTab = (value: string) =>
     navigate({ search: { tab: value === "overview" ? undefined : (value as never) } });
+
+  useEffect(() => {
+    if (search.tab === "integrations") {
+      navigate({ search: { tab: "plugins" as never }, replace: true });
+    }
+  }, [navigate, search.tab]);
 
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
@@ -117,9 +131,9 @@ function OrganizationPage() {
     queryKey: ["organization", organizationId, "resources"],
     queryFn: () => api.listOrgResources(organizationId),
   });
-  const orgIntegrationsQ = useQuery({
-    queryKey: ["organization", organizationId, "integrations"],
-    queryFn: () => api.listOrgIntegrations(organizationId),
+  const orgPluginInstallationsQ = useQuery({
+    queryKey: ["organization", organizationId, "plugin-installations"],
+    queryFn: () => api.listOrgPluginInstallations(organizationId),
   });
   const dataTypesQ = useQuery({
     queryKey: ["organization", organizationId, "data-types"],
@@ -161,7 +175,7 @@ function OrganizationPage() {
               { value: "workspaces", label: "Workspaces", count: workspacesQ.data?.length },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources", count: resourcesQ.data?.length },
-              { value: "integrations", label: "Integrations" },
+              { value: "plugins", label: "Plugins" },
               { value: "data-types", label: "Data Types", count: dataTypesQ.data?.length },
             ]}
           />
@@ -171,14 +185,17 @@ function OrganizationPage() {
               workspaces={workspacesQ.data?.length ?? 0}
               members={membersQ.data?.length ?? 0}
               resources={resourcesQ.data?.length ?? 0}
-              integrations={orgIntegrationsQ.data?.length ?? 0}
+              dataTypes={dataTypesQ.data?.length ?? 0}
+              plugins={
+                new Set((orgPluginInstallationsQ.data ?? []).map((item) => item.pluginId)).size
+              }
               recentResources={resourcesQ.data?.slice(0, 4) ?? []}
             />
           )}
           {tab === "workspaces" && <WorkspacesTab organizationId={organizationId} />}
           {tab === "members" && <MembersTab organizationId={organizationId} />}
           {tab === "resources" && <ResourcesTab organizationId={organizationId} />}
-          {tab === "integrations" && <IntegrationsTab organizationId={organizationId} />}
+          {tab === "plugins" && <PluginsTab organizationId={organizationId} />}
           {tab === "data-types" && <DataTypesTab organizationId={organizationId} />}
         </div>
       )}
@@ -248,26 +265,25 @@ function OverviewTab({
   workspaces,
   members,
   resources,
-  integrations,
+  dataTypes,
+  plugins,
   recentResources,
 }: {
   workspaces: number;
   members: number;
   resources: number;
-  integrations: number;
+  dataTypes: number;
+  plugins: number;
   recentResources: Resource[];
 }) {
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard icon={<FolderTree className="h-4 w-4" />} label="Workspaces" value={workspaces} />
         <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={members} />
         <StatCard icon={<Boxes className="h-4 w-4" />} label="Resources" value={resources} />
-        <StatCard
-          icon={<Plug className="h-4 w-4" />}
-          label="Integrations"
-          value={integrations > 0 ? "Connected" : "—"}
-        />
+        <StatCard icon={<Database className="h-4 w-4" />} label="Data Types" value={dataTypes} />
+        <StatCard icon={<Plug className="h-4 w-4" />} label="Plugins" value={plugins} />
       </div>
       {recentResources.length > 0 && (
         <div className="space-y-3">
@@ -398,14 +414,14 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
 
 function MembersTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [userId, setUserId] = useState<string>();
+  const [role, setRole] = useState<Role>("VIEWER");
   const membersQ = useQuery({
     queryKey: ["organization", organizationId, "members"],
     queryFn: () => api.listOrgMembers(organizationId),
   });
-  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers });
-  const [addOpen, setAddOpen] = useState(false);
-  const [userId, setUserId] = useState<string>();
-  const [role, setRole] = useState<Role>("VIEWER");
+  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: addOpen });
 
   const refresh = () =>
     qc.invalidateQueries({ queryKey: ["organization", organizationId, "members"] });
@@ -424,7 +440,6 @@ function MembersTab({ organizationId }: { organizationId: string }) {
       ) : (
         <MemberList
           members={membersQ.data ?? []}
-          users={usersQ.data ?? []}
           onInvite={() => setAddOpen(true)}
           onRoleChange={async (uid, r) => {
             try {
@@ -457,6 +472,9 @@ function MembersTab({ organizationId }: { organizationId: string }) {
           }
         }}
         users={usersQ.data ?? []}
+        usersLoading={usersQ.isLoading}
+        usersError={usersQ.error}
+        retryUsers={() => usersQ.refetch()}
         excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
         userId={userId}
         setUserId={setUserId}
@@ -484,6 +502,9 @@ function AddMemberDialog({
   open,
   onOpenChange,
   users,
+  usersLoading,
+  usersError,
+  retryUsers,
   excludeIds,
   userId,
   setUserId,
@@ -494,6 +515,9 @@ function AddMemberDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   users: { id: string; name: string; email: string; photoUrl?: string | null }[];
+  usersLoading: boolean;
+  usersError: unknown;
+  retryUsers: () => void;
   excludeIds: string[];
   userId?: string;
   setUserId: (id?: string) => void;
@@ -510,11 +534,17 @@ function AddMemberDialog({
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label>User</Label>
-            <UserPicker
-              users={users.filter((u) => !excludeIds.includes(u.id))}
-              value={userId}
-              onChange={setUserId}
-            />
+            {usersLoading ? (
+              <LoadingState />
+            ) : usersError ? (
+              <ErrorState message={errorMessage(usersError)} onRetry={retryUsers} />
+            ) : (
+              <UserPicker
+                users={users.filter((u) => !excludeIds.includes(u.id))}
+                value={userId}
+                onChange={setUserId}
+              />
+            )}
           </div>
           <div className="space-y-2">
             <Label>Role</Label>
@@ -549,7 +579,9 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
       ? list.filter(
           (r) =>
             r.name.toLowerCase().includes(s) ||
-            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+            (r.fullName ?? r.githubRepository?.fullName ?? r.externalId ?? "")
+              .toLowerCase()
+              .includes(s),
         )
       : list;
   }, [q.data, search]);
@@ -571,7 +603,7 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
         <EmptyState
           icon={<Boxes className="h-4 w-4" />}
           title="No resources yet"
-          description="Connect an integration to bring in resources like GitHub repositories."
+          description="Connect a plugin to bring in resources like GitHub repositories."
         />
       ) : (
         <div className="grid gap-3 lg:grid-cols-2">
@@ -800,28 +832,6 @@ function DataTypesTab({ organizationId }: { organizationId: string }) {
   );
 }
 
-type IntegrationView = {
-  id?: string;
-  key: string;
-  name: string;
-  displayName: string;
-  type: string;
-  description: string;
-  setupUrl?: string;
-  status: NonNullable<Integration["status"]> | "available";
-  isGithub: boolean;
-  isConnected: boolean;
-  installationId?: string;
-};
-
-function integrationTypeKey(integration: Integration) {
-  return (integration.provider ?? integration.type ?? "").toString().toUpperCase();
-}
-
-function integrationDisplayName(integration: Integration, type = integrationTypeKey(integration)) {
-  return integration.displayName ?? (type === "GITHUB" ? "GitHub" : titleCaseProvider(type));
-}
-
 function titleCaseProvider(value: string) {
   return value
     .toLowerCase()
@@ -831,42 +841,12 @@ function titleCaseProvider(value: string) {
     .join(" ");
 }
 
-function normalizeIntegration(
-  integration: Integration,
-  index: number,
-  options?: { isConnected?: boolean; setupUrl?: string },
-): IntegrationView {
-  const rawType = integration.type ?? integration.provider ?? "integration";
-  const type = rawType.toString().toUpperCase();
-  const displayName = integrationDisplayName(integration, type);
-  const name = integration.name ?? displayName;
-  const status = integration.status ?? (options?.isConnected ? "ACTIVE" : "available");
-
-  return {
-    id: integration.id,
-    key: integration.id ?? integration.provider ?? integration.type ?? `integration-${index}`,
-    name,
-    displayName,
-    type,
-    description:
-      integration.description ??
-      (type === "GITHUB"
-        ? "Connect a GitHub App installation to import repositories as resources."
-        : "Connect this integration to bring external resources into the workspace."),
-    setupUrl: integration.setupUrl ?? options?.setupUrl,
-    status,
-    isGithub: type.includes("GITHUB") || displayName.toLowerCase().includes("github"),
-    isConnected: options?.isConnected ?? false,
-    installationId: integration.github?.installationId,
-  };
-}
-
-function EditIntegrationDialog({
-  integration,
+function EditPluginInstallationDialog({
+  installation,
   onOpenChange,
   onSubmit,
 }: {
-  integration: IntegrationView | null;
+  installation: PluginInstallation | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (name: string) => Promise<void>;
 }) {
@@ -874,14 +854,14 @@ function EditIntegrationDialog({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    setName(integration?.name ?? "");
-  }, [integration]);
+    setName(installation?.name ?? "");
+  }, [installation]);
 
   return (
     <FormModal
-      open={!!integration}
+      open={!!installation}
       onOpenChange={onOpenChange}
-      title="Edit integration"
+      title="Edit plugin connection"
       submitLabel="Save"
       submitting={submitting}
       onSubmit={async () => {
@@ -896,9 +876,9 @@ function EditIntegrationDialog({
       }}
     >
       <div className="space-y-1.5">
-        <Label htmlFor="integration-name">Name</Label>
+        <Label htmlFor="plugin-connection-name">Name</Label>
         <Input
-          id="integration-name"
+          id="plugin-connection-name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
@@ -909,17 +889,20 @@ function EditIntegrationDialog({
   );
 }
 
-function integrationStatusLabel(status: IntegrationView["status"]) {
+type PluginStatus = PluginInstallation["status"] | "AVAILABLE" | "ERROR";
+
+function pluginStatusLabel(status: PluginStatus) {
   const normalized = status.toString().toUpperCase();
   if (normalized === "ACTIVE" || normalized === "CONNECTED") return "Connected";
-  if (normalized === "PENDING" || normalized === "AVAILABLE") return "Available";
+  if (normalized === "PENDING") return "Pending";
+  if (normalized === "AVAILABLE") return "Available";
   if (normalized === "DISABLED") return "Disabled";
   if (normalized === "REVOKED") return "Revoked";
   if (normalized === "ERROR") return "Error";
   return titleCaseProvider(normalized);
 }
 
-function integrationStatusClasses(status: IntegrationView["status"]) {
+function pluginStatusClasses(status: PluginStatus) {
   const normalized = status.toString().toUpperCase();
   if (normalized === "ACTIVE" || normalized === "CONNECTED") {
     return {
@@ -945,33 +928,46 @@ function integrationStatusClasses(status: IntegrationView["status"]) {
   };
 }
 
-function IntegrationStatusBadge({ status }: { status: IntegrationView["status"] }) {
-  const classes = integrationStatusClasses(status);
+function PluginStatusBadge({ status }: { status: PluginStatus }) {
+  const classes = pluginStatusClasses(status);
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${classes.shell}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${classes.dot}`} />
-      {integrationStatusLabel(status)}
+      {pluginStatusLabel(status)}
     </span>
   );
 }
 
-function IntegrationsTab({ organizationId }: { organizationId: string }) {
+function PluginsTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
+  const [search, setSearch] = useState("");
   const [syncingId, setSyncingId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<IntegrationView | null>(null);
-  const availableQ = useQuery({ queryKey: ["integrations"], queryFn: api.listIntegrations });
+  const [editing, setEditing] = useState<PluginInstallation | null>(null);
+  const availableQ = useQuery({ queryKey: ["plugins"], queryFn: api.listPlugins });
   const connectedQ = useQuery({
-    queryKey: ["organization", organizationId, "integrations"],
-    queryFn: () => api.listOrgIntegrations(organizationId),
+    queryKey: ["organization", organizationId, "plugin-installations"],
+    queryFn: () => api.listOrgPluginInstallations(organizationId),
   });
-  const connectedIntegrations = (connectedQ.data ?? []).map((integration, index) =>
-    normalizeIntegration(integration, index, { isConnected: true }),
-  );
-  const availableIntegrations = availableQ.data ?? [];
-  const integrations = connectedIntegrations;
+  const installations = connectedQ.data ?? [];
+  const plugins = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return (availableQ.data ?? []).filter((plugin) => {
+      if (!needle) return true;
+      const capabilityText = [
+        plugin.name,
+        plugin.description,
+        ...plugin.resourceTypes.flatMap((type) => [type.name, type.key]),
+        ...plugin.dataTypes.map((type) => type.key),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return capabilityText.includes(needle);
+    });
+  }, [availableQ.data, search]);
   const isLoading = availableQ.isLoading || connectedQ.isLoading;
   const error = availableQ.error ?? connectedQ.error;
 
@@ -983,23 +979,23 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     }
 
     toast.message("No setup URL available", {
-      description: "This integration does not provide a setup link yet.",
+      description: "This plugin does not provide a setup link yet.",
     });
   };
 
-  const handleAddIntegration = (integration: Integration) => {
-    handleGithubSetup(integration.setupUrl);
+  const handleConnectPlugin = (plugin: PluginCatalogItem) => {
+    handleGithubSetup(plugin.setupUrl);
   };
 
-  const handleSyncIntegration = async (integration: IntegrationView) => {
-    if (!integration.id) return;
-
-    setSyncingId(integration.id);
+  const handleSyncPlugin = async (installation: PluginInstallation) => {
+    setSyncingId(installation.id);
     try {
-      await api.syncIntegration(integration.id);
-      toast.success(`${integration.name} synced`);
+      await api.syncPluginInstallation(installation.id);
+      toast.success(`${installation.name} synced`);
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["organization", organizationId, "integrations"] }),
+        qc.invalidateQueries({
+          queryKey: ["organization", organizationId, "plugin-installations"],
+        }),
         qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] }),
       ]);
     } catch (e) {
@@ -1009,44 +1005,30 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
     }
   };
 
-  const handleUpdateIntegration = async (name: string) => {
-    if (!editing?.id) return;
+  const handleUpdatePlugin = async (name: string) => {
+    if (!editing) return;
 
     try {
-      await api.updateIntegration(editing.id, { name });
-      toast.success("Integration updated");
-      await qc.invalidateQueries({ queryKey: ["organization", organizationId, "integrations"] });
+      await api.updatePluginInstallation(editing.id, { name });
+      toast.success("Plugin connection updated");
+      await qc.invalidateQueries({
+        queryKey: ["organization", organizationId, "plugin-installations"],
+      });
     } catch (e) {
       toast.error(errorMessage(e));
     }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button disabled={availableQ.isLoading}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              Add integration
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {availableIntegrations.length > 0 ? (
-              availableIntegrations.map((integration) => (
-                <DropdownMenuItem
-                  key={integrationTypeKey(integration)}
-                  onClick={() => handleAddIntegration(integration)}
-                >
-                  <Plug className="mr-2 h-3.5 w-3.5" />
-                  {integrationDisplayName(integration)}
-                </DropdownMenuItem>
-              ))
-            ) : (
-              <DropdownMenuItem disabled>No integrations available</DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold">Plugin catalog</h2>
+        <p className="text-sm text-muted-foreground">
+          Connect external tools and discover the resources and data they provide.
+        </p>
+      </div>
+      <div className="max-w-md">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search plugins…" />
       </div>
       {isLoading ? (
         <LoadingState />
@@ -1058,78 +1040,150 @@ function IntegrationsTab({ organizationId }: { organizationId: string }) {
             connectedQ.refetch();
           }}
         />
-      ) : integrations.length === 0 ? (
+      ) : plugins.length === 0 ? (
         <EmptyState
           icon={<Plug className="h-4 w-4" />}
-          title="No integrations connected"
-          description="Add an integration to bring external resources into this organization."
+          title="No plugins found"
+          description="Try a different search or add a plugin to the compiled catalog."
         />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {integrations.map((integration) => (
-            <Card
-              key={integration.key}
-              className="flex flex-col gap-4 rounded-xl p-4 shadow-card sm:flex-row sm:items-start sm:justify-between"
-            >
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Plug className="h-4 w-4" />
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          {plugins.map((plugin) => {
+            const connections = installations.filter(
+              (installation) => installation.pluginId === plugin.id,
+            );
+            const status: PluginStatus = connections.some((item) => item.lastSyncError)
+              ? "ERROR"
+              : connections.some((item) => item.status === "ACTIVE")
+                ? "ACTIVE"
+                : (connections[0]?.status ?? "AVAILABLE");
+            return (
+              <Card key={plugin.id} className="overflow-hidden rounded-xl shadow-card">
+                <div className="space-y-4 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+                        <Plug className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-semibold">{plugin.name}</h3>
+                          <PluginStatusBadge status={status} />
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Version {plugin.version}
+                        </p>
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => handleConnectPlugin(plugin)}>
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      {connections.length ? "Connect another" : "Connect"}
+                    </Button>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold">{integration.name}</h3>
-                    <p className="text-[11px] text-muted-foreground">{integration.displayName}</p>
-                  </div>
-                  <IntegrationStatusBadge status={integration.status} />
-                </div>
-                <p className="max-w-xl text-xs text-muted-foreground">{integration.description}</p>
-                {integration.installationId && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Installation ID: {integration.installationId}
+
+                  <p className="text-sm text-muted-foreground">
+                    {plugin.description ?? "No description provided."}
                   </p>
-                )}
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0 text-muted-foreground"
-                    aria-label={`${integration.name} actions`}
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {integration.isConnected && integration.id && (
-                    <DropdownMenuItem
-                      onClick={() => handleSyncIntegration(integration)}
-                      disabled={syncingId === integration.id}
-                    >
-                      <RefreshCw
-                        className={`mr-2 h-3.5 w-3.5 ${
-                          syncingId === integration.id ? "animate-spin" : ""
-                        }`}
-                      />
-                      Sync
-                    </DropdownMenuItem>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {plugin.resourceTypes.map((type) => (
+                      <span
+                        key={type.key}
+                        className="rounded-full border bg-muted/60 px-2.5 py-1 text-[11px] text-muted-foreground"
+                      >
+                        Resource · {type.name}
+                      </span>
+                    ))}
+                    {plugin.dataTypes.map((type) => (
+                      <span
+                        key={type.key}
+                        className="rounded-full border bg-muted/60 px-2.5 py-1 text-[11px] text-muted-foreground"
+                      >
+                        Data · {titleCaseProvider(type.key.replace(`${plugin.id}.`, ""))}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t bg-muted/20 px-5 py-4">
+                  <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <span>Connections</span>
+                    <span>{connections.length}</span>
+                  </div>
+                  {connections.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                      No connections yet. Connect this plugin to start discovering resources.
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden rounded-lg border bg-card">
+                      {connections.map((installation, index) => (
+                        <div
+                          key={installation.id}
+                          className={`flex items-center gap-3 p-3 ${index ? "border-t" : ""}`}
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                            <Plug className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-sm font-medium">{installation.name}</p>
+                              <PluginStatusBadge
+                                status={installation.lastSyncError ? "ERROR" : installation.status}
+                              />
+                            </div>
+                            <p className="truncate text-xs text-muted-foreground">
+                              Installation {installation.externalId} ·{" "}
+                              {installation.pluginInstallationResources?.length ?? 0} resources
+                              {installation.lastSyncedAt
+                                ? ` · Synced ${new Date(installation.lastSyncedAt).toLocaleDateString()}`
+                                : ""}
+                            </p>
+                            {installation.lastSyncError && (
+                              <p className="mt-1 line-clamp-1 text-xs text-destructive">
+                                {installation.lastSyncError}
+                              </p>
+                            )}
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 shrink-0"
+                                aria-label={`${installation.name} actions`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleSyncPlugin(installation)}
+                                disabled={syncingId === installation.id}
+                              >
+                                <RefreshCw
+                                  className={`mr-2 h-3.5 w-3.5 ${syncingId === installation.id ? "animate-spin" : ""}`}
+                                />
+                                Sync
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setEditing(installation)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  {integration.isConnected && integration.id && (
-                    <DropdownMenuItem onClick={() => setEditing(integration)}>
-                      <Pencil className="mr-2 h-3.5 w-3.5" />
-                      Edit
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </Card>
-          ))}
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
-      <EditIntegrationDialog
-        integration={editing}
+      <EditPluginInstallationDialog
+        installation={editing}
         onOpenChange={(open) => !open && setEditing(null)}
-        onSubmit={handleUpdateIntegration}
+        onSubmit={handleUpdatePlugin}
       />
     </div>
   );

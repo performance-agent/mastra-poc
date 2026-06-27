@@ -15,7 +15,9 @@ describe('DataTypesController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new DataTypesController(service as unknown as DataTypesService);
+    controller = new DataTypesController(
+      service as unknown as DataTypesService,
+    );
   });
 
   it('forwards reads to the service', async () => {

@@ -34,6 +34,9 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.4.2",
     "@octokit/auth-app": "^8.2.0",
+    "@pa/core": "file:../core/packages/core",
+    "@pa/plugin-github": "file:../core/packages/plugin-github",
+    "@pa/sdk": "file:../core/packages/sdk",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "ajv": "^8.20.0",
@@ -86,6 +89,12 @@
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^@pa/core$": "<rootDir>/../../core/packages/core/src/index.ts",
+      "^@pa/sdk$": "<rootDir>/../../core/packages/sdk/src/index.ts",
+      "^@pa/plugin-github$": "<rootDir>/../../core/packages/plugin-github/src/index.ts"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

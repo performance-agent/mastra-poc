@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -47,8 +47,29 @@ export class GroupsService {
     });
   }
 
-  assignResource(id: string, resourceId: string) {
-    return this.prismaService.integrationResourceAssignment.upsert({
+  async assignResource(id: string, resourceId: string) {
+    const [group, resource] = await Promise.all([
+      this.prismaService.group.findUnique({
+        where: { id },
+        include: { workspace: true },
+      }),
+      this.prismaService.pluginInstallationResource.findUnique({
+        where: { id: resourceId },
+        include: { pluginInstallation: true },
+      }),
+    ]);
+    if (
+      !group ||
+      !resource ||
+      !resource.active ||
+      group.workspace.organizationId !==
+        resource.pluginInstallation.organizationId
+    ) {
+      throw new BadRequestException(
+        'Resource and group must belong to the same organization',
+      );
+    }
+    return this.prismaService.pluginInstallationResourceAssignment.upsert({
       where: {
         resourceId_groupId: {
           resourceId,
@@ -65,7 +86,7 @@ export class GroupsService {
   }
 
   removeResource(id: string, resourceId: string) {
-    return this.prismaService.integrationResourceAssignment.delete({
+    return this.prismaService.pluginInstallationResourceAssignment.delete({
       where: {
         resourceId_groupId: {
           resourceId,

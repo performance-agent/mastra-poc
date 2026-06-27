@@ -1,7 +1,13 @@
 model PluginInstallation {
-  id     String                   @id @default(cuid())
-  name   String
-  status PluginInstallationStatus
+  id            String                   @id @default(cuid())
+  pluginId      String
+  pluginVersion String
+  name          String
+  externalId    String
+  configuration Json                     @default("{}")
+  status        PluginInstallationStatus @default(PENDING)
+  lastSyncedAt  DateTime?                @db.Timestamptz(3)
+  lastSyncError String?
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -10,7 +16,9 @@ model PluginInstallation {
   organizationId              String
   pluginInstallationResources PluginInstallationResource[]
 
+  @@unique([pluginId, externalId])
   @@index([status])
+  @@index([organizationId])
 }
 
 enum PluginInstallationStatus {

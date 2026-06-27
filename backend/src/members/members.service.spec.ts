@@ -1,18 +1,44 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { MembersService } from './members.service';
 
 describe('MembersService', () => {
-  let service: MembersService;
+  const prisma = {
+    membership: {
+      findMany: jest.fn(),
+    },
+  };
+  const service = new MembersService(prisma as never);
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [MembersService],
-    }).compile();
+  beforeEach(() => jest.clearAllMocks());
 
-    service = module.get<MembersService>(MembersService);
-  });
+  it.each([
+    ['organization', 'findAllOrganizationMembers', 'organizationId'],
+    ['workspace', 'findAllWorkspaceMembers', 'workspaceId'],
+    ['group', 'findAllGroupMembers', 'groupId'],
+  ] as const)(
+    'returns public user data for %s memberships',
+    async (_scope, method, field) => {
+      prisma.membership.findMany.mockResolvedValue([]);
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
+      await service[method]('scope-1');
+
+      expect(prisma.membership.findMany).toHaveBeenCalledWith({
+        where: { [field]: 'scope-1' },
+        select: expect.objectContaining({
+          userId: true,
+          role: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              photoUrl: true,
+            },
+          },
+        }),
+      });
+      const selection =
+        prisma.membership.findMany.mock.calls[0][0].select.user.select;
+      expect(selection).not.toHaveProperty('firebaseUid');
+    },
+  );
 });

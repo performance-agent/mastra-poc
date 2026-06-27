@@ -4,7 +4,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SetupGithubDto } from './dto/setup-github.dto';
 import { Octokit } from 'octokit';
 import { createAppAuth } from '@octokit/auth-app';
 import {
@@ -36,148 +35,16 @@ export class GithubService {
       authStrategy: createAppAuth,
       auth: {
         appId: process.env.GITHUB_APP_ID || '',
-        privateKey: process.env.GITHUB_PRIVATE_KEY || '',
+        privateKey: (process.env.GITHUB_PRIVATE_KEY || '').replace(
+          /\\n/g,
+          '\n',
+        ),
         installationId,
       },
+      ...(process.env.GITHUB_BASE_URL
+        ? { baseUrl: process.env.GITHUB_BASE_URL }
+        : {}),
     });
-  }
-
-  async setup(organizationId: string, setupGithubDto: SetupGithubDto) {
-    if (setupGithubDto.setupAction !== 'install') {
-      throw new BadRequestException(
-        `Unsupported GitHub setup action: ${setupGithubDto.setupAction}`,
-      );
-    }
-
-    const github = this.createInstallationClient(setupGithubDto.installationId);
-    const orgInstallation = await github.rest.apps.getOrgInstallation();
-    const name =
-      orgInstallation.data.account?.html_url ||
-      `GitHub Installation ${setupGithubDto.installationId}`;
-
-    const integration = await this.prismaService.integration.create({
-      data: {
-        name,
-        provider: 'GITHUB',
-        status: 'ACTIVE',
-        organizationId,
-        github: {
-          create: {
-            installationId: setupGithubDto.installationId,
-          },
-        },
-      },
-    });
-
-    return this.sync(integration.id);
-  }
-
-  async sync(integrationId: string) {
-    const integration = await this.prismaService.integration.findUnique({
-      where: {
-        id: integrationId,
-      },
-      include: {
-        github: true,
-      },
-    });
-
-    if (!integration || !integration.github) {
-      throw new BadRequestException(`Integration not found: ${integrationId}`);
-    }
-
-    const github = this.createInstallationClient(
-      integration.github.installationId,
-    );
-
-    const repos = await github.paginate(
-      github.rest.apps.listReposAccessibleToInstallation,
-      {
-        per_page: 100,
-      },
-    );
-
-    const externalIds = repos.map((repo) => repo.id.toString());
-
-    return this.prismaService.$transaction(
-      async (tx) => {
-        await tx.integrationResource.deleteMany({
-          where: {
-            integrationId,
-            type: 'REPOSITORY',
-            externalId: {
-              notIn: externalIds,
-            },
-          },
-        });
-
-        for (const repo of repos) {
-          const externalId = repo.id.toString();
-
-          await tx.integrationResource.upsert({
-            where: {
-              integrationId_externalId: {
-                integrationId,
-                externalId,
-              },
-            },
-            create: {
-              integrationId,
-              name: repo.name,
-              type: 'REPOSITORY',
-              externalId,
-              githubRepository: {
-                create: {
-                  fullName: repo.full_name,
-                  defaultBranch: repo.default_branch,
-                  htmlUrl: repo.html_url,
-                  isPrivate: repo.private,
-                },
-              },
-            },
-            update: {
-              name: repo.name,
-              githubRepository: {
-                upsert: {
-                  create: {
-                    fullName: repo.full_name,
-                    defaultBranch: repo.default_branch,
-                    htmlUrl: repo.html_url,
-                    isPrivate: repo.private,
-                  },
-                  update: {
-                    fullName: repo.full_name,
-                    defaultBranch: repo.default_branch,
-                    htmlUrl: repo.html_url,
-                    isPrivate: repo.private,
-                  },
-                },
-              },
-            },
-          });
-        }
-
-        return tx.integration.findUnique({
-          where: {
-            id: integrationId,
-          },
-          include: {
-            github: true,
-            integrationResources: {
-              include: {
-                githubRepository: true,
-              },
-              orderBy: {
-                name: 'asc',
-              },
-            },
-          },
-        });
-      },
-      {
-        timeout: 10000,
-      },
-    );
   }
 
   async getRepositoryActivity(
@@ -558,19 +425,15 @@ export class GithubService {
   }
 
   private async getGithubRepositoryContext(resourceId: string) {
-    const resource = await this.prismaService.integrationResource.findUnique({
-      where: {
-        id: resourceId,
-      },
-      include: {
-        integration: {
-          include: {
-            github: true,
-          },
+    const resource =
+      await this.prismaService.pluginInstallationResource.findUnique({
+        where: {
+          id: resourceId,
         },
-        githubRepository: true,
-      },
-    });
+        include: {
+          pluginInstallation: true,
+        },
+      });
 
     if (!resource) {
       throw new BadRequestException(
@@ -579,33 +442,38 @@ export class GithubService {
     }
 
     if (
-      resource.integration.provider !== 'GITHUB' ||
-      resource.type !== 'REPOSITORY' ||
-      !resource.integration.github ||
-      !resource.githubRepository
+      resource.pluginInstallation.pluginId !== 'github' ||
+      resource.type !== 'github.repository'
     ) {
       throw new BadRequestException(
         `Integration resource is not a GitHub repository: ${resourceId}`,
       );
     }
 
-    const githubRepository = resource.githubRepository;
-    const [owner, repo] = githubRepository.fullName.split('/');
+    const [owner, repo] = resource.externalId.split('/');
 
     if (!owner || !repo) {
       throw new BadRequestException(
-        `Invalid GitHub repository full name: ${githubRepository.fullName}`,
+        `Invalid GitHub repository full name: ${resource.externalId}`,
       );
     }
+
+    const github = this.createInstallationClient(
+      resource.pluginInstallation.externalId,
+    );
+    const githubRepository = {
+      fullName: resource.externalId,
+      defaultBranch: null,
+      htmlUrl: `https://github.com/${resource.externalId}`,
+      isPrivate: null,
+    };
 
     return {
       resource,
       githubRepository,
       owner,
       repo,
-      github: this.createInstallationClient(
-        resource.integration.github.installationId,
-      ),
+      github,
     };
   }
 

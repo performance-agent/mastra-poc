@@ -63,6 +63,8 @@ CREATE TABLE "PluginInstallationResource" (
     "description" TEXT,
     "externalId" TEXT NOT NULL,
     "type" TEXT NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "lastSeenAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "installationId" TEXT NOT NULL,
     "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(3) NOT NULL,
@@ -84,8 +86,14 @@ CREATE TABLE "PluginInstallationResourceAssignment" (
 -- CreateTable
 CREATE TABLE "PluginInstallation" (
     "id" TEXT NOT NULL,
+    "pluginId" TEXT NOT NULL,
+    "pluginVersion" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "status" "PluginInstallationStatus" NOT NULL,
+    "externalId" TEXT NOT NULL,
+    "configuration" JSONB NOT NULL DEFAULT '{}',
+    "status" "PluginInstallationStatus" NOT NULL DEFAULT 'PENDING',
+    "lastSyncedAt" TIMESTAMPTZ(3),
+    "lastSyncError" TEXT,
     "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(3) NOT NULL,
     "organizationId" TEXT NOT NULL,
@@ -113,6 +121,10 @@ CREATE UNIQUE INDEX "PluginInstallationResourceAssignment_resourceId_groupId_key
 
 -- CreateIndex
 CREATE INDEX "PluginInstallation_status_idx" ON "PluginInstallation"("status");
+
+CREATE INDEX "PluginInstallation_organizationId_idx" ON "PluginInstallation"("organizationId");
+
+CREATE UNIQUE INDEX "PluginInstallation_pluginId_externalId_key" ON "PluginInstallation"("pluginId", "externalId");
 
 -- AddForeignKey
 ALTER TABLE "PluginInstallationResource" ADD CONSTRAINT "PluginInstallationResource_installationId_fkey" FOREIGN KEY ("installationId") REFERENCES "PluginInstallation"("id") ON DELETE CASCADE ON UPDATE CASCADE;

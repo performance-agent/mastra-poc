@@ -5,7 +5,8 @@ import type {
   User,
   Membership,
   Resource,
-  Integration,
+  PluginCatalogItem,
+  PluginInstallation,
   DataType,
   PerformanceReport,
   GroupGithubActivityReport,
@@ -132,15 +133,19 @@ export const api = {
   updateResource: (id: string, body: Partial<Resource>) =>
     request<Resource>(`/resources/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 
-  // Integrations
-  listIntegrations: () => request<Integration[]>("/integrations"),
-  listOrgIntegrations: (id: string) => request<Integration[]>(`/organizations/${id}/integrations`),
-  syncIntegration: (id: string) =>
-    request<Integration>(`/integrations/${id}/sync`, { method: "POST" }),
-  updateIntegration: (id: string, body: Pick<Integration, "name">) =>
-    request<Integration>(`/integrations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  // Plugins and installations
+  listPlugins: () => request<PluginCatalogItem[]>("/plugins"),
+  listOrgPluginInstallations: (id: string) =>
+    request<PluginInstallation[]>(`/organizations/${id}/plugin-installations`),
+  syncPluginInstallation: (id: string) =>
+    request<PluginInstallation>(`/plugin-installations/${id}/sync`, { method: "POST" }),
+  updatePluginInstallation: (id: string, body: Pick<PluginInstallation, "name">) =>
+    request<PluginInstallation>(`/plugin-installations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   setupGithub: (organizationId: string, body: Record<string, unknown>) =>
-    request<unknown>(`/organizations/${organizationId}/integrations/github/setup`, {
+    request<unknown>(`/organizations/${organizationId}/plugin-installations/github/setup`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

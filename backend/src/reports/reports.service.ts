@@ -171,16 +171,11 @@ ${JSON.stringify(reportInput)}
         id: groupId,
       },
       include: {
-        integrationResourceAssignments: {
+        resourceAssignments: {
           include: {
             resource: {
               include: {
-                integration: {
-                  include: {
-                    github: true,
-                  },
-                },
-                githubRepository: true,
+                pluginInstallation: true,
               },
             },
           },
@@ -192,14 +187,13 @@ ${JSON.stringify(reportInput)}
       throw new NotFoundException('Group not found');
     }
 
-    const githubRepositoryResources = group.integrationResourceAssignments
+    const githubRepositoryResources = group.resourceAssignments
       .map((assignment) => assignment.resource)
       .filter(
         (resource) =>
-          resource.integration.provider === 'GITHUB' &&
-          resource.type === 'REPOSITORY' &&
-          resource.integration.github &&
-          resource.githubRepository,
+          resource.pluginInstallation.pluginId === 'github' &&
+          resource.type === 'github.repository' &&
+          resource.active,
       );
 
     if (!githubRepositoryResources.length) {

@@ -96,7 +96,11 @@ function GroupPage() {
     queryKey: ["group", groupId, "members"],
     queryFn: () => api.listGroupMembers(groupId),
   });
-  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers });
+  const usersQ = useQuery({
+    queryKey: ["users"],
+    queryFn: api.listUsers,
+    enabled: memberOpen,
+  });
   const groupResourcesQ = useQuery({
     queryKey: ["group", groupId, "resources"],
     queryFn: () => api.listGroupResources(groupId),
@@ -122,7 +126,9 @@ function GroupPage() {
       ? list.filter(
           (r) =>
             r.name.toLowerCase().includes(s) ||
-            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+            (r.fullName ?? r.githubRepository?.fullName ?? r.externalId ?? "")
+              .toLowerCase()
+              .includes(s),
         )
       : list;
   }, [groupResourcesQ.data, resSearch]);
@@ -135,7 +141,9 @@ function GroupPage() {
       ? list.filter(
           (r) =>
             r.name.toLowerCase().includes(s) ||
-            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+            (r.fullName ?? r.githubRepository?.fullName ?? r.externalId ?? "")
+              .toLowerCase()
+              .includes(s),
         )
       : list;
   }, [assignedResourceIds, orgResourcesQ.data, resSearch]);
@@ -279,7 +287,6 @@ function GroupPage() {
               ) : (
                 <MemberList
                   members={membersQ.data ?? []}
-                  users={usersQ.data ?? []}
                   onInvite={() => setMemberOpen(true)}
                   onRoleChange={async (uid, r) => {
                     try {
@@ -370,7 +377,7 @@ function GroupPage() {
                       <EmptyState
                         icon={<Boxes className="h-4 w-4" />}
                         title="No resources available"
-                        description="Connect an integration in the organization to bring in more resources."
+                        description="Connect a plugin in the organization to bring in more resources."
                       />
                     ) : (
                       <div className="grid gap-3 lg:grid-cols-2">
@@ -460,12 +467,18 @@ function GroupPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>User</Label>
-              <UserPicker
-                users={usersQ.data ?? []}
-                value={userId}
-                onChange={setUserId}
-                excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
-              />
+              {usersQ.isLoading ? (
+                <LoadingState />
+              ) : usersQ.error ? (
+                <ErrorState message={errorMessage(usersQ.error)} onRetry={() => usersQ.refetch()} />
+              ) : (
+                <UserPicker
+                  users={usersQ.data ?? []}
+                  value={userId}
+                  onChange={setUserId}
+                  excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Role</Label>
