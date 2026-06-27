@@ -4,13 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
-import type {
-  InferSecretValues,
-  SecretDefinitions,
-  SecretReader,
-} from '@pa/core';
-import { PluginRegistryService } from '../plugins/plugin-registry.service';
+import { SetupGithubDto } from './dto/setup-github.dto';
+import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePluginInstallationDto } from './dto/update-plugin-installation.dto';
 
@@ -18,7 +13,7 @@ import { UpdatePluginInstallationDto } from './dto/update-plugin-installation.dt
 export class PluginInstallationsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly registry: PluginRegistryService,
+    private readonly runtime: PluginRuntimeService,
   ) {}
 
   findAllByOrganization(organizationId: string) {
@@ -62,7 +57,7 @@ export class PluginInstallationsService {
   async setupGitHub(organizationId: string, dto: SetupGithubDto) {
     if (!/^\d+$/.test(dto.installationId))
       throw new BadRequestException('Invalid GitHub installationId');
-    const plugin = await this.registry.getGitHub();
+    const plugin = await this.runtime.getPlugin('github');
     const existing = await this.findGitHubInstallation(dto.installationId);
 
     if (existing) {
@@ -138,23 +133,8 @@ export class PluginInstallationsService {
       throw new NotFoundException(
         'Active GitHub plugin installation not found',
       );
-    const plugin = await this.registry.getGitHub();
-    const values: Record<string, unknown> = {
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_PRIVATE_KEY,
-      installationId: installation.externalId,
-      baseUrl: process.env.GITHUB_BASE_URL || undefined,
-    };
-    const secrets = createHostSecretReader(plugin.secrets, values);
-    const context = {
-      organizationId: installation.organizationId,
-      pluginId: plugin.id,
-      pluginVersion: plugin.version,
-      installationId: installation.id,
-      secrets,
-    };
     try {
-      const resources = await plugin.resourcesProvider.discover(context);
+      const resources = await this.runtime.discover(installation);
       const seenAt = new Date();
       const externalIds = resources.map((resource) => resource.externalId);
       return await this.prisma.$transaction(async (tx) => {
@@ -211,20 +191,4 @@ export class PluginInstallationsService {
       error.code === 'P2002'
     );
   }
-}
-
-function createHostSecretReader<TDefinitions extends SecretDefinitions>(
-  definitions: TDefinitions,
-  values: Readonly<Record<string, unknown>>,
-): SecretReader<InferSecretValues<TDefinitions>> {
-  return {
-    async get(key) {
-      const result = await definitions[key].schema.safeParseAsync(values[key]);
-      if (!result.success)
-        throw new BadRequestException(
-          `Invalid host configuration for plugin field: ${key}`,
-        );
-      return result.data;
-    },
-  };
 }

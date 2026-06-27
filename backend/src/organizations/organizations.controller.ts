@@ -15,7 +15,7 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateWorkspaceDto } from '../workspaces/dto/create-workspace.dto';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
-import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
+import { SetupGithubDto } from '../plugin-installations/dto/setup-github.dto';
 import { ResourcesService } from '../resources/resources.service';
 import { PluginInstallationsService } from '../plugin-installations/plugin-installations.service';
 import { CurrentUser } from '../auth/decorators/user.decorator';

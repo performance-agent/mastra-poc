@@ -19,14 +19,17 @@ describe('PluginInstallationsService', () => {
     pluginInstallationResource: { updateMany: jest.fn(), upsert: jest.fn() },
   };
   prisma.$transaction = jest.fn((callback) => callback(prisma));
-  const registry = { getGitHub: jest.fn().mockResolvedValue(plugin) };
+  const runtime = {
+    getPlugin: jest.fn().mockResolvedValue(plugin),
+    discover: jest.fn(),
+  };
   let service: PluginInstallationsService;
 
   beforeEach(() => {
     jest.resetAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
-    registry.getGitHub.mockResolvedValue(plugin);
-    service = new PluginInstallationsService(prisma, registry as any);
+    runtime.getPlugin.mockResolvedValue(plugin);
+    service = new PluginInstallationsService(prisma, runtime as any);
   });
 
   it('creates independent records for different GitHub installation ids', async () => {
@@ -158,7 +161,7 @@ describe('PluginInstallationsService', () => {
       organizationId: 'org',
       status: 'ACTIVE',
     });
-    discover.mockResolvedValue([
+    runtime.discover.mockResolvedValue([
       { name: 'api', externalId: 'acme/api', type: 'github.repository' },
     ]);
     prisma.pluginInstallation.update.mockResolvedValue({ id: 'one' });

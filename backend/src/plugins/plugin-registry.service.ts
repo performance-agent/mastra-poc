@@ -28,6 +28,11 @@ export class PluginRegistryService {
     return this.github;
   }
 
+  async get(pluginId: string) {
+    if (pluginId === 'github') return this.getGitHub();
+    throw new NotFoundException(`Plugin not found: ${pluginId}`);
+  }
+
   private toCatalogEntry(plugin: GitHubPlugin) {
     return {
       ...plugin.manifest,

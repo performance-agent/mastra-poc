@@ -56,6 +56,9 @@ class OctokitGitHubClient implements GitHubClient {
       assignees: issue.assignees?.map((assignee) => assignee.login) ?? [],
       createdAt: new Date(issue.created_at).toISOString(),
       updatedAt: new Date(issue.updated_at).toISOString(),
+      comments: issue.comments,
+      ...(issue.user?.login ? { author: issue.user.login } : {}),
+      ...(isoDate(issue.closed_at) ? { closedAt: isoDate(issue.closed_at) } : {}),
       ...(issue.body === null ? {} : { body: issue.body }),
       ...(issue.html_url ? { url: issue.html_url } : {}),
     }));
@@ -72,9 +75,14 @@ class OctokitGitHubClient implements GitHubClient {
         state: pull.draft ? "draft" as const : mergedAt ? "merged" as const : pull.state === "closed" ? "closed" as const : "open" as const,
         labels: pull.labels.map((label) => label.name).filter((label): label is string => Boolean(label)),
         createdAt: new Date(pull.created_at).toISOString(), updatedAt: new Date(pull.updated_at).toISOString(),
+        ...(optionalNumber(pull, "comments") === undefined ? {} : { comments: optionalNumber(pull, "comments") }),
+        ...(optionalNumber(pull, "review_comments") === undefined ? {} : { reviewComments: optionalNumber(pull, "review_comments") }),
         ...(pull.user?.login ? { author: pull.user.login } : {}), ...(pull.html_url ? { url: pull.html_url } : {}),
         ...(pull.base.ref ? { baseBranch: pull.base.ref } : {}), ...(pull.head.ref ? { headBranch: pull.head.ref } : {}),
         ...(closedAt ? { closedAt } : {}), ...(mergedAt ? { mergedAt } : {}),
+        ...(optionalNumber(pull, "additions") === undefined ? {} : { additions: optionalNumber(pull, "additions") }),
+        ...(optionalNumber(pull, "deletions") === undefined ? {} : { deletions: optionalNumber(pull, "deletions") }),
+        ...(optionalNumber(pull, "changed_files") === undefined ? {} : { changedFiles: optionalNumber(pull, "changed_files") }),
       };
     });
   }
@@ -106,4 +114,9 @@ function positiveInteger(value: string): number {
 
 function isoDate(value: string | null | undefined): string | undefined {
   return value ? new Date(value).toISOString() : undefined;
+}
+
+function optionalNumber(value: object, key: string): number | undefined {
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "number" ? candidate : undefined;
 }
