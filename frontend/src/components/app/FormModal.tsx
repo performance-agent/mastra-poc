@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function FormModal({
   open,
@@ -17,6 +18,7 @@ export function FormModal({
   onSubmit,
   submitting,
   children,
+  contentClassName,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -26,10 +28,11 @@ export function FormModal({
   submitting?: boolean;
   onSubmit: () => void | Promise<void>;
   children: React.ReactNode;
+  contentClassName?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className={cn("sm:max-w-md", contentClassName)}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}

@@ -6,6 +6,7 @@ import type {
   Membership,
   Resource,
   Integration,
+  DataType,
   PerformanceReport,
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
@@ -44,7 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const text = await res.text();
-  let data: any = null;
+  let data: unknown = null;
   if (text) {
     try {
       data = JSON.parse(text);
@@ -55,10 +56,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const msg = Array.isArray(data?.message)
-      ? data.message.join(", ")
-      : data?.message || data?.error || res.statusText || "Request failed";
-    throw new ApiError(msg, res.status, data?.message);
+    const payload =
+      typeof data === "object" && data !== null ? (data as Record<string, unknown>) : null;
+    const payloadMessage = payload?.message;
+    const msg = Array.isArray(payloadMessage)
+      ? payloadMessage.join(", ")
+      : typeof payloadMessage === "string"
+        ? payloadMessage
+        : typeof payload?.error === "string"
+          ? payload.error
+          : res.statusText || "Request failed";
+    const details =
+      typeof payloadMessage === "string"
+        ? payloadMessage
+        : Array.isArray(payloadMessage) && payloadMessage.every((item) => typeof item === "string")
+          ? (payloadMessage as string[])
+          : undefined;
+    throw new ApiError(msg, res.status, details);
   }
   return data as T;
 }
@@ -74,6 +88,21 @@ export const api = {
   updateOrganization: (id: string, body: Partial<Organization>) =>
     request<Organization>(`/organizations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteOrganization: (id: string) => request<void>(`/organizations/${id}`, { method: "DELETE" }),
+
+  // Organization data types
+  listOrgDataTypes: (id: string) => request<DataType[]>(`/organizations/${id}/data-types`),
+  createDataType: (
+    organizationId: string,
+    body: Pick<DataType, "name" | "schema"> & { description?: string },
+  ) =>
+    request<DataType>(`/organizations/${organizationId}/data-types`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getDataType: (id: string) => request<DataType>(`/data-types/${id}`),
+  updateDataType: (id: string, body: Partial<Pick<DataType, "name" | "description" | "schema">>) =>
+    request<DataType>(`/data-types/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteDataType: (id: string) => request<void>(`/data-types/${id}`, { method: "DELETE" }),
 
   // Org → Workspaces
   listOrgWorkspaces: (id: string) => request<Workspace[]>(`/organizations/${id}/workspaces`),

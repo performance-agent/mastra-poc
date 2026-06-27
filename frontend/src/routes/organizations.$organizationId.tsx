@@ -13,6 +13,7 @@ import {
   RefreshCw,
   MoreHorizontal,
   Pencil,
+  Database,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
@@ -25,6 +26,7 @@ import { LoadingState } from "@/components/app/LoadingState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EntityFormDialog } from "@/components/app/EntityFormDialog";
+import { DataTypeFormDialog, type DataTypeFormValues } from "@/components/app/DataTypeFormDialog";
 import { FormModal } from "@/components/app/FormModal";
 import { ResourceCard } from "@/components/app/ResourceCard";
 import { MemberList } from "@/components/app/MemberList";
@@ -52,7 +54,7 @@ import { Label } from "@/components/ui/label";
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
 import { savePendingGithubSetup } from "@/lib/github-setup";
-import type { Integration, Resource, Role, Workspace } from "@/lib/types";
+import type { DataType, Integration, Resource, Role, Workspace } from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.string().optional(),
@@ -63,6 +65,7 @@ const organizationTabs = [
   "members",
   "resources",
   "integrations",
+  "data-types",
 ] as const;
 type OrganizationTab = (typeof organizationTabs)[number];
 
@@ -118,6 +121,10 @@ function OrganizationPage() {
     queryKey: ["organization", organizationId, "integrations"],
     queryFn: () => api.listOrgIntegrations(organizationId),
   });
+  const dataTypesQ = useQuery({
+    queryKey: ["organization", organizationId, "data-types"],
+    queryFn: () => api.listOrgDataTypes(organizationId),
+  });
 
   const refreshOrg = () => qc.invalidateQueries({ queryKey: ["organization", organizationId] });
   const refreshList = () => qc.invalidateQueries({ queryKey: ["organizations"] });
@@ -155,6 +162,7 @@ function OrganizationPage() {
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources", count: resourcesQ.data?.length },
               { value: "integrations", label: "Integrations" },
+              { value: "data-types", label: "Data Types", count: dataTypesQ.data?.length },
             ]}
           />
 
@@ -171,6 +179,7 @@ function OrganizationPage() {
           {tab === "members" && <MembersTab organizationId={organizationId} />}
           {tab === "resources" && <ResourcesTab organizationId={organizationId} />}
           {tab === "integrations" && <IntegrationsTab organizationId={organizationId} />}
+          {tab === "data-types" && <DataTypesTab organizationId={organizationId} />}
         </div>
       )}
 
@@ -591,6 +600,199 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function dataTypeFields(schema: Record<string, unknown>) {
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return [];
+  return Object.keys(properties);
+}
+
+function DataTypesTab({ organizationId }: { organizationId: string }) {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editing, setEditing] = useState<DataType | null>(null);
+  const [deleting, setDeleting] = useState<DataType | null>(null);
+  const q = useQuery({
+    queryKey: ["organization", organizationId, "data-types"],
+    queryFn: () => api.listOrgDataTypes(organizationId),
+  });
+  const filtered = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    if (!normalizedSearch) return q.data ?? [];
+    return (q.data ?? []).filter(
+      (dataType) =>
+        dataType.name.toLowerCase().includes(normalizedSearch) ||
+        (dataType.description ?? "").toLowerCase().includes(normalizedSearch),
+    );
+  }, [q.data, search]);
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: ["organization", organizationId, "data-types"] });
+
+  const createDataType = async (values: DataTypeFormValues) => {
+    if (!values.schema) return;
+    try {
+      await api.createDataType(organizationId, {
+        name: values.name,
+        description: values.description,
+        schema: values.schema,
+      });
+      toast.success("Data type created");
+      await refresh();
+    } catch (error) {
+      toast.error(errorMessage(error));
+      throw error;
+    }
+  };
+
+  const updateDataType = async (values: DataTypeFormValues) => {
+    if (!editing) return;
+    try {
+      await api.updateDataType(editing.id, {
+        name: values.name,
+        description: values.description ?? "",
+        ...(values.schema ? { schema: values.schema } : {}),
+      });
+      toast.success("Data type updated");
+      await refresh();
+    } catch (error) {
+      toast.error(errorMessage(error));
+      throw error;
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="w-full sm:w-72">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search data types…" />
+        </div>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-1.5 h-4 w-4" /> New data type
+        </Button>
+      </div>
+
+      {q.isLoading ? (
+        <LoadingState />
+      ) : q.error ? (
+        <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<Database className="h-4 w-4" />}
+          title={search ? "No matching data types" : "No data types yet"}
+          description={
+            search
+              ? "Try a different search term."
+              : "Define structured data that performance agents can produce and consume."
+          }
+          actionLabel={search ? undefined : "New data type"}
+          onAction={search ? undefined : () => setCreateOpen(true)}
+        />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((dataType) => {
+            const fields = dataTypeFields(dataType.schema);
+            return (
+              <Card
+                key={dataType.id}
+                className="flex min-w-0 flex-col gap-4 rounded-xl p-4 shadow-card"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <Database className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold">{dataType.name}</h3>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {dataType.description || "No description"}
+                      </p>
+                    </div>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0 text-muted-foreground"
+                        aria-label={`${dataType.name} actions`}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditing(dataType)}>
+                        <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setDeleting(dataType)}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="mt-auto flex flex-wrap gap-1.5">
+                  {fields.length > 0 ? (
+                    <>
+                      {fields.slice(0, 4).map((field) => (
+                        <span
+                          key={field}
+                          className="max-w-full truncate rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground"
+                        >
+                          {field}
+                        </span>
+                      ))}
+                      {fields.length > 4 && (
+                        <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+                          +{fields.length - 4}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Custom schema</span>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <DataTypeFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSubmit={createDataType}
+      />
+      <DataTypeFormDialog
+        open={!!editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+        initial={editing}
+        onSubmit={updateDataType}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete ${deleting?.name}?`}
+        description="This permanently removes the data type and its schema."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return;
+          try {
+            await api.deleteDataType(deleting.id);
+            toast.success("Data type deleted");
+            setDeleting(null);
+            await refresh();
+          } catch (error) {
+            toast.error(errorMessage(error));
           }
         }}
       />

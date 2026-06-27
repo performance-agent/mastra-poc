@@ -84,6 +84,16 @@ export interface Integration {
   } | null;
 }
 
+export interface DataType {
+  id: string;
+  organizationId?: string | null;
+  name: string;
+  description?: string | null;
+  schema: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export type PerformanceReportType = "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface PerformanceReport<TData = unknown> {
