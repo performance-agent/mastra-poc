@@ -11,4 +11,5 @@ model Organization {
   integrations       Integration[]
   memberships        Membership[]
   performanceReports PerformanceReport[]
+  dataTypes          DataType[]
 }

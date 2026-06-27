@@ -5,6 +5,7 @@ export type ResourceType =
   | 'workspace'
   | 'group'
   | 'integration'
+  | 'dataType'
   | 'report';
 
 export type AccessMode = 'access' | 'context';

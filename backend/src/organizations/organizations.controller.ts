@@ -22,6 +22,8 @@ import { IntegrationsService } from '../integrations/integrations.service';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { RequireMembership } from '../access-control/require-membership.decorator';
+import { DataTypesService } from '../data-types/data-types.service';
+import { CreateDataTypeDto } from '../data-types/dto/create-data-type.dto';
 
 @Controller('organizations')
 export class OrganizationsController {
@@ -32,6 +34,7 @@ export class OrganizationsController {
     private readonly githubService: GithubService,
     private readonly resourcesService: ResourcesService,
     private readonly integrationsService: IntegrationsService,
+    private readonly dataTypesService: DataTypesService,
   ) {}
 
   @Post()
@@ -180,5 +183,28 @@ export class OrganizationsController {
   @Get(':id/integrations')
   findAllIntegrations(@Param('id') organizationId: string) {
     return this.integrationsService.findAllByOrganization(organizationId);
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/data-types')
+  createDataType(
+    @Param('id') organizationId: string,
+    @Body() createDataTypeDto: CreateDataTypeDto,
+  ) {
+    return this.dataTypesService.create(organizationId, createDataTypeDto);
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  @Get(':id/data-types')
+  findAllDataTypes(@Param('id') organizationId: string) {
+    return this.dataTypesService.findAll(organizationId);
   }
 }

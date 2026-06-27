@@ -230,6 +230,36 @@ describe('AccessControlService', () => {
     );
   });
 
+  it('resolves data type access through its parent organization', async () => {
+    prismaService.membership.findFirst.mockResolvedValue({
+      id: 'membership-1',
+    });
+
+    await service.canAccessResource({
+      userId: 'user-1',
+      resource: 'dataType',
+      resourceId: 'data-type-1',
+      roles: ['ADMIN'],
+    });
+
+    expect(prismaService.membership.findFirst).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        role: { in: ['ADMIN'] },
+        OR: [
+          {
+            organization: {
+              dataTypes: {
+                some: { id: 'data-type-1' },
+              },
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+  });
+
   it('returns false for unknown resources', async () => {
     await expect(
       service.canAccessResource({
