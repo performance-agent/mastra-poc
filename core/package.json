@@ -1,0 +1,18 @@
+{
+  "name": "performance-platform-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/core", "packages/sdk", "packages/plugin-github"],
+  "scripts": {
+    "build": "npm run build -w @pa/core && npm run build -w @pa/sdk && npm run build -w @pa/plugin-github",
+    "clean": "npm run clean -w @pa/core && npm run clean -w @pa/sdk && npm run clean -w @pa/plugin-github",
+    "test": "tsx --test tests/plugin-core-v1.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
