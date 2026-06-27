@@ -42,6 +42,19 @@ export class AccessControlService {
           },
         ]);
 
+      case 'dataType':
+        return this.hasMembership(input, [
+          {
+            organization: {
+              dataTypes: {
+                some: {
+                  id: input.resourceId,
+                },
+              },
+            },
+          },
+        ]);
+
       case 'report':
         return this.hasMembership(input, this.reportAccess(input.resourceId));
 
@@ -68,6 +81,7 @@ export class AccessControlService {
         return this.canAccessResource(input);
 
       case 'integration':
+      case 'dataType':
       case 'report':
         return this.canAccessResource(input);
 

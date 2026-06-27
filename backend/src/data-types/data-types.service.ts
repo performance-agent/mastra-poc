@@ -6,12 +6,9 @@ import Ajv2020 from 'ajv/dist/2020';
 
 @Injectable()
 export class DataTypesService {
-  constructor(
-    private readonly prismaService: PrismaService,
-    private readonly ajv: Ajv2020,
-  ) {
-    this.ajv = new Ajv2020({ strict: false, allErrors: true });
-  }
+  private readonly ajv = new Ajv2020({ strict: false, allErrors: true });
+
+  constructor(private readonly prismaService: PrismaService) {}
 
   create(organizationId: string, createDataTypeDto: CreateDataTypeDto) {
     const schema = this.validateJsonSchema(createDataTypeDto.schema);
