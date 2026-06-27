@@ -1,0 +1,35 @@
+model PluginInstallationResource {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  externalId  String
+  type        String
+
+  installationId     String
+  pluginInstallation PluginInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime                               @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime                               @updatedAt @db.Timestamptz(3)
+  assignments PluginInstallationResourceAssignment[]
+
+  @@unique([installationId, externalId])
+  @@index([installationId])
+}
+
+model PluginInstallationResourceAssignment {
+  id String @id @default(cuid())
+
+  resourceId  String
+  resource    PluginInstallationResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  workspaceId String?
+  workspace   Workspace?                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  groupId     String?
+  group       Group?                     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([resourceId, workspaceId])
+  @@unique([resourceId, groupId])
+  @@index([workspaceId])
+  @@index([groupId])
+}
