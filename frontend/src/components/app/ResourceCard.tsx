@@ -12,9 +12,14 @@ export function ResourceCard({
   onEdit?: () => void;
   action?: React.ReactNode;
 }) {
-  const fullName = resource.fullName ?? resource.githubRepository?.fullName;
+  const fullName = resource.fullName ?? resource.githubRepository?.fullName ?? resource.externalId;
   const defaultBranch = resource.defaultBranch ?? resource.githubRepository?.defaultBranch;
-  const htmlUrl = resource.htmlUrl ?? resource.githubRepository?.htmlUrl;
+  const htmlUrl =
+    resource.htmlUrl ??
+    resource.githubRepository?.htmlUrl ??
+    (resource.type === "github.repository" && resource.externalId
+      ? `https://github.com/${resource.externalId}`
+      : undefined);
   const isPrivate = resource.private ?? resource.githubRepository?.isPrivate ?? undefined;
 
   return (

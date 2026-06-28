@@ -5,11 +5,9 @@ import { ConfigModule } from '@nestjs/config';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { GroupsModule } from './groups/groups.module';
-import { GithubModule } from './integrations/github/github.module';
 import { UsersModule } from './users/users.module';
 import { MembersModule } from './members/members.module';
 import { ResourcesModule } from './resources/resources.module';
-import { IntegrationsModule } from './integrations/integrations.module';
 import { AuthModule } from './auth/auth.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -19,6 +17,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { MembershipGuard } from './access-control/membership.guard';
 import { DataTypesModule } from './data-types/data-types.module';
+import { PluginsModule } from './plugins/plugins.module';
+import { PluginInstallationsModule } from './plugin-installations/plugin-installations.module';
 
 @Module({
   imports: [
@@ -26,17 +26,17 @@ import { DataTypesModule } from './data-types/data-types.module';
     OrganizationsModule,
     WorkspacesModule,
     GroupsModule,
-    GithubModule,
     UsersModule,
     MembersModule,
     ResourcesModule,
-    IntegrationsModule,
     AuthModule,
     FirebaseModule,
     PrismaModule,
     AccessControlModule,
     ReportsModule,
     DataTypesModule,
+    PluginsModule,
+    PluginInstallationsModule,
   ],
   controllers: [AppController],
   providers: [

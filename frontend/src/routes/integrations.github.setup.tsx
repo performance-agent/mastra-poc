@@ -11,19 +11,24 @@ export const Route = createFileRoute("/integrations/github/setup")({
   head: () => ({
     meta: [
       { title: "Connecting GitHub - Performance Agent" },
-      { name: "description", content: "Completing GitHub integration setup." },
+      { name: "description", content: "Completing GitHub plugin setup." },
     ],
   }),
   component: GithubSetupPage,
 });
 
 type Status = "connecting" | "success" | "error";
+type SetupAction = "install" | "update";
 
 function getGithubSetupParams() {
   const params = new URLSearchParams(window.location.search);
+  const rawSetupAction = params.get("setup_action") || params.get("setupAction") || "install";
+  const setupAction: SetupAction | null =
+    rawSetupAction === "install" || rawSetupAction === "update" ? rawSetupAction : null;
   return {
     installationId: params.get("installation_id") || params.get("installationId") || "",
-    setupAction: params.get("setup_action") || params.get("setupAction") || "",
+    setupAction,
+    rawSetupAction,
   };
 }
 
@@ -36,7 +41,7 @@ function GithubSetupPage() {
 
     async function completeSetup() {
       const pending = readPendingGithubSetup();
-      const { installationId, setupAction } = getGithubSetupParams();
+      const { installationId, setupAction, rawSetupAction } = getGithubSetupParams();
 
       if (!pending?.organizationId) {
         setStatus("error");
@@ -50,16 +55,32 @@ function GithubSetupPage() {
         return;
       }
 
+      if (!setupAction) {
+        setStatus("error");
+        setMessage(`GitHub returned an unsupported setup action: ${rawSetupAction}.`);
+        return;
+      }
+
+      setMessage(
+        setupAction === "update"
+          ? "Updating GitHub connection..."
+          : "Connecting GitHub to your organization...",
+      );
+
       try {
         await api.setupGithub(pending.organizationId, {
           installationId,
-          setupAction: setupAction || "install",
+          setupAction,
         });
         clearPendingGithubSetup();
         if (cancelled) return;
         setStatus("success");
-        setMessage("GitHub connected. Redirecting to integrations...");
-        window.location.assign(`/organizations/${pending.organizationId}?tab=integrations`);
+        setMessage(
+          setupAction === "update"
+            ? "GitHub connection updated. Redirecting to plugins..."
+            : "GitHub connected. Redirecting to plugins...",
+        );
+        window.location.assign(`/organizations/${pending.organizationId}?tab=plugins`);
       } catch (error) {
         if (cancelled) return;
         setStatus("error");

@@ -342,14 +342,14 @@ function GroupsTab({
 
 function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
   const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState<string>();
+  const [role, setRole] = useState<Role>("VIEWER");
   const membersQ = useQuery({
     queryKey: ["workspace", workspaceId, "members"],
     queryFn: () => api.listWorkspaceMembers(workspaceId),
   });
-  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers });
-  const [open, setOpen] = useState(false);
-  const [userId, setUserId] = useState<string>();
-  const [role, setRole] = useState<Role>("VIEWER");
+  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: open });
   const refresh = () => qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "members"] });
 
   return (
@@ -366,7 +366,6 @@ function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
       ) : (
         <MemberList
           members={membersQ.data ?? []}
-          users={usersQ.data ?? []}
           onInvite={() => setOpen(true)}
           onRoleChange={async (uid, r) => {
             try {
@@ -396,12 +395,18 @@ function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>User</Label>
-              <UserPicker
-                users={usersQ.data ?? []}
-                value={userId}
-                onChange={setUserId}
-                excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
-              />
+              {usersQ.isLoading ? (
+                <LoadingState />
+              ) : usersQ.error ? (
+                <ErrorState message={errorMessage(usersQ.error)} onRetry={() => usersQ.refetch()} />
+              ) : (
+                <UserPicker
+                  users={usersQ.data ?? []}
+                  value={userId}
+                  onChange={setUserId}
+                  excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Role</Label>
@@ -466,7 +471,9 @@ function WorkspaceResourcesTab({
       ? list.filter(
           (r) =>
             r.name.toLowerCase().includes(s) ||
-            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+            (r.fullName ?? r.githubRepository?.fullName ?? r.externalId ?? "")
+              .toLowerCase()
+              .includes(s),
         )
       : list;
   }, [assignedQ.data, search]);
@@ -477,7 +484,9 @@ function WorkspaceResourcesTab({
       ? list.filter(
           (r) =>
             r.name.toLowerCase().includes(s) ||
-            (r.fullName ?? r.githubRepository?.fullName ?? "").toLowerCase().includes(s),
+            (r.fullName ?? r.githubRepository?.fullName ?? r.externalId ?? "")
+              .toLowerCase()
+              .includes(s),
         )
       : list;
   }, [assignedIds, orgResourcesQ.data, search]);
@@ -563,7 +572,7 @@ function WorkspaceResourcesTab({
               <EmptyState
                 icon={<Boxes className="h-4 w-4" />}
                 title="No resources available"
-                description="Connect an integration in the organization to bring in more resources."
+                description="Connect a plugin in the organization to bring in more resources."
               />
             ) : (
               <div className="grid gap-3 lg:grid-cols-2">

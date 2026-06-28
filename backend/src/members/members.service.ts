@@ -33,6 +33,9 @@ export class MembersService {
       where: {
         organizationId,
       },
+      include: {
+        user: true,
+      },
     });
   }
 
@@ -78,6 +81,9 @@ export class MembersService {
       where: {
         workspaceId,
       },
+      include: {
+        user: true,
+      },
     });
   }
 
@@ -122,6 +128,9 @@ export class MembersService {
     return this.prismaService.membership.findMany({
       where: {
         groupId,
+      },
+      include: {
+        user: true,
       },
     });
   }

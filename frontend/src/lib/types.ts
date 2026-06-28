@@ -44,6 +44,7 @@ export interface Membership {
   userId: string;
   role: Role;
   createdAt?: string;
+  user: Pick<User, "id" | "name" | "email" | "photoUrl">;
 }
 
 export interface Resource {
@@ -52,7 +53,10 @@ export interface Resource {
   description?: string | null;
   type?: string;
   externalId?: string;
-  integrationId?: string;
+  installationId?: string;
+  active?: boolean;
+  lastSeenAt?: string;
+  pluginInstallation?: PluginInstallation;
   fullName?: string;
   defaultBranch?: string;
   private?: boolean;
@@ -66,22 +70,40 @@ export interface Resource {
   } | null;
 }
 
-export interface Integration {
-  id?: string;
-  name?: string;
-  displayName?: string;
-  type?: string;
-  provider?: "GITHUB" | "JIRA" | string;
-  organizationId?: string;
+export interface PluginCatalogItem {
+  id: string;
+  name: string;
+  version: string;
   description?: string;
   setupUrl?: string;
-  status?: "connected" | "available" | "error" | "PENDING" | "ACTIVE" | "DISABLED" | "REVOKED";
+  installable: boolean;
+  configurationFields: Array<{
+    key: string;
+    label: string;
+    description?: string;
+    sensitive: boolean;
+    source: "host" | "installation";
+    configurable: boolean;
+    schema: Record<string, unknown>;
+  }>;
+  resourceTypes: Array<{ key: string; name: string; description?: string }>;
+  dataTypes: Array<{ key: string; schema: Record<string, unknown> }>;
+}
+
+export interface PluginInstallation {
+  id: string;
+  pluginId: string;
+  pluginVersion: string;
+  organizationId: string;
+  name: string;
+  externalId: string;
+  configuration: Record<string, unknown>;
+  status: "PENDING" | "ACTIVE" | "DISABLED" | "REVOKED";
+  lastSyncedAt?: string | null;
+  lastSyncError?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  github?: {
-    integrationId?: string;
-    installationId?: string;
-  } | null;
+  pluginInstallationResources?: Resource[];
 }
 
 export interface DataType {

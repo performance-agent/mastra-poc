@@ -92,7 +92,7 @@ function OrganizationsIndex() {
           <EmptyState
             icon={<Building2 className="h-4 w-4" />}
             title="Create your first organization"
-            description="Organizations group workspaces, members, and integrations."
+            description="Organizations group workspaces, members, resources, and plugins."
             actionLabel="New organization"
             onAction={() => setCreateOpen(true)}
           />

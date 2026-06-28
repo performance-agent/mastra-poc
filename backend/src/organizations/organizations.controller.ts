@@ -15,10 +15,9 @@ import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateWorkspaceDto } from '../workspaces/dto/create-workspace.dto';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
-import { SetupGithubDto } from '../integrations/github/dto/setup-github.dto';
-import { GithubService } from '../integrations/github/github.service';
+import { SetupGithubDto } from '../plugin-installations/dto/setup-github.dto';
 import { ResourcesService } from '../resources/resources.service';
-import { IntegrationsService } from '../integrations/integrations.service';
+import { PluginInstallationsService } from '../plugin-installations/plugin-installations.service';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { RequireMembership } from '../access-control/require-membership.decorator';
@@ -31,9 +30,8 @@ export class OrganizationsController {
     private readonly organizationsService: OrganizationsService,
     private readonly workspacesService: WorkspacesService,
     private readonly membersService: MembersService,
-    private readonly githubService: GithubService,
     private readonly resourcesService: ResourcesService,
-    private readonly integrationsService: IntegrationsService,
+    private readonly pluginInstallationsService: PluginInstallationsService,
     private readonly dataTypesService: DataTypesService,
   ) {}
 
@@ -157,12 +155,15 @@ export class OrganizationsController {
     param: 'id',
     roles: ['OWNER', 'ADMIN'],
   })
-  @Post(':id/integrations/github/setup')
+  @Post(':id/plugin-installations/github/setup')
   setup(
     @Param('id') organizationId: string,
     @Body() setupGithubDto: SetupGithubDto,
   ) {
-    return this.githubService.setup(organizationId, setupGithubDto);
+    return this.pluginInstallationsService.setupGitHub(
+      organizationId,
+      setupGithubDto,
+    );
   }
 
   @RequireMembership({
@@ -180,9 +181,11 @@ export class OrganizationsController {
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
   })
-  @Get(':id/integrations')
-  findAllIntegrations(@Param('id') organizationId: string) {
-    return this.integrationsService.findAllByOrganization(organizationId);
+  @Get(':id/plugin-installations')
+  findAllPluginInstallations(@Param('id') organizationId: string) {
+    return this.pluginInstallationsService.findAllByOrganization(
+      organizationId,
+    );
   }
 
   @RequireMembership({

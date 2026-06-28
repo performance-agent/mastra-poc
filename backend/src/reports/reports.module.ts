@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { ReportsController } from './reports.controller';
-import { GithubModule } from '../integrations/github/github.module';
+import { PluginsModule } from '../plugins/plugins.module';
 
 @Module({
-  imports: [GithubModule],
+  imports: [PluginsModule],
   controllers: [ReportsController],
   providers: [ReportsService],
   exports: [ReportsService],

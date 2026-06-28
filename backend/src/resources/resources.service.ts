@@ -6,64 +6,54 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ResourcesService {
   constructor(private readonly prismaService: PrismaService) {}
   findAllByOrganization(organizationId: string) {
-    return this.prismaService.integrationResource.findMany({
+    return this.prismaService.pluginInstallationResource.findMany({
       where: {
-        integration: {
+        pluginInstallation: {
           organizationId,
         },
       },
-      include: {
-        githubRepository: true,
-      },
+      include: { pluginInstallation: true },
     });
   }
 
   findAllByWorkspace(workspaceId: string) {
-    return this.prismaService.integrationResource.findMany({
+    return this.prismaService.pluginInstallationResource.findMany({
       where: {
-        integrationResourceAssignments: {
+        assignments: {
           some: {
             workspaceId,
           },
         },
       },
-      include: {
-        githubRepository: true,
-      },
+      include: { pluginInstallation: true },
     });
   }
 
   findAllByGroup(groupId: string) {
-    return this.prismaService.integrationResource.findMany({
+    return this.prismaService.pluginInstallationResource.findMany({
       where: {
-        integrationResourceAssignments: {
+        assignments: {
           some: {
             groupId,
           },
         },
       },
-      include: {
-        githubRepository: true,
-      },
+      include: { pluginInstallation: true },
     });
   }
 
   findOne(id: string) {
-    return this.prismaService.integrationResource.findUnique({
+    return this.prismaService.pluginInstallationResource.findUnique({
       where: { id },
-      include: {
-        githubRepository: true,
-      },
+      include: { pluginInstallation: true },
     });
   }
 
   update(id: string, updateResourceDto: UpdateResourceDto) {
-    return this.prismaService.integrationResource.update({
+    return this.prismaService.pluginInstallationResource.update({
       where: { id },
       data: updateResourceDto,
-      include: {
-        githubRepository: true,
-      },
+      include: { pluginInstallation: true },
     });
   }
 }

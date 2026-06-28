@@ -29,13 +29,28 @@ export class AccessControlService {
       case 'group':
         return this.hasMembership(input, this.groupAccess(input.resourceId));
 
-      case 'integration':
+      case 'pluginInstallation':
         return this.hasMembership(input, [
           {
             organization: {
-              integrations: {
+              pluginInstallations: {
                 some: {
                   id: input.resourceId,
+                },
+              },
+            },
+          },
+        ]);
+
+      case 'pluginResource':
+        return this.hasMembership(input, [
+          {
+            organization: {
+              pluginInstallations: {
+                some: {
+                  pluginInstallationResources: {
+                    some: { id: input.resourceId },
+                  },
                 },
               },
             },
@@ -80,7 +95,8 @@ export class AccessControlService {
       case 'group':
         return this.canAccessResource(input);
 
-      case 'integration':
+      case 'pluginInstallation':
+      case 'pluginResource':
       case 'dataType':
       case 'report':
         return this.canAccessResource(input);

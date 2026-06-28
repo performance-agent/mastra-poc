@@ -4,7 +4,8 @@ export type ResourceType =
   | 'organization'
   | 'workspace'
   | 'group'
-  | 'integration'
+  | 'pluginInstallation'
+  | 'pluginResource'
   | 'dataType'
   | 'report';
 
