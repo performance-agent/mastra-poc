@@ -16,6 +16,7 @@ import { CreateWorkspaceDto } from '../workspaces/dto/create-workspace.dto';
 import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
 import { SetupGithubDto } from '../plugin-installations/dto/setup-github.dto';
+import { SetupJiraDto } from '../plugin-installations/dto/setup-jira.dto';
 import { ResourcesService } from '../resources/resources.service';
 import { PluginInstallationsService } from '../plugin-installations/plugin-installations.service';
 import { CurrentUser } from '../auth/decorators/user.decorator';
@@ -164,6 +165,16 @@ export class OrganizationsController {
       organizationId,
       setupGithubDto,
     );
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/plugin-installations/jira/setup')
+  setupJira(@Param('id') organizationId: string, @Body() dto: SetupJiraDto) {
+    return this.pluginInstallationsService.setupJira(organizationId, dto);
   }
 
   @RequireMembership({

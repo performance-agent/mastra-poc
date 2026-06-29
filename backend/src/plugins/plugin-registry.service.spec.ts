@@ -29,6 +29,19 @@ describe('PluginRegistryService', () => {
         ],
       },
     } as never);
+    jest.spyOn(service, 'getJira').mockResolvedValue({
+      id: 'jira',
+      name: 'Jira',
+      version: '1.0.0',
+      manifest: {
+        id: 'jira',
+        name: 'Jira',
+        version: '1.0.0',
+        resourceTypes: [],
+        dataTypes: [],
+        secrets: [],
+      },
+    } as never);
     const [github] = await service.findAll();
     expect(github.id).toBe('github');
     expect(github.configurationFields).toEqual(
