@@ -843,19 +843,29 @@ function titleCaseProvider(value: string) {
 
 function EditPluginInstallationDialog({
   installation,
+  plugin,
   onOpenChange,
   onSubmit,
 }: {
   installation: PluginInstallation | null;
+  plugin?: PluginCatalogItem;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (name: string) => Promise<void>;
+  onSubmit: (name: string, configuration: Record<string, unknown>) => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [configuration, setConfiguration] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setName(installation?.name ?? "");
-  }, [installation]);
+    setConfiguration(
+      Object.fromEntries(
+        (plugin?.configurationFields ?? [])
+          .filter((field) => field.configurable)
+          .map((field) => [field.key, String(installation?.configuration[field.key] ?? "")]),
+      ),
+    );
+  }, [installation, plugin]);
 
   return (
     <FormModal
@@ -868,7 +878,7 @@ function EditPluginInstallationDialog({
         if (!name.trim()) return;
         setSubmitting(true);
         try {
-          await onSubmit(name.trim());
+          await onSubmit(name.trim(), configuration);
           onOpenChange(false);
         } finally {
           setSubmitting(false);
@@ -885,6 +895,71 @@ function EditPluginInstallationDialog({
           autoFocus
         />
       </div>
+      {(plugin?.configurationFields ?? [])
+        .filter((field) => field.configurable)
+        .map((field) => (
+          <div key={field.key} className="space-y-1.5">
+            <Label htmlFor={`plugin-edit-${field.key}`}>{field.label}</Label>
+            <Input
+              id={`plugin-edit-${field.key}`}
+              type={field.sensitive ? "password" : field.key === "email" ? "email" : "text"}
+              value={configuration[field.key] ?? ""}
+              placeholder={field.sensitive ? "Leave blank to keep the current value" : undefined}
+              onChange={(event) =>
+                setConfiguration((current) => ({ ...current, [field.key]: event.target.value }))
+              }
+            />
+          </div>
+        ))}
+    </FormModal>
+  );
+}
+
+function ConnectJiraDialog({
+  plugin,
+  onOpenChange,
+  onSubmit,
+}: {
+  plugin: PluginCatalogItem | null;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (values: Record<string, string>) => Promise<void>;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => setValues({ name: "Jira" }), [plugin]);
+  return (
+    <FormModal
+      open={!!plugin}
+      onOpenChange={onOpenChange}
+      title="Connect Jira"
+      submitLabel="Connect and sync"
+      submitting={submitting}
+      onSubmit={async () => {
+        setSubmitting(true);
+        try {
+          await onSubmit(values);
+          onOpenChange(false);
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="jira-name">Connection name</Label>
+        <Input id="jira-name" required value={values.name ?? ""} onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))} />
+      </div>
+      {(plugin?.configurationFields ?? []).filter((field) => field.configurable).map((field) => (
+        <div key={field.key} className="space-y-1.5">
+          <Label htmlFor={`jira-${field.key}`}>{field.label}</Label>
+          <Input
+            id={`jira-${field.key}`}
+            required
+            type={field.sensitive ? "password" : field.key === "email" ? "email" : field.key === "siteUrl" ? "url" : "text"}
+            value={values[field.key] ?? ""}
+            onChange={(event) => setValues((v) => ({ ...v, [field.key]: event.target.value }))}
+          />
+        </div>
+      ))}
     </FormModal>
   );
 }
@@ -946,6 +1021,7 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
   const [search, setSearch] = useState("");
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<PluginInstallation | null>(null);
+  const [connectingJira, setConnectingJira] = useState<PluginCatalogItem | null>(null);
   const availableQ = useQuery({ queryKey: ["plugins"], queryFn: api.listPlugins });
   const connectedQ = useQuery({
     queryKey: ["organization", organizationId, "plugin-installations"],
@@ -984,7 +1060,8 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
   };
 
   const handleConnectPlugin = (plugin: PluginCatalogItem) => {
-    handleGithubSetup(plugin.setupUrl);
+    if (plugin.id === "jira") setConnectingJira(plugin);
+    else handleGithubSetup(plugin.setupUrl);
   };
 
   const handleSyncPlugin = async (installation: PluginInstallation) => {
@@ -1005,11 +1082,11 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
     }
   };
 
-  const handleUpdatePlugin = async (name: string) => {
+  const handleUpdatePlugin = async (name: string, configuration: Record<string, unknown>) => {
     if (!editing) return;
 
     try {
-      await api.updatePluginInstallation(editing.id, { name });
+      await api.updatePluginInstallation(editing.id, { name, configuration });
       toast.success("Plugin connection updated");
       await qc.invalidateQueries({
         queryKey: ["organization", organizationId, "plugin-installations"],
@@ -1182,8 +1259,27 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
       )}
       <EditPluginInstallationDialog
         installation={editing}
+        plugin={(availableQ.data ?? []).find((item) => item.id === editing?.pluginId)}
         onOpenChange={(open) => !open && setEditing(null)}
         onSubmit={handleUpdatePlugin}
+      />
+      <ConnectJiraDialog
+        plugin={connectingJira}
+        onOpenChange={(open) => !open && setConnectingJira(null)}
+        onSubmit={async (values) => {
+          try {
+            await api.setupJira(organizationId, values);
+            toast.success("Jira connected and synced");
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["plugins"] }),
+              qc.invalidateQueries({ queryKey: ["organization", organizationId, "plugin-installations"] }),
+              qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] }),
+            ]);
+          } catch (error) {
+            toast.error(errorMessage(error));
+            throw error;
+          }
+        }}
       />
     </div>
   );

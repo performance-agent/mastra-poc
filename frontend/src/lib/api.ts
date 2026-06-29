@@ -139,13 +139,21 @@ export const api = {
     request<PluginInstallation[]>(`/organizations/${id}/plugin-installations`),
   syncPluginInstallation: (id: string) =>
     request<PluginInstallation>(`/plugin-installations/${id}/sync`, { method: "POST" }),
-  updatePluginInstallation: (id: string, body: Pick<PluginInstallation, "name">) =>
+  updatePluginInstallation: (
+    id: string,
+    body: Pick<PluginInstallation, "name"> & { configuration?: Record<string, unknown> },
+  ) =>
     request<PluginInstallation>(`/plugin-installations/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
   setupGithub: (organizationId: string, body: Record<string, unknown>) =>
     request<unknown>(`/organizations/${organizationId}/plugin-installations/github/setup`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  setupJira: (organizationId: string, body: Record<string, unknown>) =>
+    request<PluginInstallation>(`/organizations/${organizationId}/plugin-installations/jira/setup`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

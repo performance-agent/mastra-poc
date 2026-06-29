@@ -36,6 +36,7 @@
     "@octokit/auth-app": "^8.2.0",
     "@pa/core": "file:../core/packages/core",
     "@pa/plugin-github": "file:../core/packages/plugin-github",
+    "@pa/plugin-jira": "file:../core/packages/plugin-jira",
     "@pa/sdk": "file:../core/packages/sdk",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -94,7 +95,8 @@
       "^(\\.{1,2}/.*)\\.js$": "$1",
       "^@pa/core$": "<rootDir>/../../core/packages/core/src/index.ts",
       "^@pa/sdk$": "<rootDir>/../../core/packages/sdk/src/index.ts",
-      "^@pa/plugin-github$": "<rootDir>/../../core/packages/plugin-github/src/index.ts"
+      "^@pa/plugin-github$": "<rootDir>/../../core/packages/plugin-github/src/index.ts",
+      "^@pa/plugin-jira$": "<rootDir>/../../core/packages/plugin-jira/src/index.ts"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

@@ -1,49 +1,67 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { createGitHubPlugin } from '@pa/plugin-github';
+import type { PluginDefinition } from '@pa/core';
 
-type GitHubPlugin = ReturnType<typeof createGitHubPlugin>;
-
-const HOST_PROVIDED_GITHUB_FIELDS = new Set(['appId', 'privateKey', 'baseUrl']);
+const HOST_PROVIDED_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  github: new Set(['appId', 'privateKey', 'baseUrl']),
+  jira: new Set(),
+};
 
 @Injectable()
 export class PluginRegistryService {
-  private github?: Promise<GitHubPlugin>;
+  private readonly plugins = new Map<string, Promise<PluginDefinition>>();
 
   async findAll() {
-    return [this.toCatalogEntry(await this.getGitHub())];
+    return Promise.all([
+      this.getGitHub().then((plugin) => this.toCatalogEntry(plugin)),
+      this.getJira().then((plugin) => this.toCatalogEntry(plugin)),
+    ]);
   }
 
   async findOne(pluginId: string) {
-    const github = await this.getGitHub();
-    if (pluginId !== github.id) {
-      throw new NotFoundException(`Plugin not found: ${pluginId}`);
-    }
-    return this.toCatalogEntry(github);
+    return this.toCatalogEntry(await this.get(pluginId));
   }
 
   getGitHub() {
-    this.github ??= import('@pa/plugin-github').then(({ createGitHubPlugin }) =>
-      createGitHubPlugin(),
-    );
-    return this.github;
+    return this.get('github');
   }
 
-  async get(pluginId: string) {
-    if (pluginId === 'github') return this.getGitHub();
-    throw new NotFoundException(`Plugin not found: ${pluginId}`);
+  getJira() {
+    return this.get('jira');
   }
 
-  private toCatalogEntry(plugin: GitHubPlugin) {
+  get(pluginId: string): Promise<PluginDefinition> {
+    let plugin = this.plugins.get(pluginId);
+    if (!plugin) {
+      if (pluginId === 'github') {
+        plugin = import('@pa/plugin-github').then(({ createGitHubPlugin }) =>
+          createGitHubPlugin(),
+        );
+      } else if (pluginId === 'jira') {
+        plugin = import('@pa/plugin-jira').then(({ createJiraPlugin }) =>
+          createJiraPlugin(),
+        );
+      } else {
+        throw new NotFoundException(`Plugin not found: ${pluginId}`);
+      }
+      this.plugins.set(pluginId, plugin);
+    }
+    return plugin;
+  }
+
+  private toCatalogEntry(plugin: PluginDefinition) {
+    const hostFields = HOST_PROVIDED_FIELDS[plugin.id] ?? new Set<string>();
     return {
       ...plugin.manifest,
       installable: true,
-      setupUrl: process.env.GITHUB_SETUP_URL,
+      ...(plugin.id === 'github'
+        ? { setupUrl: process.env.GITHUB_SETUP_URL }
+        : {}),
       configurationFields: plugin.manifest.secrets.map((field) => ({
         ...field,
-        source: HOST_PROVIDED_GITHUB_FIELDS.has(field.key)
+        source: hostFields.has(field.key)
           ? ('host' as const)
           : ('installation' as const),
-        configurable: field.key === 'installationId',
+        configurable: !hostFields.has(field.key),
       })),
     };
   }

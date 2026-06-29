@@ -8,6 +8,13 @@ import { SetupGithubDto } from './dto/setup-github.dto';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePluginInstallationDto } from './dto/update-plugin-installation.dto';
+import { SetupJiraDto } from './dto/setup-jira.dto';
+import { createHash } from 'node:crypto';
+import {
+  decryptConfiguration,
+  encryptConfiguration,
+  omitConfigurationPaths,
+} from '../plugins/configuration-crypto';
 
 @Injectable()
 export class PluginInstallationsService {
@@ -16,12 +23,13 @@ export class PluginInstallationsService {
     private readonly runtime: PluginRuntimeService,
   ) {}
 
-  findAllByOrganization(organizationId: string) {
-    return this.prisma.pluginInstallation.findMany({
+  async findAllByOrganization(organizationId: string) {
+    const values = await this.prisma.pluginInstallation.findMany({
       where: { organizationId, status: { not: 'REVOKED' } },
       include: { pluginInstallationResources: { orderBy: { name: 'asc' } } },
       orderBy: { createdAt: 'desc' },
     });
+    return Promise.all(values.map((value) => this.toPublicInstallation(value)));
   }
 
   async findOne(id: string) {
@@ -30,14 +38,37 @@ export class PluginInstallationsService {
       include: { pluginInstallationResources: { orderBy: { name: 'asc' } } },
     });
     if (!value) throw new NotFoundException('Plugin installation not found');
-    return value;
+    return this.toPublicInstallation(value);
   }
 
   async update(id: string, dto: UpdatePluginInstallationDto) {
-    const installation = await this.findOne(id);
+    const installation = await this.prisma.pluginInstallation.findUnique({
+      where: { id },
+    });
+    if (!installation)
+      throw new NotFoundException('Plugin installation not found');
     if (installation.status === 'REVOKED')
       throw new BadRequestException('Revoked installations cannot be updated');
-    return this.prisma.pluginInstallation.update({ where: { id }, data: dto });
+    const { configuration, ...data } = dto;
+    const nextConfiguration = configuration
+      ? await this.prepareConfiguration(
+          installation.pluginId,
+          mergeConfiguration(
+            decryptConfiguration(installation.configuration),
+            configuration,
+          ),
+        )
+      : undefined;
+    const updated = await this.prisma.pluginInstallation.update({
+      where: { id },
+      data: {
+        ...data,
+        ...(nextConfiguration === undefined
+          ? {}
+          : { configuration: nextConfiguration as never }),
+      },
+    });
+    return this.toPublicInstallation(updated);
   }
 
   async revoke(id: string) {
@@ -71,7 +102,9 @@ export class PluginInstallationsService {
           pluginVersion: plugin.version,
           name: `GitHub Installation ${dto.installationId}`,
           externalId: dto.installationId,
-          configuration: { installationId: dto.installationId },
+          configuration: (await this.prepareConfiguration('github', {
+            installationId: dto.installationId,
+          })) as never,
           organizationId,
         },
       });
@@ -87,6 +120,42 @@ export class PluginInstallationsService {
       }
       throw error;
     }
+  }
+
+  async setupJira(organizationId: string, dto: SetupJiraDto) {
+    const siteUrl = dto.siteUrl.trim().replace(/\/+$/, '');
+    const email = dto.email.trim().toLowerCase();
+    const plugin = await this.runtime.getPlugin('jira');
+    const externalId = createHash('sha256')
+      .update(`${siteUrl.toLowerCase()}\n${email}`)
+      .digest('hex');
+    const existing = await this.prisma.pluginInstallation.findUnique({
+      where: { pluginId_externalId: { pluginId: 'jira', externalId } },
+    });
+    if (existing) {
+      if (existing.organizationId !== organizationId) {
+        throw new ConflictException(
+          'This Jira connection belongs to another organization',
+        );
+      }
+      throw new ConflictException('This Jira connection already exists');
+    }
+    const configuration = await this.prepareConfiguration('jira', {
+      siteUrl,
+      email,
+      apiToken: dto.apiToken,
+    });
+    const installation = await this.prisma.pluginInstallation.create({
+      data: {
+        pluginId: plugin.id,
+        pluginVersion: plugin.version,
+        name: dto.name.trim(),
+        externalId,
+        configuration: configuration as never,
+        organizationId,
+      },
+    });
+    return this.sync(installation.id);
   }
 
   private findGitHubInstallation(externalId: string) {
@@ -125,19 +194,13 @@ export class PluginInstallationsService {
     const installation = await this.prisma.pluginInstallation.findUnique({
       where: { id },
     });
-    if (
-      !installation ||
-      installation.pluginId !== 'github' ||
-      !['PENDING', 'ACTIVE'].includes(installation.status)
-    )
-      throw new NotFoundException(
-        'Active GitHub plugin installation not found',
-      );
+    if (!installation || !['PENDING', 'ACTIVE'].includes(installation.status))
+      throw new NotFoundException('Active plugin installation not found');
     try {
       const resources = await this.runtime.discover(installation);
       const seenAt = new Date();
       const externalIds = resources.map((resource) => resource.externalId);
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         await tx.pluginInstallationResource.updateMany({
           where: { installationId: id, externalId: { notIn: externalIds } },
           data: { active: false },
@@ -173,6 +236,7 @@ export class PluginInstallationsService {
           },
         });
       });
+      return this.toPublicInstallation(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.prisma.pluginInstallation.update({
@@ -183,6 +247,35 @@ export class PluginInstallationsService {
     }
   }
 
+  private async prepareConfiguration(pluginId: string, configuration: unknown) {
+    const plugin = await this.runtime.getPlugin(pluginId);
+    const values = asRecord(configuration);
+    for (const [key, definition] of Object.entries(plugin.secrets)) {
+      if (!Object.prototype.hasOwnProperty.call(values, key)) continue;
+      const result = await definition.schema.safeParseAsync(values[key]);
+      if (!result.success) {
+        throw new BadRequestException(
+          `Invalid configuration for plugin field: ${key}`,
+        );
+      }
+      values[key] = result.data;
+    }
+    return encryptConfiguration(values, sensitivePaths(plugin));
+  }
+
+  private async toPublicInstallation<
+    T extends { pluginId: string; configuration: unknown },
+  >(value: T) {
+    const plugin = await this.runtime.getPlugin(value.pluginId);
+    return {
+      ...value,
+      configuration: omitConfigurationPaths(
+        value.configuration,
+        sensitivePaths(plugin),
+      ),
+    };
+  }
+
   private isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
     return (
       typeof error === 'object' &&
@@ -191,4 +284,36 @@ export class PluginInstallationsService {
       error.code === 'P2002'
     );
   }
+}
+
+function sensitivePaths(
+  plugin: Awaited<ReturnType<PluginRuntimeService['getPlugin']>>,
+) {
+  return (
+    plugin.manifest?.secrets
+      ?.filter((field) => field.sensitive)
+      .map((field) => field.key) ?? []
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? structuredClone(value as Record<string, unknown>)
+    : {};
+}
+
+function mergeConfiguration(
+  current: unknown,
+  update: Record<string, unknown>,
+): Record<string, unknown> {
+  const output = asRecord(current);
+  for (const [key, value] of Object.entries(update)) {
+    if (value === '' || value === undefined) continue;
+    const previous = output[key];
+    output[key] =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? mergeConfiguration(previous, value as Record<string, unknown>)
+        : value;
+  }
+  return output;
 }

@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsObject,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export enum MutablePluginInstallationStatus {
   ACTIVE = 'ACTIVE',
@@ -14,4 +20,8 @@ export class UpdatePluginInstallationDto {
   @IsOptional()
   @IsEnum(MutablePluginInstallationStatus)
   status?: MutablePluginInstallationStatus;
+
+  @IsOptional()
+  @IsObject()
+  configuration?: Record<string, unknown>;
 }

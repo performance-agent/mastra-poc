@@ -6,6 +6,7 @@ import type {
   SecretReader,
 } from '@pa/core';
 import { PluginRegistryService } from '../plugin-registry.service';
+import { decryptConfiguration } from '../configuration-crypto';
 
 export type RuntimeInstallation = {
   id: string;
@@ -13,6 +14,7 @@ export type RuntimeInstallation = {
   pluginId: string;
   pluginVersion: string;
   externalId: string;
+  configuration: unknown;
 };
 
 export type RuntimeResource = {
@@ -151,6 +153,7 @@ export class PluginRuntimeService {
     installation: RuntimeInstallation,
   ) {
     const values: Record<string, unknown> = {
+      ...asConfiguration(decryptConfiguration(installation.configuration)),
       appId: process.env.GITHUB_APP_ID,
       privateKey: process.env.GITHUB_PRIVATE_KEY,
       installationId: installation.externalId,
@@ -192,6 +195,12 @@ export class PluginRuntimeService {
     }
     return filtered;
   }
+}
+
+function asConfiguration(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function recordTimestamp(value: unknown): number | null {

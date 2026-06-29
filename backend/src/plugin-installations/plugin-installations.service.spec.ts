@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PluginInstallationsService } from './plugin-installations.service';
+import { z } from 'zod';
 
 describe('PluginInstallationsService', () => {
   const discover = jest.fn();
@@ -26,10 +27,51 @@ describe('PluginInstallationsService', () => {
   let service: PluginInstallationsService;
 
   beforeEach(() => {
+    process.env.SECRETS_ENCRYPTION_KEY = Buffer.alloc(32, 3).toString('base64');
     jest.resetAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
     runtime.getPlugin.mockResolvedValue(plugin);
     service = new PluginInstallationsService(prisma, runtime as any);
+  });
+
+  it('creates Jira with an encrypted token and no plaintext persistence', async () => {
+    const jira = {
+      id: 'jira',
+      version: '1.0.0',
+      secrets: {
+        siteUrl: { schema: z.string() },
+        email: { schema: z.string() },
+        apiToken: { schema: z.string().min(1) },
+      },
+      manifest: {
+        secrets: [
+          { key: 'siteUrl', sensitive: false },
+          { key: 'email', sensitive: false },
+          { key: 'apiToken', sensitive: true },
+        ],
+      },
+    };
+    runtime.getPlugin.mockResolvedValue(jira);
+    prisma.pluginInstallation.findUnique.mockResolvedValue(null);
+    prisma.pluginInstallation.create.mockResolvedValue({ id: 'jira-one' });
+    jest.spyOn(service, 'sync').mockResolvedValue({} as never);
+
+    await service.setupJira('org', {
+      name: 'Team Jira',
+      siteUrl: 'https://acme.atlassian.net/',
+      email: 'TEAM@EXAMPLE.COM',
+      apiToken: 'jira-secret',
+    });
+
+    const data = prisma.pluginInstallation.create.mock.calls[0][0].data;
+    expect(data.configuration).toEqual(
+      expect.objectContaining({
+        siteUrl: 'https://acme.atlassian.net',
+        email: 'team@example.com',
+        apiToken: expect.stringMatching(/^enc:v1:/),
+      }),
+    );
+    expect(JSON.stringify(data)).not.toContain('jira-secret');
   });
 
   it('creates independent records for different GitHub installation ids', async () => {
