@@ -18,8 +18,9 @@
     "paths": {
       "@pa/core": ["packages/core/src/index.ts"],
       "@pa/sdk": ["packages/sdk/src/index.ts"],
-      "@pa/plugin-github": ["packages/plugin-github/src/index.ts"]
+      "@pa/plugin-github": ["packages/plugin-github/src/index.ts"],
+      "@pa/plugin-jira": ["packages/plugin-jira/src/index.ts"]
     }
   },
-  "include": ["packages/core/src/index.ts", "packages/sdk/src/index.ts", "packages/plugin-github/src/index.ts", "tests/plugin-core-v1.test.ts"]
+  "include": ["packages/core/src/index.ts", "packages/sdk/src/index.ts", "packages/plugin-github/src/index.ts", "packages/plugin-jira/src/index.ts", "tests/*.test.ts"]
 }

@@ -27,13 +27,18 @@ export const githubSecrets = defineSecrets({
 export const githubIssueSchema = z.object({
   id: z.string(), repository: z.string(), number: z.number().int().positive(), title: z.string(),
   body: z.string().optional(), state: z.enum(["open", "closed"]), url: z.url().optional(),
+  author: z.string().optional(), comments: z.number().int().nonnegative().optional(),
   labels: z.array(z.string()), assignees: z.array(z.string()), createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
+  closedAt: z.iso.datetime().optional(),
 });
 
 export const githubPullRequestSchema = z.object({
   id: z.string(), repository: z.string(), number: z.number().int().positive(), title: z.string(),
   state: z.enum(["open", "closed", "merged", "draft"]), author: z.string().optional(), url: z.url().optional(),
   labels: z.array(z.string()), baseBranch: z.string().optional(), headBranch: z.string().optional(),
+  comments: z.number().int().nonnegative().optional(), reviewComments: z.number().int().nonnegative().optional(),
+  additions: z.number().int().nonnegative().optional(), deletions: z.number().int().nonnegative().optional(),
+  changedFiles: z.number().int().nonnegative().optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(), closedAt: z.iso.datetime().optional(), mergedAt: z.iso.datetime().optional(),
 });
 

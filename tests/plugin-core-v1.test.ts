@@ -38,13 +38,16 @@ function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory
         async listIssues(name) {
           return [{
             id: "10", repository: name, number: 1, title: "Bug", state: "open",
-            labels: ["bug"], assignees: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z",
+            labels: ["bug"], assignees: [], author: "octocat", comments: 3,
+            closedAt: undefined, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-02T00:00:00.000Z",
           }];
         },
         async listPullRequests(name) {
           return [{
             id: "20", repository: name, number: 2, title: "Fix", state: "merged",
-            labels: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-03T00:00:00.000Z",
+            labels: [], author: "octocat", comments: 2, reviewComments: 4,
+            additions: 10, deletions: 2, changedFiles: 3,
+            createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-03T00:00:00.000Z",
           }];
         },
         async listCommits(name) {
@@ -100,8 +103,15 @@ test("a GitHub provider loads exactly one assigned resource", async () => {
 
 test("all GitHub providers return schema-valid native data", async () => {
   const plugin = createGitHubPlugin({ clientFactory: fakeFactory() });
-  const results = await Promise.all(plugin.dataProviders.map((provider) => provider.provide(context(), repository)));
+  const issues = await plugin.dataProviders[0]!.provide(context(), repository);
+  const pullRequests = await plugin.dataProviders[1]!.provide(context(), repository);
+  const commits = await plugin.dataProviders[2]!.provide(context(), repository);
+  const results = [issues, pullRequests, commits];
   assert.deepEqual(results.map((records) => records.length), [1, 1, 1]);
+  assert.equal(issues[0]?.author, "octocat");
+  assert.equal(issues[0]?.comments, 3);
+  assert.equal(pullRequests[0]?.reviewComments, 4);
+  assert.equal(pullRequests[0]?.changedFiles, 3);
 });
 
 test("provider output is rejected when it does not match its schema", async () => {
