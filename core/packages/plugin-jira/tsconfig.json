@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.build.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src/index.ts", "src/jira-client.ts", "src/plugin.ts", "src/types.ts"],
+  "exclude": ["dist", "node_modules"]
+}

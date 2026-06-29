@@ -9,6 +9,7 @@ The plugin layer does not define canonical platform `DataType` records or mappin
 - `@pa/core`: host/plugin contracts and serializable manifest types.
 - `@pa/sdk`: typed DSL, Zod v4 validation and JSON Schema generation.
 - `@pa/plugin-github`: GitHub App implementation using Octokit.
+- `@pa/plugin-jira`: Jira Cloud implementation using an Atlassian API token.
 
 ## Plugin shape
 

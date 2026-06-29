@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/core", "packages/sdk", "packages/plugin-github"],
+  "workspaces": ["packages/core", "packages/sdk", "packages/plugin-github", "packages/plugin-jira"],
   "scripts": {
-    "build": "npm run build -w @pa/core && npm run build -w @pa/sdk && npm run build -w @pa/plugin-github",
-    "clean": "npm run clean -w @pa/core && npm run clean -w @pa/sdk && npm run clean -w @pa/plugin-github",
-    "test": "tsx --test tests/plugin-core-v1.test.ts",
+    "build": "npm run build -w @pa/core && npm run build -w @pa/sdk && npm run build -w @pa/plugin-github && npm run build -w @pa/plugin-jira",
+    "clean": "npm run clean -w @pa/core && npm run clean -w @pa/sdk && npm run clean -w @pa/plugin-github && npm run clean -w @pa/plugin-jira",
+    "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
