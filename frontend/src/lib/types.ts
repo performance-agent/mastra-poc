@@ -82,9 +82,9 @@ export interface PluginCatalogItem {
     label: string;
     description?: string;
     sensitive: boolean;
+    required: boolean;
     source: "host" | "installation";
     configurable: boolean;
-    schema: Record<string, unknown>;
   }>;
   resourceTypes: Array<{ key: string; name: string; description?: string }>;
   dataTypes: Array<{ key: string; schema: Record<string, unknown> }>;

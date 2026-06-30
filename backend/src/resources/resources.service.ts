@@ -86,9 +86,9 @@ export class ResourcesService {
     },
   >(value: T) {
     const plugin = await this.registry.get(value.pluginInstallation.pluginId);
-    const paths = plugin.manifest.secrets
-      .filter((field) => field.sensitive)
-      .map((field) => field.key);
+    const paths = plugin.secrets.definitions
+      .filter((definition) => definition.sensitive)
+      .map((definition) => definition.key);
     return {
       ...value,
       pluginInstallation: {

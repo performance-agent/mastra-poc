@@ -1,12 +1,8 @@
-import type { z } from "zod";
-import type { githubCommitSchema, githubIssueSchema, githubPullRequestSchema } from "./plugin.js";
+import type { InferSchema } from "@pa/core";
+import type { InferSecrets } from "@pa/sdk";
+import type { githubCommitSchema, githubIssueSchema, githubPullRequestSchema, githubSecrets } from "./plugin.js";
 
-export type GitHubSecrets = {
-  appId: string;
-  privateKey: string;
-  installationId: string;
-  baseUrl: string | undefined;
-};
+export type GitHubSecrets = InferSecrets<typeof githubSecrets>;
 
 export type GitHubRepository = {
   id: string;
@@ -15,9 +11,9 @@ export type GitHubRepository = {
   description?: string;
 };
 
-export type GitHubIssue = z.infer<typeof githubIssueSchema>;
-export type GitHubPullRequest = z.infer<typeof githubPullRequestSchema>;
-export type GitHubCommit = z.infer<typeof githubCommitSchema>;
+export type GitHubIssue = InferSchema<typeof githubIssueSchema>;
+export type GitHubPullRequest = InferSchema<typeof githubPullRequestSchema>;
+export type GitHubCommit = InferSchema<typeof githubCommitSchema>;
 
 export interface GitHubClient {
   listRepositories(): Promise<readonly GitHubRepository[]>;

@@ -39,6 +39,11 @@ class RestJiraClient implements JiraClient {
   private readonly authorization: string;
 
   constructor(secrets: JiraSecrets, private readonly fetcher: JiraFetch) {
+    const site = new URL(secrets.siteUrl);
+    if (site.protocol !== "https:" || !site.hostname.endsWith(".atlassian.net")) {
+      throw new Error("Jira site must be an HTTPS atlassian.net URL");
+    }
+    if (!secrets.email.trim() || !secrets.apiToken) throw new Error("Jira email and API token are required");
     this.baseUrl = secrets.siteUrl.replace(/\/+$/, "");
     this.authorization = `Basic ${Buffer.from(`${secrets.email}:${secrets.apiToken}`, "utf8").toString("base64")}`;
   }

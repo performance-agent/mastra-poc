@@ -1,19 +1,17 @@
-export type JsonSchema = Readonly<Record<string, unknown>>;
-
-export type SecretManifestField = {
-  readonly key: string;
-  readonly label: string;
-  readonly description?: string;
-  readonly sensitive: boolean;
-  readonly schema: JsonSchema;
-};
+import type { JsonSchema } from "./schema.js";
 
 export type PluginManifest = {
   readonly id: string;
   readonly name: string;
   readonly version: string;
   readonly description?: string;
-  readonly secrets: readonly SecretManifestField[];
+  readonly secrets: readonly {
+    key: string;
+    label: string;
+    description?: string;
+    sensitive: boolean;
+    required: boolean;
+  }[];
   readonly resourceTypes: readonly { key: string; name: string; description?: string }[];
   readonly dataTypes: readonly {
     key: string;

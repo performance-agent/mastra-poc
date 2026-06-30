@@ -1,9 +1,10 @@
-import type { z } from "zod";
-import type { jiraIssueSchema } from "./plugin.js";
+import type { InferSchema } from "@pa/core";
+import type { InferSecrets } from "@pa/sdk";
+import type { jiraIssueSchema, jiraSecrets } from "./plugin.js";
 
-export type JiraSecrets = { siteUrl: string; email: string; apiToken: string };
+export type JiraSecrets = InferSecrets<typeof jiraSecrets>;
 export type JiraProject = { id: string; key: string; name: string; description?: string };
-export type JiraIssue = z.infer<typeof jiraIssueSchema>;
+export type JiraIssue = InferSchema<typeof jiraIssueSchema>;
 export interface JiraClient {
   listProjects(): Promise<readonly JiraProject[]>;
   listIssues(projectKey: string): Promise<readonly JiraIssue[]>;

@@ -13,20 +13,48 @@ describe('PluginRuntimeService', () => {
       pluginId: 'test',
       pluginVersion: '1.0.0',
       externalId: `external-${installationId}`,
+      configuration: {},
     },
   });
 
-  function createService(providers: any[]) {
+  function createService(providers: any[], resourceProviders: any[] = []) {
     const plugin = {
       id: 'test',
       version: '1.0.0',
-      secrets: {},
+      secrets: {
+        definitions: [],
+      },
       dataProviders: providers,
-      resourcesProvider: { discover: jest.fn() },
+      resourceProviders,
     };
     const registry = { get: jest.fn().mockResolvedValue(plugin) };
     return { service: new PluginRuntimeService(registry as any), registry };
   }
+
+  it('discovers and flattens resources from every resource provider', async () => {
+    const first = {
+      discover: jest
+        .fn()
+        .mockResolvedValue([
+          { name: 'api', externalId: 'acme/api', type: 'test.repository' },
+        ]),
+    };
+    const second = {
+      discover: jest
+        .fn()
+        .mockResolvedValue([
+          { name: 'team', externalId: 'acme', type: 'test.organization' },
+        ]),
+    };
+    const { service } = createService([], [first, second]);
+
+    await expect(
+      service.discover(makeResource('installation-a').pluginInstallation),
+    ).resolves.toEqual([
+      { name: 'api', externalId: 'acme/api', type: 'test.repository' },
+      { name: 'team', externalId: 'acme', type: 'test.organization' },
+    ]);
+  });
 
   it('keeps execution contexts isolated by installation', async () => {
     const seen: string[] = [];

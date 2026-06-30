@@ -1,76 +1,61 @@
 import {
   PluginValidationError,
-  type JsonSchema,
+  type DataProvider,
   type PluginDefinition,
   type PluginManifest,
   type PluginMetadata,
+  type ResourceProvider,
+  type ResourceTypeDefinition,
+  type Schema,
   type SecretDefinitions,
-  type ResourcesProvider,
-  type DataProvider,
 } from "@pa/core";
-import { toJSONSchema, type ZodType } from "zod";
 
 type DefinePluginInput<
   TSecrets extends SecretDefinitions,
-  TResources extends ResourcesProvider<TSecrets>,
-  TProviders extends readonly DataProvider<ZodType, TSecrets>[],
+  TResources extends readonly ResourceProvider<ResourceTypeDefinition, TSecrets>[],
+  TProviders extends readonly DataProvider<Schema, TSecrets>[],
 > = PluginMetadata & {
   readonly secrets: TSecrets;
-  readonly resourcesProvider: TResources;
+  readonly resourceProviders: TResources;
   readonly dataProviders: TProviders;
 };
 
 export function definePlugin<
   const TSecrets extends SecretDefinitions,
-  TResources extends ResourcesProvider<TSecrets>,
-  const TProviders extends readonly DataProvider<ZodType, TSecrets>[],
+  const TResources extends readonly ResourceProvider<ResourceTypeDefinition, TSecrets>[],
+  const TProviders extends readonly DataProvider<Schema, TSecrets>[],
 >(input: DefinePluginInput<TSecrets, TResources, TProviders>): PluginDefinition<TSecrets, TResources, TProviders> {
   validateDefinition(input);
-  const manifest = createManifest(input);
-  return Object.freeze({ ...input, manifest });
+  return Object.freeze({ ...input, manifest: createManifest(input) });
 }
 
 function createManifest<
   TSecrets extends SecretDefinitions,
-  TResources extends ResourcesProvider<TSecrets>,
-  TProviders extends readonly DataProvider<ZodType, TSecrets>[],
+  TResources extends readonly ResourceProvider<ResourceTypeDefinition, TSecrets>[],
+  TProviders extends readonly DataProvider<Schema, TSecrets>[],
 >(input: DefinePluginInput<TSecrets, TResources, TProviders>): PluginManifest {
   return {
     id: input.id,
     name: input.name,
     version: input.version,
     ...(input.description === undefined ? {} : { description: input.description }),
-    secrets: Object.entries(input.secrets).map(([key, field]) => ({
-      key,
-      label: field.label,
-      sensitive: field.sensitive,
-      ...(field.description === undefined ? {} : { description: field.description }),
-      schema: toJSONSchema(field.schema) as JsonSchema,
-    })),
-    resourceTypes: input.resourcesProvider.resourceTypes.map((resource) => ({
-      key: resource.key,
-      name: resource.name,
-      ...(resource.description === undefined ? {} : { description: resource.description }),
+    secrets: input.secrets.definitions.map((definition) => ({ ...definition })),
+    resourceTypes: input.resourceProviders.map(({ resourceType }) => ({
+      key: resourceType.key,
+      name: resourceType.name,
+      ...(resourceType.description === undefined ? {} : { description: resourceType.description }),
     })),
     dataTypes: input.dataProviders.map((provider) => ({
       key: provider.dataType.key,
-      schema: toJSONSchema(provider.dataType.schema) as JsonSchema,
+      schema: provider.dataType.schema.jsonSchema,
     })),
   };
 }
 
-function validateDefinition<
-  TSecrets extends SecretDefinitions,
-  TResources extends ResourcesProvider<TSecrets>,
-  TProviders extends readonly DataProvider<ZodType, TSecrets>[],
->(input: DefinePluginInput<TSecrets, TResources, TProviders>): void {
-  if (!input.id || !input.name || !input.version) {
-    throw new PluginValidationError("Plugin id, name and version are required");
-  }
-  const resourceTypes = input.resourcesProvider.resourceTypes.map((resource) => resource.key);
-  assertUnique(resourceTypes, "resource type");
-  const dataKeys = input.dataProviders.map((provider) => provider.dataType.key);
-  assertUnique(dataKeys, "data type");
+function validateDefinition(input: DefinePluginInput<SecretDefinitions, readonly ResourceProvider[], readonly DataProvider[]>): void {
+  if (!input.id || !input.name || !input.version) throw new PluginValidationError("Plugin id, name and version are required");
+  assertUnique(input.resourceProviders.map((provider) => provider.resourceType.key), "resource type");
+  assertUnique(input.dataProviders.map((provider) => provider.dataType.key), "data type");
 }
 
 function assertUnique(values: readonly string[], label: string): void {

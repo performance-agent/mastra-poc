@@ -4,6 +4,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/index.ts", "src/data-type.ts", "src/define-plugin.ts", "src/provides-data.ts", "src/resources.ts", "src/secrets.ts"],
+  "include": ["src/index.ts", "src/data-type.ts", "src/define-plugin.ts", "src/provides-data.ts", "src/resources.ts", "src/schema.ts", "src/secrets.ts"],
   "exclude": ["dist", "node_modules"]
 }

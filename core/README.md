@@ -7,29 +7,27 @@ The plugin layer does not define canonical platform `DataType` records or mappin
 ## Packages
 
 - `@pa/core`: host/plugin contracts and serializable manifest types.
-- `@pa/sdk`: typed DSL, Zod v4 validation and JSON Schema generation.
+- `@pa/sdk`: typed JSON Schema DSL and runtime validation helpers.
 - `@pa/plugin-github`: GitHub App implementation using Octokit.
 - `@pa/plugin-jira`: Jira Cloud implementation using an Atlassian API token.
 
 ## Plugin shape
 
 ```ts
-import { definePlugin, defineSecrets, secret, resourceType, resourcesProvider, dataType, providesData } from "@pa/sdk";
-import { z } from "zod";
+import { definePlugin, defineSecrets, secret, schema, resourceType, providesResources, dataType, providesData } from "@pa/sdk";
 
-const secrets = defineSecrets({
-  token: secret({ label: "API token", sensitive: true, schema: z.string().min(1) }),
-});
+const secrets = defineSecrets([
+  secret({ key: "token", label: "API token", sensitive: true }),
+]);
 
 const project = resourceType({ key: "example.project", name: "Project" });
 const issue = dataType({
   key: "example.issue",
-  schema: z.object({ id: z.string(), project: z.string(), title: z.string() }),
+  schema: schema.object({ id: schema.string(), project: schema.string(), title: schema.string() }),
 });
 
-const discovered = resourcesProvider({
+const discovered = providesResources(project, {
   secrets,
-  resourceTypes: [project],
   async discover(ctx) {
     const token = await ctx.secrets.get("token");
     return loadProjects(token);
@@ -49,7 +47,7 @@ export const plugin = definePlugin({
   name: "Example",
   version: "1.0.0",
   secrets,
-  resourcesProvider: discovered,
+  resourceProviders: [discovered],
   dataProviders: [issues] as const,
 });
 ```

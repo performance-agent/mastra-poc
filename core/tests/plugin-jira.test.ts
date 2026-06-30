@@ -36,15 +36,15 @@ test("Jira manifest declares projects, issues and no secret values", () => {
   assert.doesNotMatch(JSON.stringify(manifest), /jira-secret/);
 });
 
-test("Jira secrets validate Cloud URL, email and token", async () => {
-  const reader = createSecretReader(jiraSecrets, (key) => key === "siteUrl" ? "http://jira.local" : values[key]);
+test("Jira secret definitions require declared values without imposing provider validation", async () => {
+  const reader = createSecretReader(jiraSecrets, (key) => key === "siteUrl" ? undefined : values[key]);
   await assert.rejects(reader.get("siteUrl"), PluginValidationError);
 });
 
 test("Jira discovers projects and requests only the assigned project", async () => {
   const requested: string[] = [];
   const plugin = createJiraPlugin({ clientFactory: fakeFactory({ async listIssues(key) { requested.push(key); return [issue]; } }) });
-  assert.deepEqual(await plugin.resourcesProvider.discover(context()), [{
+  assert.deepEqual(await plugin.resourceProviders[0]!.discover(context()), [{
     name: "Platform", description: "Core platform", externalId: "PLAT", type: "jira.project",
   }]);
   assert.deepEqual(await plugin.dataProviders[0].provide(context(), project), [issue]);

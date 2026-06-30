@@ -1,26 +1,20 @@
 import type { PluginExecutionContext } from "@pa/core";
-import { dataType, definePlugin, defineSecrets, providesData, resourceType, resourcesProvider, secret } from "@pa/sdk";
-import { z } from "zod";
+import { dataType, definePlugin, defineSecrets, providesData, providesResources, resourceType, schema, secret } from "@pa/sdk";
 import { restJiraClientFactory } from "./jira-client.js";
 import type { JiraClientFactory, JiraPluginOptions, JiraSecrets } from "./types.js";
 
-const jiraCloudUrl = z.url().refine((value) => {
-  const url = new URL(value);
-  return url.protocol === "https:" && url.hostname.endsWith(".atlassian.net");
-}, "Must be an HTTPS atlassian.net Jira Cloud URL");
+export const jiraSecrets = defineSecrets([
+  secret({ key: "siteUrl", label: "Jira Cloud site URL", sensitive: false }),
+  secret({ key: "email", label: "Atlassian account email", sensitive: false }),
+  secret({ key: "apiToken", label: "Atlassian API token", sensitive: true }),
+]);
 
-export const jiraSecrets = defineSecrets({
-  siteUrl: secret({ label: "Jira Cloud site URL", sensitive: false, schema: jiraCloudUrl }),
-  email: secret({ label: "Atlassian account email", sensitive: false, schema: z.email() }),
-  apiToken: secret({ label: "Atlassian API token", sensitive: true, schema: z.string().min(1) }),
-});
-
-export const jiraIssueSchema = z.object({
-  id: z.string().min(1), key: z.string().min(1), project: z.string().min(1), summary: z.string(),
-  issueType: z.string(), status: z.string(), statusCategory: z.string().optional(), priority: z.string().optional(),
-  labels: z.array(z.string()), assignee: z.string().optional(), reporter: z.string().optional(),
-  parentKey: z.string().optional(), createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
-  resolvedAt: z.iso.datetime().optional(), dueDate: z.iso.date().optional(),
+export const jiraIssueSchema = schema.object({
+  id: schema.string({ minLength: 1 }), key: schema.string({ minLength: 1 }), project: schema.string({ minLength: 1 }), summary: schema.string(),
+  issueType: schema.string(), status: schema.string(), statusCategory: schema.optional(schema.string()), priority: schema.optional(schema.string()),
+  labels: schema.array(schema.string()), assignee: schema.optional(schema.string()), reporter: schema.optional(schema.string()),
+  parentKey: schema.optional(schema.string()), createdAt: schema.string({ format: "date-time" }), updatedAt: schema.string({ format: "date-time" }),
+  resolvedAt: schema.optional(schema.string({ format: "date-time" })), dueDate: schema.optional(schema.string({ format: "date" })),
 });
 export const jiraIssue = dataType({ key: "jira.issue", schema: jiraIssueSchema });
 const jiraProject = resourceType({
@@ -33,7 +27,7 @@ export function createJiraPlugin(options: JiraPluginOptions = {}) {
   return definePlugin({
     id: "jira", name: "Jira", version: "1.0.0", description: "Provides native Jira Cloud issues",
     secrets: jiraSecrets,
-    resourcesProvider: createResourcesProvider(clients),
+    resourceProviders: [createProjectProvider(clients)],
     dataProviders: [providesData(jiraIssue, {
       secrets: jiraSecrets,
       async provide(context, resource) {
@@ -44,13 +38,13 @@ export function createJiraPlugin(options: JiraPluginOptions = {}) {
   });
 }
 
-function createResourcesProvider(clients: JiraClientFactory) {
-  return resourcesProvider({
-    secrets: jiraSecrets, resourceTypes: [jiraProject],
+function createProjectProvider(clients: JiraClientFactory) {
+  return providesResources(jiraProject, {
+    secrets: jiraSecrets,
     async discover(context) {
       const client = await clients.create(await readSecrets(context));
       return (await client.listProjects()).map((project) => ({
-        name: project.name, externalId: project.key, type: jiraProject.key,
+        name: project.name, externalId: project.key,
         ...(project.description === undefined ? {} : { description: project.description }),
       }));
     },

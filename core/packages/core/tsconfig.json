@@ -4,6 +4,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/index.ts", "src/data.ts", "src/errors.ts", "src/manifest.ts", "src/plugin.ts", "src/resource.ts", "src/runtime.ts", "src/secret.ts"],
+  "include": ["src/index.ts", "src/data.ts", "src/errors.ts", "src/manifest.ts", "src/plugin.ts", "src/resource.ts", "src/runtime.ts", "src/schema.ts", "src/secret.ts"],
   "exclude": ["dist", "node_modules"]
 }

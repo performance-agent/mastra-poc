@@ -1,8 +1,8 @@
-import type { ZodType } from "zod";
 import type { DataProvider } from "./data.js";
 import type { PluginManifest } from "./manifest.js";
-import type { ResourcesProvider } from "./resource.js";
+import type { ResourceProvider, ResourceTypeDefinition } from "./resource.js";
 import type { SecretDefinitions } from "./secret.js";
+import type { Schema } from "./schema.js";
 
 export type PluginMetadata = {
   readonly id: string;
@@ -13,11 +13,11 @@ export type PluginMetadata = {
 
 export type PluginDefinition<
   TSecrets extends SecretDefinitions = SecretDefinitions,
-  TResourcesProvider extends ResourcesProvider<TSecrets> = ResourcesProvider<TSecrets>,
-  TDataProviders extends readonly DataProvider<ZodType, TSecrets>[] = readonly DataProvider<ZodType, TSecrets>[],
+  TResourceProviders extends readonly ResourceProvider<ResourceTypeDefinition, TSecrets>[] = readonly ResourceProvider<ResourceTypeDefinition, TSecrets>[],
+  TDataProviders extends readonly DataProvider<Schema, TSecrets>[] = readonly DataProvider<Schema, TSecrets>[],
 > = PluginMetadata & {
   readonly secrets: TSecrets;
-  readonly resourcesProvider: TResourcesProvider;
+  readonly resourceProviders: TResourceProviders;
   readonly dataProviders: TDataProviders;
   readonly manifest: PluginManifest;
 };

@@ -905,6 +905,7 @@ function EditPluginInstallationDialog({
               type={field.sensitive ? "password" : field.key === "email" ? "email" : "text"}
               value={configuration[field.key] ?? ""}
               placeholder={field.sensitive ? "Leave blank to keep the current value" : undefined}
+              required={field.required && !field.sensitive}
               onChange={(event) =>
                 setConfiguration((current) => ({ ...current, [field.key]: event.target.value }))
               }
@@ -953,7 +954,7 @@ function ConnectJiraDialog({
           <Label htmlFor={`jira-${field.key}`}>{field.label}</Label>
           <Input
             id={`jira-${field.key}`}
-            required
+            required={field.required}
             type={field.sensitive ? "password" : field.key === "email" ? "email" : field.key === "siteUrl" ? "url" : "text"}
             value={values[field.key] ?? ""}
             onChange={(event) => setValues((v) => ({ ...v, [field.key]: event.target.value }))}

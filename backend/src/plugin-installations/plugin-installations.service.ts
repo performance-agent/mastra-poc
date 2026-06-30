@@ -15,6 +15,10 @@ import {
   encryptConfiguration,
   omitConfigurationPaths,
 } from '../plugins/configuration-crypto';
+import {
+  isHostProvidedPluginField,
+  isPluginFieldConfigurable,
+} from '../plugins/plugin-registry.service';
 
 @Injectable()
 export class PluginInstallationsService {
@@ -50,6 +54,15 @@ export class PluginInstallationsService {
     if (installation.status === 'REVOKED')
       throw new BadRequestException('Revoked installations cannot be updated');
     const { configuration, ...data } = dto;
+    if (configuration) {
+      for (const key of Object.keys(configuration)) {
+        if (!isPluginFieldConfigurable(installation.pluginId, key)) {
+          throw new BadRequestException(
+            `Plugin configuration field is not configurable: ${key}`,
+          );
+        }
+      }
+    }
     const nextConfiguration = configuration
       ? await this.prepareConfiguration(
           installation.pluginId,
@@ -250,15 +263,34 @@ export class PluginInstallationsService {
   private async prepareConfiguration(pluginId: string, configuration: unknown) {
     const plugin = await this.runtime.getPlugin(pluginId);
     const values = asRecord(configuration);
-    for (const [key, definition] of Object.entries(plugin.secrets)) {
-      if (!Object.prototype.hasOwnProperty.call(values, key)) continue;
-      const result = await definition.schema.safeParseAsync(values[key]);
-      if (!result.success) {
+    const definitions = new Map(
+      plugin.secrets.definitions.map((definition) => [
+        definition.key,
+        definition,
+      ]),
+    );
+    for (const [key, value] of Object.entries(values)) {
+      if (!definitions.has(key) || isHostProvidedPluginField(pluginId, key)) {
         throw new BadRequestException(
-          `Invalid configuration for plugin field: ${key}`,
+          `Plugin configuration field is not configurable: ${key}`,
         );
       }
-      values[key] = result.data;
+      if (typeof value !== 'string') {
+        throw new BadRequestException(
+          `Plugin configuration field must be a string: ${key}`,
+        );
+      }
+    }
+    for (const definition of plugin.secrets.definitions) {
+      if (
+        definition.required &&
+        !isHostProvidedPluginField(pluginId, definition.key) &&
+        !Object.prototype.hasOwnProperty.call(values, definition.key)
+      ) {
+        throw new BadRequestException(
+          `Required plugin configuration field is missing: ${definition.key}`,
+        );
+      }
     }
     return encryptConfiguration(values, sensitivePaths(plugin));
   }
@@ -289,11 +321,9 @@ export class PluginInstallationsService {
 function sensitivePaths(
   plugin: Awaited<ReturnType<PluginRuntimeService['getPlugin']>>,
 ) {
-  return (
-    plugin.manifest?.secrets
-      ?.filter((field) => field.sensitive)
-      .map((field) => field.key) ?? []
-  );
+  return plugin.secrets.definitions
+    .filter((definition) => definition.sensitive)
+    .map((definition) => definition.key);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

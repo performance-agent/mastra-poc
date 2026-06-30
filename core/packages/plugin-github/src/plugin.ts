@@ -5,46 +5,48 @@ import {
   defineSecrets,
   providesData,
   resourceType,
-  resourcesProvider,
+  providesResources,
+  schema,
   secret,
 } from "@pa/sdk";
-import { z } from "zod";
 import { octokitGitHubClientFactory } from "./octokit.js";
 import type { GitHubClientFactory, GitHubPluginOptions, GitHubSecrets } from "./types.js";
 
-export const githubSecrets = defineSecrets({
-  appId: secret({ label: "GitHub App ID", sensitive: false, schema: z.string().min(1) }),
-  privateKey: secret({ label: "GitHub App private key", sensitive: true, schema: z.string().min(1) }),
-  installationId: secret({ label: "GitHub installation ID", sensitive: false, schema: z.string().regex(/^\d+$/) }),
-  baseUrl: secret({
+export const githubSecrets = defineSecrets([
+  secret({ key: "appId", label: "GitHub App ID", sensitive: false }),
+  secret({ key: "privateKey", label: "GitHub App private key", sensitive: true }),
+  secret({ key: "installationId", label: "GitHub installation ID", sensitive: false }),
+  secret({
+    key: "baseUrl",
     label: "GitHub API base URL",
     description: "Optional GitHub Enterprise API URL",
     sensitive: false,
-    schema: z.url().optional(),
+    required: false,
   }),
+]);
+
+export const githubIssueSchema = schema.object({
+  id: schema.string(), repository: schema.string(), number: schema.integer({ minimum: 1 }), title: schema.string(),
+  body: schema.optional(schema.string()), state: schema.enum(["open", "closed"]), url: schema.optional(schema.string({ format: "uri" })),
+  author: schema.optional(schema.string()), comments: schema.optional(schema.integer({ minimum: 0 })),
+  labels: schema.array(schema.string()), assignees: schema.array(schema.string()), createdAt: schema.string({ format: "date-time" }), updatedAt: schema.string({ format: "date-time" }),
+  closedAt: schema.optional(schema.string({ format: "date-time" })),
 });
 
-export const githubIssueSchema = z.object({
-  id: z.string(), repository: z.string(), number: z.number().int().positive(), title: z.string(),
-  body: z.string().optional(), state: z.enum(["open", "closed"]), url: z.url().optional(),
-  author: z.string().optional(), comments: z.number().int().nonnegative().optional(),
-  labels: z.array(z.string()), assignees: z.array(z.string()), createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
-  closedAt: z.iso.datetime().optional(),
+export const githubPullRequestSchema = schema.object({
+  id: schema.string(), repository: schema.string(), number: schema.integer({ minimum: 1 }), title: schema.string(),
+  state: schema.enum(["open", "closed", "merged", "draft"]), author: schema.optional(schema.string()), url: schema.optional(schema.string({ format: "uri" })),
+  labels: schema.array(schema.string()), baseBranch: schema.optional(schema.string()), headBranch: schema.optional(schema.string()),
+  comments: schema.optional(schema.integer({ minimum: 0 })), reviewComments: schema.optional(schema.integer({ minimum: 0 })),
+  additions: schema.optional(schema.integer({ minimum: 0 })), deletions: schema.optional(schema.integer({ minimum: 0 })), changedFiles: schema.optional(schema.integer({ minimum: 0 })),
+  createdAt: schema.string({ format: "date-time" }), updatedAt: schema.string({ format: "date-time" }),
+  closedAt: schema.optional(schema.string({ format: "date-time" })), mergedAt: schema.optional(schema.string({ format: "date-time" })),
 });
 
-export const githubPullRequestSchema = z.object({
-  id: z.string(), repository: z.string(), number: z.number().int().positive(), title: z.string(),
-  state: z.enum(["open", "closed", "merged", "draft"]), author: z.string().optional(), url: z.url().optional(),
-  labels: z.array(z.string()), baseBranch: z.string().optional(), headBranch: z.string().optional(),
-  comments: z.number().int().nonnegative().optional(), reviewComments: z.number().int().nonnegative().optional(),
-  additions: z.number().int().nonnegative().optional(), deletions: z.number().int().nonnegative().optional(),
-  changedFiles: z.number().int().nonnegative().optional(),
-  createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(), closedAt: z.iso.datetime().optional(), mergedAt: z.iso.datetime().optional(),
-});
-
-export const githubCommitSchema = z.object({
-  sha: z.string(), repository: z.string(), message: z.string(), author: z.string().optional(),
-  authoredAt: z.iso.datetime().optional(), committedAt: z.iso.datetime().optional(), url: z.url().optional(),
+export const githubCommitSchema = schema.object({
+  sha: schema.string(), repository: schema.string(), message: schema.string(), author: schema.optional(schema.string()),
+  authoredAt: schema.optional(schema.string({ format: "date-time" })), committedAt: schema.optional(schema.string({ format: "date-time" })),
+  url: schema.optional(schema.string({ format: "uri" })),
 });
 
 export const githubIssue = dataType({ key: "github.issue", schema: githubIssueSchema });
@@ -59,14 +61,14 @@ const githubRepository = resourceType({
 
 export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
   const clients = options.clientFactory ?? octokitGitHubClientFactory;
-  const resourcesProvider = createResourcesProvider(clients);
+  const repositoryProvider = createRepositoryProvider(clients);
   return definePlugin({
     id: "github",
     name: "GitHub",
     version: "1.0.0",
     description: "Provides native GitHub issues, pull requests and commits",
     secrets: githubSecrets,
-    resourcesProvider,
+    resourceProviders: [repositoryProvider],
     dataProviders: [
       providesData(githubIssue, {
         secrets: githubSecrets,
@@ -93,16 +95,14 @@ export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
   });
 }
 
-function createResourcesProvider(clients: GitHubClientFactory) {
-  return resourcesProvider({
+function createRepositoryProvider(clients: GitHubClientFactory) {
+  return providesResources(githubRepository, {
     secrets: githubSecrets,
-    resourceTypes: [githubRepository],
     async discover(context) {
       const client = await clients.create(await readSecrets(context));
       return (await client.listRepositories()).map((repository) => ({
         name: repository.name,
         externalId: repository.fullName,
-        type: githubRepository.key,
         ...(repository.description === undefined ? {} : { description: repository.description }),
       }));
     },

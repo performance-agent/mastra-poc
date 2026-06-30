@@ -1,14 +1,22 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { PluginInstallationsService } from './plugin-installations.service';
-import { z } from 'zod';
 
 describe('PluginInstallationsService', () => {
   const discover = jest.fn();
   const plugin = {
     id: 'github',
     version: '1.0.0',
-    secrets: {},
-    resourcesProvider: { discover },
+    secrets: {
+      definitions: [
+        {
+          key: 'installationId',
+          label: 'Installation ID',
+          sensitive: false,
+          required: true,
+        },
+      ],
+    },
+    resourceProviders: [{ resourceType: { key: 'test.resource' }, discover }],
   };
   const prisma: any = {
     pluginInstallation: {
@@ -39,15 +47,10 @@ describe('PluginInstallationsService', () => {
       id: 'jira',
       version: '1.0.0',
       secrets: {
-        siteUrl: { schema: z.string() },
-        email: { schema: z.string() },
-        apiToken: { schema: z.string().min(1) },
-      },
-      manifest: {
-        secrets: [
-          { key: 'siteUrl', sensitive: false },
-          { key: 'email', sensitive: false },
-          { key: 'apiToken', sensitive: true },
+        definitions: [
+          { key: 'siteUrl', sensitive: false, required: true },
+          { key: 'email', sensitive: false, required: true },
+          { key: 'apiToken', sensitive: true, required: true },
         ],
       },
     };
@@ -72,6 +75,21 @@ describe('PluginInstallationsService', () => {
       }),
     );
     expect(JSON.stringify(data)).not.toContain('jira-secret');
+  });
+
+  it('rejects updates to system-managed plugin fields', async () => {
+    prisma.pluginInstallation.findUnique.mockResolvedValue({
+      id: 'github-one',
+      pluginId: 'github',
+      status: 'ACTIVE',
+      configuration: { installationId: '101' },
+    });
+
+    await expect(
+      service.update('github-one', {
+        configuration: { installationId: '202' },
+      }),
+    ).rejects.toThrow('not configurable');
   });
 
   it('creates independent records for different GitHub installation ids', async () => {

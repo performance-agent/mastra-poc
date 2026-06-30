@@ -6,6 +6,21 @@ const HOST_PROVIDED_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
   jira: new Set(),
 };
 
+const NON_CONFIGURABLE_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  github: new Set(['installationId']),
+};
+
+export function isHostProvidedPluginField(pluginId: string, key: string) {
+  return HOST_PROVIDED_FIELDS[pluginId]?.has(key) ?? false;
+}
+
+export function isPluginFieldConfigurable(pluginId: string, key: string) {
+  return (
+    !isHostProvidedPluginField(pluginId, key) &&
+    !(NON_CONFIGURABLE_FIELDS[pluginId]?.has(key) ?? false)
+  );
+}
+
 @Injectable()
 export class PluginRegistryService {
   private readonly plugins = new Map<string, Promise<PluginDefinition>>();
@@ -49,7 +64,6 @@ export class PluginRegistryService {
   }
 
   private toCatalogEntry(plugin: PluginDefinition) {
-    const hostFields = HOST_PROVIDED_FIELDS[plugin.id] ?? new Set<string>();
     return {
       ...plugin.manifest,
       installable: true,
@@ -58,10 +72,10 @@ export class PluginRegistryService {
         : {}),
       configurationFields: plugin.manifest.secrets.map((field) => ({
         ...field,
-        source: hostFields.has(field.key)
+        source: isHostProvidedPluginField(plugin.id, field.key)
           ? ('host' as const)
           : ('installation' as const),
-        configurable: !hostFields.has(field.key),
+        configurable: isPluginFieldConfigurable(plugin.id, field.key),
       })),
     };
   }

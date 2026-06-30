@@ -18,13 +18,13 @@ describe('PluginRegistryService', () => {
             key: 'privateKey',
             label: 'Private key',
             sensitive: true,
-            schema: {},
+            required: true,
           },
           {
             key: 'installationId',
             label: 'Installation ID',
             sensitive: false,
-            schema: {},
+            required: true,
           },
         ],
       },
@@ -54,7 +54,7 @@ describe('PluginRegistryService', () => {
         expect.objectContaining({
           key: 'installationId',
           source: 'installation',
-          configurable: true,
+          configurable: false,
         }),
       ]),
     );

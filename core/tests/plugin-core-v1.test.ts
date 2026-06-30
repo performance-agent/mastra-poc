@@ -3,7 +3,7 @@ import test from "node:test";
 import type { PluginExecutionContext, PluginResource } from "@pa/core";
 import { PluginValidationError } from "@pa/core";
 import { createGitHubPlugin, githubSecrets, type GitHubClient, type GitHubClientFactory, type GitHubSecrets } from "@pa/plugin-github";
-import { createSecretReader } from "@pa/sdk";
+import { createSecretReader, defineSecrets, secret } from "@pa/sdk";
 
 const values: GitHubSecrets = {
   appId: "123",
@@ -59,26 +59,35 @@ function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory
   };
 }
 
-test("manifest exposes declarations and JSON Schema without secret values", () => {
+test("manifest exposes secret declarations and data JSON Schema without secret values", () => {
   const plugin = createGitHubPlugin({ clientFactory: fakeFactory() });
   assert.equal(plugin.manifest.id, "github");
   assert.deepEqual(plugin.manifest.dataTypes.map((type) => type.key), ["github.issue", "github.pullRequest", "github.commit"]);
   assert.equal(plugin.manifest.resourceTypes[0]?.key, "github.repository");
   assert.equal(plugin.manifest.dataTypes[0]?.schema.type, "object");
+  assert.deepEqual(plugin.manifest.secrets.map((secret) => secret.key), ["appId", "privateKey", "installationId", "baseUrl"]);
+  assert.equal(plugin.manifest.secrets.find((secret) => secret.key === "privateKey")?.sensitive, true);
   assert.equal("resourceTypes" in plugin.manifest.dataTypes[0]!, false);
   const serialized = JSON.stringify(plugin.manifest);
   assert.doesNotMatch(serialized, /super-secret-value/);
   assert.doesNotMatch(serialized, /function/i);
 });
 
-test("secret reader validates declared values", async () => {
-  const reader = createSecretReader(githubSecrets, (key) => key === "installationId" ? "not-a-number" : values[key]);
+test("secret reader requires declared values", async () => {
+  const reader = createSecretReader(githubSecrets, (key) => key === "installationId" ? undefined : values[key]);
   await assert.rejects(reader.get("installationId"), PluginValidationError);
+});
+
+test("secret definitions reject duplicate keys", () => {
+  assert.throws(() => defineSecrets([
+    secret({ key: "token", label: "Token", sensitive: true }),
+    secret({ key: "token", label: "Other token", sensitive: true }),
+  ]), PluginValidationError);
 });
 
 test("GitHub discovers persistable repository resources", async () => {
   const plugin = createGitHubPlugin({ clientFactory: fakeFactory() });
-  assert.deepEqual(await plugin.resourcesProvider.discover(context()), [{
+  assert.deepEqual(await plugin.resourceProviders[0]!.discover(context()), [{
     name: "api", description: "API", externalId: "acme/api", type: "github.repository",
   }]);
 });

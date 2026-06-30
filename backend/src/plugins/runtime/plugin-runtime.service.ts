@@ -64,9 +64,12 @@ export class PluginRuntimeService {
 
   async discover(installation: RuntimeInstallation) {
     const plugin = await this.registry.get(installation.pluginId);
-    return plugin.resourcesProvider.discover(
-      this.createContext(plugin, installation),
-    );
+    const context = this.createContext(plugin, installation);
+    return (
+      await Promise.all(
+        plugin.resourceProviders.map((provider) => provider.discover(context)),
+      )
+    ).flat();
   }
 
   async provide(
@@ -152,13 +155,16 @@ export class PluginRuntimeService {
     plugin: Awaited<ReturnType<PluginRegistryService['get']>>,
     installation: RuntimeInstallation,
   ) {
-    const values: Record<string, unknown> = {
-      ...asConfiguration(decryptConfiguration(installation.configuration)),
-      appId: process.env.GITHUB_APP_ID,
-      privateKey: process.env.GITHUB_PRIVATE_KEY,
-      installationId: installation.externalId,
-      baseUrl: process.env.GITHUB_BASE_URL || undefined,
-    };
+    const values: Record<string, unknown> = asConfiguration(
+      decryptConfiguration(installation.configuration),
+    );
+    if (plugin.id === 'github') {
+      values.appId = process.env.GITHUB_APP_ID;
+      values.privateKey = process.env.GITHUB_PRIVATE_KEY;
+      values.installationId = installation.externalId;
+      if (process.env.GITHUB_BASE_URL)
+        values.baseUrl = process.env.GITHUB_BASE_URL;
+    }
     return {
       organizationId: installation.organizationId,
       pluginId: plugin.id,
@@ -221,12 +227,19 @@ function createHostSecretReader<TDefinitions extends SecretDefinitions>(
 ): SecretReader<InferSecretValues<TDefinitions>> {
   return {
     async get(key) {
-      const result = await definitions[key].schema.safeParseAsync(values[key]);
-      if (!result.success)
+      const definition = definitions.definitions.find(
+        (candidate) => candidate.key === key,
+      );
+      if (!definition) {
+        throw new BadRequestException(`Plugin secret is not declared: ${key}`);
+      }
+      const value = values[key];
+      if (value === undefined && definition.required) {
         throw new BadRequestException(
-          `Invalid host configuration for plugin field: ${key}`,
+          `Missing host configuration for plugin field: ${key}`,
         );
-      return result.data;
+      }
+      return value as never;
     },
   };
 }
