@@ -6,9 +6,8 @@ import type {
   RuleInputNodeResult,
   SkippedRuleInput,
 } from "./types.js";
-import type { UserRule } from "../schemas/user-rule.schema.js";
 
-export function runRuleInputNode(input: UserRule[]): RuleInputNodeResult {
+export function runRuleInputNode(input: unknown): RuleInputNodeResult {
   const parsedInput = ruleInputNodeInputSchema.safeParse(input);
 
   if (!parsedInput.success) {

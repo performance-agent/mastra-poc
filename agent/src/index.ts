@@ -16,3 +16,5 @@ export type {
   RuleInputNodeStatus,
   SkippedRuleInput,
 } from "./nodes/types.js";
+
+export * from "./resourceCatalog/index.js";
