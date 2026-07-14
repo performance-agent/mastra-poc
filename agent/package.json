@@ -12,6 +12,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@langchain/anthropic": "^1.5.1",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/openai": "^1.5.5",
+    "langchain": "^1.5.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
