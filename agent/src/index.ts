@@ -18,3 +18,4 @@ export type {
 } from "./nodes/types.js";
 
 export * from "./resourceCatalog/index.js";
+export * from "./ruleUnderstanding/index.js";
