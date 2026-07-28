@@ -1,4 +1,4 @@
-import type { PreparedRuleInput } from "../nodes/types.js";
+import type { PreparedRuleInput } from "../ruleInput/types.js";
 import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
 
 export type RuleUnderstandingNodeInput = {
@@ -50,4 +50,3 @@ export type RuleUnderstandingNodeOptions = {
   interpreter: RuleInterpreter;
   maxConcurrency?: number;
 };
-

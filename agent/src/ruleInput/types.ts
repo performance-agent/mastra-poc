@@ -1,6 +1,6 @@
 import type { UserRule } from "../schemas/user-rule.schema.js";
 
-export type RuleInputNodeStatus = "ready" | "invalid";  
+export type RuleInputNodeStatus = "ready" | "invalid";
 
 export type RuleInputError = {
   path: string;

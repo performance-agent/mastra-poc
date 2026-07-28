@@ -1,4 +1,4 @@
-import type { PreparedRuleInput } from "../nodes/types.js";
+import type { PreparedRuleInput } from "../ruleInput/types.js";
 import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
 import { ruleUnderstandingAiOutputSchema, type RuleUnderstandingAiOutput } from "./schemas.js";
 import type {
