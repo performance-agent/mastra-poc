@@ -5,6 +5,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "demo:flow": "tsx --env-file=.env examples/evaluation-flow-demo.ts",
+    "demo:flow:llm": "tsx --env-file=.env examples/evaluation-flow-llm-demo.ts",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -13,7 +15,9 @@
   "license": "ISC",
   "dependencies": {
     "@langchain/anthropic": "^1.5.1",
+    "@langchain/core": "^1.2.3",
     "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
     "langchain": "^1.5.3",
     "zod": "^4.4.3"

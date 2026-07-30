@@ -1,3 +1,37 @@
+## LangGraph ejecutable
+
+El flujo implementado actualmente se puede ejecutar con:
+
+```bash
+npm run demo:flow
+```
+
+El demo usa fixtures determinísticos y no necesita credenciales de un modelo o backend. Para visualizar cada nodo y su estado en LangSmith:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY="<api-key>"
+export LANGSMITH_PROJECT="mastra-poc-agent-flow"
+export LANGCHAIN_CALLBACKS_BACKGROUND=false
+npm run demo:flow
+```
+
+Para ejecutar el flujo completo con Gemini en el nodo de comprensión de reglas y ver cada llamada al modelo anidada en la traza de LangSmith:
+
+```bash
+npm run demo:flow:llm
+```
+
+Este comando carga `.env`, realiza llamadas reales potencialmente facturables al modelo configurado en `RULE_UNDERSTANDING_MODEL` y envía a LangSmith los prompts, resultados estructurados, uso de tokens, latencia y errores. El catálogo y la selección de recursos siguen usando fixtures.
+
+Al habilitar tracing, las reglas, el catálogo y los resultados del estado se envían al workspace de LangSmith configurado. El flujo actual es:
+
+```text
+RuleInput → ResourceCatalog → RuleUnderstanding → ResourceSelection → EvaluationPlan
+```
+
+Las reglas entendidas siguen hasta el plan aunque otras necesiten aclaración o fallen; esos diagnósticos quedan disponibles y el resultado general se marca como `partial`.
+
 ## Modelo de ejecución del reporte
 
 El sistema está diseñado para generar siempre un mismo tipo de reporte base. Lo que cambia entre ejecuciones no es la estructura general del reporte, sino el conjunto de reglas de evaluación que el usuario solicita aplicar.
@@ -1253,5 +1287,3 @@ carga manual
 ```
 
 La plataforma debe evaluar performance basada en evidencia, reglas configurables y recursos disponibles.
-
-
