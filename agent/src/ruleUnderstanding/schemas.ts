@@ -15,6 +15,17 @@ export const ambiguousRuleAiOutputSchema = z.object({
   clarificationQuestion: nonEmptyText,
 }).strict();
 
+export const ruleUnderstandingProviderOutputSchema = z.object({
+  ambiguityDetected: z.boolean(),
+  interpretedGoal: nonEmptyText.optional(),
+  evaluationQuestions: z.array(nonEmptyText).min(1).optional(),
+  expectedSignals: z.array(nonEmptyText).min(1).optional(),
+  ambiguityReason: nonEmptyText.optional(),
+  clarificationQuestion: nonEmptyText.optional(),
+}).strict();
+
+export type RuleUnderstandingProviderOutput = z.infer<typeof ruleUnderstandingProviderOutputSchema>;
+
 export const ruleUnderstandingAiOutputSchema = z.discriminatedUnion("ambiguityDetected", [
   understoodRuleAiOutputSchema,
   ambiguousRuleAiOutputSchema,

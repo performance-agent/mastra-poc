@@ -20,4 +20,3 @@ export type {
   UnderstoodRule,
 } from "./types.js";
 export type { RuleUnderstandingEnvironment } from "./langchain-rule-interpreter.js";
-

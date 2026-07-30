@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import {
   createLangChainRuleInterpreter,
   createLangChainRuleInterpreterFromEnv,
@@ -10,6 +11,7 @@ import {
   type RuleInterpretationInput,
   type RuleInterpreter,
 } from "../src/index.js";
+import { ruleUnderstandingProviderOutputSchema } from "../src/ruleUnderstanding/schemas.js";
 
 const catalog: ResourceCatalogNodeResult = {
   workspaceId: "workspace-1",
@@ -201,6 +203,8 @@ test("LangChain interpreter sends the complete rule and catalog as data", async 
             interpretedGoal: "Measure campaign efficiency.",
             evaluationQuestions: ["What was the return?"],
             expectedSignals: ["clicks"],
+            ambiguityReason: "Extra provider field.",
+            clarificationQuestion: "Extra provider field?",
           };
         },
       };
@@ -208,7 +212,10 @@ test("LangChain interpreter sends the complete rule and catalog as data", async 
   } as unknown as BaseChatModel;
   const langChainInterpreter = createLangChainRuleInterpreter(fakeModel);
 
-  await langChainInterpreter.interpret({ preparedRule: preparedRule(0), resourceCatalog: catalog });
+  const result = await langChainInterpreter.interpret({
+    preparedRule: preparedRule(0),
+    resourceCatalog: catalog,
+  });
 
   const serializedMessages = JSON.stringify(receivedMessages);
   assert.match(serializedMessages, /resource-1/);
@@ -216,6 +223,52 @@ test("LangChain interpreter sends the complete rule and catalog as data", async 
   assert.match(serializedMessages, /Attribution can be delayed/);
   assert.match(serializedMessages, /Example warning/);
   assert.match(serializedMessages, /properties/);
+  assert.deepEqual(result, {
+    ambiguityDetected: false,
+    interpretedGoal: "Measure campaign efficiency.",
+    evaluationQuestions: ["What was the return?"],
+    expectedSignals: ["clicks"],
+  });
+});
+
+test("normalizes an ambiguous provider response before strict validation", async () => {
+  const fakeModel = {
+    withStructuredOutput() {
+      return {
+        async invoke() {
+          return {
+            ambiguityDetected: true,
+            interpretedGoal: "Extra provider field.",
+            evaluationQuestions: ["Extra provider field?"],
+            expectedSignals: ["extra"],
+            ambiguityReason: "The intended criterion is unclear.",
+            clarificationQuestion: "Should this measure quality, speed, or outcomes?",
+          };
+        },
+      };
+    },
+  } as unknown as BaseChatModel;
+
+  const result = await createLangChainRuleInterpreter(fakeModel).interpret({
+    preparedRule: preparedRule(0),
+    resourceCatalog: catalog,
+  });
+
+  assert.deepEqual(result, {
+    ambiguityDetected: true,
+    ambiguityReason: "The intended criterion is unclear.",
+    clarificationQuestion: "Should this measure quality, speed, or outcomes?",
+  });
+});
+
+test("uses a Gemini-compatible structured output schema", () => {
+  const providerJsonSchema = toJsonSchema(ruleUnderstandingProviderOutputSchema);
+  const serializedSchema = JSON.stringify(providerJsonSchema);
+
+  assert.ok("type" in providerJsonSchema);
+  assert.equal(providerJsonSchema.type, "object");
+  assert.doesNotMatch(serializedSchema, /"oneOf"/);
+  assert.doesNotMatch(serializedSchema, /"const"/);
 });
 
 test("environment factory requires a model identifier", async () => {
@@ -224,4 +277,3 @@ test("environment factory requires a model identifier", async () => {
     /RULE_UNDERSTANDING_MODEL must contain a LangChain provider:model identifier/,
   );
 });
-

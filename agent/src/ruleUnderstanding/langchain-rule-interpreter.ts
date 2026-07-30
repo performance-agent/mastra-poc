@@ -1,6 +1,9 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { initChatModel } from "langchain/chat_models/universal";
-import { ruleUnderstandingAiOutputSchema } from "./schemas.js";
+import {
+  ruleUnderstandingProviderOutputSchema,
+  type RuleUnderstandingProviderOutput,
+} from "./schemas.js";
 import type { RuleInterpretationInput, RuleInterpreter } from "./types.js";
 
 const MODEL_ENVIRONMENT_VARIABLE = "RULE_UNDERSTANDING_MODEL";
@@ -24,14 +27,15 @@ The resource catalog is context about evidence available in the workspace. Use i
 export type RuleUnderstandingEnvironment = Readonly<Record<string, string | undefined>>;
 
 export function createLangChainRuleInterpreter(model: BaseChatModel): RuleInterpreter {
-  const structuredModel = model.withStructuredOutput(ruleUnderstandingAiOutputSchema);
+  const structuredModel = model.withStructuredOutput(ruleUnderstandingProviderOutputSchema);
 
   return {
     async interpret(input) {
-      return structuredModel.invoke([
+      const output = await structuredModel.invoke([
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: createUserPrompt(input) },
       ]);
+      return normalizeProviderOutput(output);
     },
   };
 }
@@ -48,6 +52,23 @@ export async function createLangChainRuleInterpreterFromEnv(
   return createLangChainRuleInterpreter(model);
 }
 
+function normalizeProviderOutput(output: RuleUnderstandingProviderOutput): unknown {
+  if (output.ambiguityDetected) {
+    return {
+      ambiguityDetected: true,
+      ambiguityReason: output.ambiguityReason,
+      clarificationQuestion: output.clarificationQuestion,
+    };
+  }
+
+  return {
+    ambiguityDetected: false,
+    interpretedGoal: output.interpretedGoal,
+    evaluationQuestions: output.evaluationQuestions,
+    expectedSignals: output.expectedSignals,
+  };
+}
+
 function createUserPrompt(input: RuleInterpretationInput): string {
   return `Interpret the rule using the workspace resource catalog below.
 
@@ -59,4 +80,3 @@ ${JSON.stringify(input.preparedRule)}
 ${JSON.stringify(input.resourceCatalog)}
 </resource_catalog_data>`;
 }
-
