@@ -10,4 +10,5 @@ export * from "./resourceCatalog/index.js";
 export * from "./ruleUnderstanding/index.js";
 export * from "./resourceSelection/index.js";
 export * from "./evaluationPlan/index.js";
+export * from "./resourceExecution/index.js";
 export * from "./evaluationFlow/index.js";

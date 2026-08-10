@@ -27,7 +27,7 @@ Este comando carga `.env`, realiza llamadas reales potencialmente facturables al
 Al habilitar tracing, las reglas, el catálogo y los resultados del estado se envían al workspace de LangSmith configurado. El flujo actual es:
 
 ```text
-RuleInput → ResourceCatalog → RuleUnderstanding → ResourceSelection → EvaluationPlan
+RuleInput → ResourceCatalog → RuleUnderstanding → ResourceSelection → EvaluationPlan → ResourceExecution
 ```
 
 Las reglas entendidas siguen hasta el plan aunque otras necesiten aclaración o fallen; esos diagnósticos quedan disponibles y el resultado general se marca como `partial`.
@@ -535,8 +535,6 @@ ResourceSelectionNode
    ↓
 EvaluationPlanNode
    ↓
-EvaluationPlanValidationNode
-   ↓
 ResourceExecutionNode
    ↓
 EvidenceNormalizationNode
@@ -697,33 +695,7 @@ type EvaluationPlan = {
 
 ---
 
-### 6. `EvaluationPlanValidationNode`
-
-Responsabilidad:
-
-* validar que los recursos seleccionados existan;
-* validar que las operaciones existan;
-* validar permisos;
-* validar que el plan no pida datos imposibles;
-* devolver errores controlados si la IA inventó una operación.
-
-Ejemplo de error:
-
-```json
-{
-  "status": "invalid_plan",
-  "reason": "La IA solicitó una operación que no existe en el recurso crm_leads.",
-  "requestedOperation": "get_revenue_by_campaign",
-  "availableOperations": [
-    "get_leads_by_period",
-    "get_leads_by_owner"
-  ]
-}
-```
-
----
-
-### 7. `ResourceExecutionNode`
+### 6. `ResourceExecutionNode`
 
 Responsabilidad:
 
@@ -737,7 +709,7 @@ No debe interpretar resultados. Solo ejecuta y devuelve datos crudos.
 
 ---
 
-### 8. `EvidenceNormalizationNode`
+### 7. `EvidenceNormalizationNode`
 
 Responsabilidad:
 
@@ -778,7 +750,7 @@ type Evidence = {
 
 ---
 
-### 9. `EvidenceLinkingNode`
+### 8. `EvidenceLinkingNode`
 
 Responsabilidad:
 
@@ -792,7 +764,7 @@ Este nodo debe funcionar para cualquier dominio.
 
 ---
 
-### 10. `MetricAndSignalExtractionNode`
+### 9. `MetricAndSignalExtractionNode`
 
 Responsabilidad:
 
@@ -816,7 +788,7 @@ desvíos frente al promedio del equipo
 
 ---
 
-### 11. `RuleEvaluationNode`
+### 10. `RuleEvaluationNode`
 
 Responsabilidad:
 
@@ -853,7 +825,7 @@ type RuleEvaluationResult = {
 
 ---
 
-### 12. `AnomalyDetectionNode`
+### 11. `AnomalyDetectionNode`
 
 Responsabilidad:
 
@@ -885,7 +857,7 @@ type Anomaly = {
 
 ---
 
-### 13. `InsightGenerationNode`
+### 12. `InsightGenerationNode`
 
 Responsabilidad:
 
@@ -897,7 +869,7 @@ Responsabilidad:
 
 ---
 
-### 14. `RecommendationNode`
+### 13. `RecommendationNode`
 
 Responsabilidad:
 
@@ -909,7 +881,7 @@ Responsabilidad:
 
 ---
 
-### 15. `StandardReportGenerationNode`
+### 14. `StandardReportGenerationNode`
 
 Responsabilidad:
 
@@ -1199,7 +1171,7 @@ Necesito que implementes o prepares:
 3. reglas de usuario mock;
 4. normalización de reglas;
 5. selección de recursos por IA o simulada mediante servicio reemplazable;
-6. validación determinística del plan;
+6. validación determinística de recursos y operaciones durante la selección;
 7. ejecución mock de recursos;
 8. normalización de evidencia;
 9. evaluación básica de reglas;

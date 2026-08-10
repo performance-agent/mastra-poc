@@ -1,6 +1,7 @@
 import {
   createEvaluationFlow,
   createEvaluationPlanNode,
+  createResourceExecutionNode,
   createLangChainRuleInterpreterFromEnv,
   createResourceSelectionNode,
   createRuleUnderstandingNode,
@@ -54,6 +55,13 @@ const demoGraph = createEvaluationFlow({
     },
   }),
   evaluationPlanNode: createEvaluationPlanNode(),
+  resourceExecutionNode: createResourceExecutionNode({
+    executor: {
+      async execute({ resourceId, operationName }) {
+        return [{ resourceId, operationName, actorId: "demo-member", completedActivity: 4 }];
+      },
+    },
+  }),
 });
 
 const result = await demoGraph.invoke({

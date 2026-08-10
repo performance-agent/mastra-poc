@@ -15,6 +15,7 @@ const FlowState = Annotation.Root({
   ruleUnderstandingResult: Annotation<EvaluationFlowState["ruleUnderstandingResult"]>(),
   resourceSelectionResult: Annotation<EvaluationFlowState["resourceSelectionResult"]>(),
   evaluationPlanResult: Annotation<EvaluationFlowState["evaluationPlanResult"]>(),
+  resourceExecutionResult: Annotation<EvaluationFlowState["resourceExecutionResult"]>(),
   flowErrors: Annotation<EvaluationFlowState["flowErrors"]>(),
 });
 
@@ -76,6 +77,17 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
         status: hasRuleDiagnostics(state) ? "partial" as const : result.status,
       };
     })
+    .addNode("resource_execution", async (state) => {
+      const planResult = required(state.evaluationPlanResult, "evaluation plan result");
+      if (planResult.status === "invalid") {
+        throw new Error("Evaluation flow invariant violated: an invalid plan reached resource execution.");
+      }
+      const result = await deps.resourceExecutionNode.run({ plan: planResult.plan });
+      return {
+        resourceExecutionResult: result,
+        status: resolveExecutionFlowStatus(state.status, result.status),
+      };
+    })
     .addEdge(START, "rule_input")
     .addConditionalEdges("rule_input", (state) =>
       state.ruleInputResult?.status === "ready" ? "resource_catalog" : END)
@@ -85,7 +97,11 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
       (state.ruleUnderstandingResult?.understoodRules.length ?? 0) > 0 ? "resource_selection" : END)
     .addConditionalEdges("resource_selection", (state) =>
       (state.resourceSelectionResult?.selectedRules.length ?? 0) > 0 ? "evaluation_plan" : END)
-    .addEdge("evaluation_plan", END)
+    .addConditionalEdges("evaluation_plan", (state) =>
+      state.evaluationPlanResult?.status === "ready" || state.evaluationPlanResult?.status === "constrained"
+        ? "resource_execution"
+        : END)
+    .addEdge("resource_execution", END)
     .compile();
 }
 
@@ -101,4 +117,13 @@ function hasRuleDiagnostics(state: EvaluationFlowState): boolean {
 function required<T>(value: T | undefined, label: string): T {
   if (value === undefined) throw new Error(`Evaluation flow invariant violated: missing ${label}.`);
   return value;
+}
+
+function resolveExecutionFlowStatus(
+  currentStatus: EvaluationFlowStatus | undefined,
+  executionStatus: "completed" | "partial" | "failed",
+): EvaluationFlowStatus {
+  if (executionStatus === "failed") return "failed";
+  if (executionStatus === "partial" || currentStatus === "partial") return "partial";
+  return currentStatus === "constrained" ? "constrained" : "ready";
 }

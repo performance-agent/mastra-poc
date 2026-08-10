@@ -3,10 +3,12 @@ import test from "node:test";
 import {
   createEvaluationFlow,
   createEvaluationPlanNode,
+  createResourceExecutionNode,
   createResourceSelectionNode,
   createRuleUnderstandingNode,
   type BackendResourceCatalogAdapter,
   type ResourceCatalogNodeResult,
+  type ResourceExecutor,
   type ResourceSelector,
   type RuleInterpreter,
 } from "../src/index.js";
@@ -19,7 +21,10 @@ const catalog: ResourceCatalogNodeResult = {
     description: "Team activity",
     pluginId: "demo",
     pluginVersion: "1.0.0",
-    availableOperations: [{ name: "activity.by_period", description: "Read activity." }],
+    availableOperations: [
+      { name: "activity.by_period", description: "Read activity." },
+      { name: "activity.history", description: "Read activity history." },
+    ],
     dataDescription: "Activity by member and period.",
     freshness: "daily",
     reliability: "high",
@@ -33,6 +38,7 @@ function makeFlow(options: {
   interpret?: RuleInterpreter["interpret"];
   select?: ResourceSelector["select"];
   loadCatalog?: BackendResourceCatalogAdapter["getCatalogForWorkspace"];
+  execute?: ResourceExecutor["execute"];
 } = {}) {
   return createEvaluationFlow({
     resourceCatalogAdapter: {
@@ -63,6 +69,11 @@ function makeFlow(options: {
       })),
     }),
     evaluationPlanNode: createEvaluationPlanNode(),
+    resourceExecutionNode: createResourceExecutionNode({
+      executor: {
+        execute: options.execute ?? (async ({ resourceId, operationName }) => [{ resourceId, operationName }]),
+      },
+    }),
   });
 }
 
@@ -79,6 +90,8 @@ test("runs the complete graph and produces a ready plan", async () => {
   assert.equal(result.ruleUnderstandingResult?.status, "ready");
   assert.equal(result.resourceSelectionResult?.status, "ready");
   assert.equal(result.evaluationPlanResult?.status, "ready");
+  assert.equal(result.resourceExecutionResult?.status, "completed");
+  assert.deepEqual(result.resourceExecutionResult?.callCounts, { total: 1, successful: 1, failed: 0 });
 });
 
 test("stops before catalog loading for invalid rule input", async () => {
@@ -222,4 +235,96 @@ test("returns a controlled failure when the catalog cannot be loaded", async () 
   assert.equal(result.status, "failed");
   assert.equal(result.flowErrors?.[0]?.code, "resource_catalog_failed");
   assert.equal(result.ruleUnderstandingResult, undefined);
+});
+
+test("keeps successful raw data when another planned resource call fails", async () => {
+  const result = await makeFlow({
+    select: async () => ({
+      selectedResources: [{
+        resourceId: "activity",
+        reason: "Provides current and historical activity.",
+        requiredOperations: [
+          {
+            name: "activity.by_period",
+            reason: "Reads current activity.",
+            expectedSignals: ["current activity"],
+          },
+          {
+            name: "activity.history",
+            reason: "Reads historical activity.",
+            expectedSignals: ["historical activity"],
+          },
+        ],
+      }],
+      missingEvidence: [],
+    }),
+    execute: async ({ operationName }) => {
+      if (operationName === "activity.history") throw new Error("history unavailable");
+      return [{ id: "current" }];
+    },
+  }).invoke(input);
+
+  assert.equal(result.status, "partial");
+  assert.equal(result.resourceExecutionResult?.status, "partial");
+  assert.deepEqual(result.resourceExecutionResult?.callCounts, { total: 2, successful: 1, failed: 1 });
+  assert.equal(result.resourceExecutionResult?.calls[0]?.status, "succeeded");
+  assert.equal(result.resourceExecutionResult?.calls[1]?.status, "failed");
+});
+
+test("marks the flow failed when every planned resource call fails", async () => {
+  const result = await makeFlow({
+    execute: async () => { throw new Error("resource offline"); },
+  }).invoke(input);
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.evaluationPlanResult?.status, "ready");
+  assert.equal(result.resourceExecutionResult?.status, "failed");
+});
+
+test("does not execute a not-plannable evaluation plan", async () => {
+  let executionCalls = 0;
+  const result = await makeFlow({
+    select: async () => ({
+      selectedResources: [],
+      missingEvidence: [{
+        description: "Delivery records",
+        impact: "The rule cannot be evaluated.",
+        expectedSignals: ["deliveries"],
+      }],
+    }),
+    execute: async () => {
+      executionCalls += 1;
+      return [];
+    },
+  }).invoke(input);
+
+  assert.equal(result.status, "not_plannable");
+  assert.equal(result.evaluationPlanResult?.status, "not_plannable");
+  assert.equal(result.resourceExecutionResult, undefined);
+  assert.equal(executionCalls, 0);
+});
+
+test("preserves a constrained plan status after successful execution", async () => {
+  const result = await makeFlow({
+    select: async () => ({
+      selectedResources: [{
+        resourceId: "activity",
+        reason: "Provides activity.",
+        requiredOperations: [{
+          name: "activity.by_period",
+          reason: "Reads activity.",
+          expectedSignals: ["activity"],
+        }],
+      }],
+      missingEvidence: [{
+        description: "Validated outcomes",
+        impact: "Outcome quality cannot be confirmed.",
+        expectedSignals: ["validated outcomes"],
+      }],
+    }),
+  }).invoke(input);
+
+  assert.equal(result.status, "constrained");
+  assert.equal(result.evaluationPlanResult?.status, "constrained");
+  assert.equal(result.resourceExecutionResult?.status, "completed");
 });
