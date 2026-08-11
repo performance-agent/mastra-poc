@@ -7,6 +7,10 @@ import type { BackendResourceCatalogAdapter, ResourceCatalogNodeResult } from ".
 import type { ResourceSelectionNode, ResourceSelectionNodeResult } from "../resourceSelection/types.js";
 import type { ResourceExecutionNode, ResourceExecutionNodeResult } from "../resourceExecution/types.js";
 import type { RuleInputNodeResult } from "../ruleInput/types.js";
+import type {
+  RuleAssessmentNode,
+  RuleAssessmentNodeResult,
+} from "../ruleAssessment/types.js";
 import type { RuleUnderstandingNode, RuleUnderstandingNodeResult } from "../ruleUnderstanding/types.js";
 
 export type EvaluationFlowStatus =
@@ -38,6 +42,7 @@ export type EvaluationFlowState = EvaluationFlowInput & {
   resourceSelectionResult?: ResourceSelectionNodeResult | undefined;
   evaluationPlanResult?: EvaluationPlanNodeResult | undefined;
   resourceExecutionResult?: ResourceExecutionNodeResult | undefined;
+  ruleAssessmentResult?: RuleAssessmentNodeResult | undefined;
   flowErrors?: EvaluationFlowError[] | undefined;
 };
 
@@ -51,4 +56,5 @@ export type EvaluationFlowDependencies = {
   resourceSelectionNode: ResourceSelectionNode;
   evaluationPlanNode: EvaluationPlanNode;
   resourceExecutionNode: ResourceExecutionNode;
+  ruleAssessmentNode: RuleAssessmentNode;
 };

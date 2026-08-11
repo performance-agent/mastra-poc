@@ -5,12 +5,14 @@ import {
   createEvaluationPlanNode,
   createResourceExecutionNode,
   createResourceSelectionNode,
+  createRuleAssessmentNode,
   createRuleUnderstandingNode,
   type BackendResourceCatalogAdapter,
   type ResourceCatalogNodeResult,
   type ResourceExecutor,
   type ResourceSelector,
   type RuleInterpreter,
+  type RuleAssessor,
 } from "../src/index.js";
 
 const catalog: ResourceCatalogNodeResult = {
@@ -39,6 +41,7 @@ function makeFlow(options: {
   select?: ResourceSelector["select"];
   loadCatalog?: BackendResourceCatalogAdapter["getCatalogForWorkspace"];
   execute?: ResourceExecutor["execute"];
+  assess?: RuleAssessor["assess"];
 } = {}) {
   return createEvaluationFlow({
     resourceCatalogAdapter: {
@@ -74,6 +77,21 @@ function makeFlow(options: {
         execute: options.execute ?? (async ({ resourceId, operationName }) => [{ resourceId, operationName }]),
       },
     }),
+    ruleAssessmentNode: createRuleAssessmentNode({
+      assessor: {
+        assess: options.assess ?? (async () => ({
+          overview: "The available evidence supports the rule.",
+          evidence: [{
+            source: "activity.by_period",
+            observation: "Activity was returned.",
+            relevance: "It addresses the expected signal.",
+          }],
+          rationale: "The planned evidence was available.",
+          verdict: "supported",
+          limitations: [],
+        })),
+      },
+    }),
   });
 }
 
@@ -92,6 +110,8 @@ test("runs the complete graph and produces a ready plan", async () => {
   assert.equal(result.evaluationPlanResult?.status, "ready");
   assert.equal(result.resourceExecutionResult?.status, "completed");
   assert.deepEqual(result.resourceExecutionResult?.callCounts, { total: 1, successful: 1, failed: 0 });
+  assert.equal(result.ruleAssessmentResult?.status, "completed");
+  assert.equal(result.ruleAssessmentResult?.assessments.rule_input_1_delivery?.ruleName, "Delivery");
 });
 
 test("stops before catalog loading for invalid rule input", async () => {
@@ -279,6 +299,7 @@ test("marks the flow failed when every planned resource call fails", async () =>
   assert.equal(result.status, "failed");
   assert.equal(result.evaluationPlanResult?.status, "ready");
   assert.equal(result.resourceExecutionResult?.status, "failed");
+  assert.equal(result.ruleAssessmentResult?.status, "completed");
 });
 
 test("does not execute a not-plannable evaluation plan", async () => {
@@ -301,6 +322,7 @@ test("does not execute a not-plannable evaluation plan", async () => {
   assert.equal(result.status, "not_plannable");
   assert.equal(result.evaluationPlanResult?.status, "not_plannable");
   assert.equal(result.resourceExecutionResult, undefined);
+  assert.equal(result.ruleAssessmentResult, undefined);
   assert.equal(executionCalls, 0);
 });
 
@@ -327,4 +349,31 @@ test("preserves a constrained plan status after successful execution", async () 
   assert.equal(result.status, "constrained");
   assert.equal(result.evaluationPlanResult?.status, "constrained");
   assert.equal(result.resourceExecutionResult?.status, "completed");
+  assert.equal(result.ruleAssessmentResult?.status, "completed");
+});
+
+test("keeps successful assessments when a sibling assessment fails", async () => {
+  const result = await makeFlow({
+    assess: async ({ rule }) => {
+      if (rule.ruleIndex === 1) throw new Error("reasoning model unavailable");
+      return {
+        overview: "Evidence supports delivery.",
+        evidence: [],
+        rationale: "Delivery evidence was available.",
+        verdict: "supported",
+        limitations: [],
+      };
+    },
+  }).invoke({
+    ...input,
+    rules: [
+      { name: "Delivery", valuation: 8 },
+      { name: "Quality", valuation: 7 },
+    ],
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(result.ruleAssessmentResult?.status, "partial");
+  assert.ok(result.ruleAssessmentResult?.assessments.rule_input_1_delivery);
+  assert.equal(result.ruleAssessmentResult?.errors[0]?.ruleId, "rule_input_2_quality");
 });

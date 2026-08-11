@@ -1,8 +1,4 @@
-import { z } from "zod";
-import {
-  missingEvidenceRequirementSchema,
-  selectedResourceSchema,
-} from "../evaluationPlan/schemas.js";
+import { resourceSelectionAiOutputSchema } from "./schemas.js";
 import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
 import type { UnderstoodRule } from "../ruleUnderstanding/types.js";
 import type {
@@ -13,11 +9,6 @@ import type {
   ResourceSelectionNodeResult,
   ResourceSelector,
 } from "./types.js";
-
-const selectionDecisionSchema = z.object({
-  selectedResources: z.array(selectedResourceSchema),
-  missingEvidence: z.array(missingEvidenceRequirementSchema),
-}).strict();
 
 export function createResourceSelectionNode(selector: ResourceSelector): ResourceSelectionNode {
   return {
@@ -57,7 +48,7 @@ async function selectResources(
     return failed(rule, "selection_failed", "Resource selection failed for this rule.");
   }
 
-  const parsed = selectionDecisionSchema.safeParse(rawDecision);
+  const parsed = resourceSelectionAiOutputSchema.safeParse(rawDecision);
   if (!parsed.success) {
     return failed(rule, "invalid_selection", "The resource selector returned an invalid decision.");
   }
@@ -106,4 +97,3 @@ function failed(
 ): SelectionOutcome {
   return { rule: understoodRule, failure: { understoodRule, code, message, ...details } };
 }
-

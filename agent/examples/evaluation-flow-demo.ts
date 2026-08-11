@@ -3,6 +3,7 @@ import {
   createEvaluationPlanNode,
   createResourceExecutionNode,
   createResourceSelectionNode,
+  createRuleAssessmentNode,
   createRuleUnderstandingNode,
   type ResourceCatalogNodeResult,
 } from "../src/index.js";
@@ -74,6 +75,23 @@ const demoGraph = createEvaluationFlow({
     executor: {
       async execute({ resourceId, operationName }) {
         return [{ resourceId, operationName, actorId: "demo-member", completedActivity: 4 }];
+      },
+    },
+  }),
+  ruleAssessmentNode: createRuleAssessmentNode({
+    assessor: {
+      async assess() {
+        return {
+          overview: "The fixture contains completed activity for the period.",
+          evidence: [{
+            source: "activity.by_period",
+            observation: "The demo member completed four activities.",
+            relevance: "Completed activity is the expected delivery signal.",
+          }],
+          rationale: "The available fixture directly addresses the rule.",
+          verdict: "supported",
+          limitations: ["This assessment uses fixture data."],
+        };
       },
     },
   }),

@@ -16,6 +16,7 @@ const FlowState = Annotation.Root({
   resourceSelectionResult: Annotation<EvaluationFlowState["resourceSelectionResult"]>(),
   evaluationPlanResult: Annotation<EvaluationFlowState["evaluationPlanResult"]>(),
   resourceExecutionResult: Annotation<EvaluationFlowState["resourceExecutionResult"]>(),
+  ruleAssessmentResult: Annotation<EvaluationFlowState["ruleAssessmentResult"]>(),
   flowErrors: Annotation<EvaluationFlowState["flowErrors"]>(),
 });
 
@@ -88,6 +89,20 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
         status: resolveExecutionFlowStatus(state.status, result.status),
       };
     })
+    .addNode("rule_assessment", async (state) => {
+      const planResult = required(state.evaluationPlanResult, "evaluation plan result");
+      if (planResult.status === "invalid") {
+        throw new Error("Evaluation flow invariant violated: an invalid plan reached rule assessment.");
+      }
+      const result = await deps.ruleAssessmentNode.run({
+        plan: planResult.plan,
+        executionResult: required(state.resourceExecutionResult, "resource execution result"),
+      });
+      return {
+        ruleAssessmentResult: result,
+        status: resolveAssessmentFlowStatus(state.status, result.status),
+      };
+    })
     .addEdge(START, "rule_input")
     .addConditionalEdges("rule_input", (state) =>
       state.ruleInputResult?.status === "ready" ? "resource_catalog" : END)
@@ -101,8 +116,18 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
       state.evaluationPlanResult?.status === "ready" || state.evaluationPlanResult?.status === "constrained"
         ? "resource_execution"
         : END)
-    .addEdge("resource_execution", END)
+    .addEdge("resource_execution", "rule_assessment")
+    .addEdge("rule_assessment", END)
     .compile();
+}
+
+function resolveAssessmentFlowStatus(
+  currentStatus: EvaluationFlowStatus | undefined,
+  assessmentStatus: "completed" | "partial" | "failed",
+): EvaluationFlowStatus {
+  if (currentStatus === "failed" || assessmentStatus === "failed") return "failed";
+  if (currentStatus === "partial" || assessmentStatus === "partial") return "partial";
+  return currentStatus === "constrained" ? "constrained" : "ready";
 }
 
 export type CompiledEvaluationFlow = ReturnType<typeof createEvaluationFlow>;

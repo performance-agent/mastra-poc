@@ -22,15 +22,17 @@ Para ejecutar el flujo completo con Gemini en el nodo de comprensión de reglas 
 npm run demo:flow:llm
 ```
 
-Este comando carga `.env`, realiza llamadas reales potencialmente facturables al modelo configurado en `RULE_UNDERSTANDING_MODEL` y envía a LangSmith los prompts, resultados estructurados, uso de tokens, latencia y errores. El catálogo y la selección de recursos siguen usando fixtures.
+Este comando carga `.env`, realiza llamadas reales potencialmente facturables a los modelos configurados en `RULE_UNDERSTANDING_MODEL` y `RULE_SUMMARY_MODEL`, y envía a LangSmith los prompts, resultados estructurados, uso de tokens, latencia y errores. Ambos valores usan el formato `provider:model`; `RULE_SUMMARY_MODEL` puede apuntar a un modelo de razonamiento distinto. El catálogo y la selección de recursos siguen usando fixtures.
 
 Al habilitar tracing, las reglas, el catálogo y los resultados del estado se envían al workspace de LangSmith configurado. El flujo actual es:
 
 ```text
-RuleInput → ResourceCatalog → RuleUnderstanding → ResourceSelection → EvaluationPlan → ResourceExecution
+RuleInput → ResourceCatalog → RuleUnderstanding → ResourceSelection → EvaluationPlan → ResourceExecution → RuleAssessment
 ```
 
 Las reglas entendidas siguen hasta el plan aunque otras necesiten aclaración o fallen; esos diagnósticos quedan disponibles y el resultado general se marca como `partial`.
+
+`RuleAssessment` ejecuta una evaluación estructurada por regla sobre la evidencia obtenida. El resultado queda indexado por el identificador estable de la regla e incluye resumen, filas de evidencia, justificación concisa, veredicto de soporte y limitaciones.
 
 ## Modelo de ejecución del reporte
 

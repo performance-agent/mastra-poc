@@ -3,7 +3,9 @@ import {
   createEvaluationPlanNode,
   createResourceExecutionNode,
   createLangChainRuleInterpreterFromEnv,
+  createLangChainRuleAssessorFromEnv,
   createResourceSelectionNode,
+  createRuleAssessmentNode,
   createRuleUnderstandingNode,
   type ResourceCatalogNodeResult,
 } from "../src/index.js";
@@ -61,6 +63,9 @@ const demoGraph = createEvaluationFlow({
         return [{ resourceId, operationName, actorId: "demo-member", completedActivity: 4 }];
       },
     },
+  }),
+  ruleAssessmentNode: createRuleAssessmentNode({
+    assessor: await createLangChainRuleAssessorFromEnv(),
   }),
 });
 
