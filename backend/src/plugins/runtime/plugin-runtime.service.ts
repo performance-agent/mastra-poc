@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { ResourceExecutionDataset } from '@pa/agent';
 import type {
   InferSecretValues,
   PluginResource,
@@ -27,6 +28,11 @@ export type RuntimeResource = {
 };
 
 export type ReportMode = 'activity' | 'history';
+
+export type RuntimeEvaluationPeriod = {
+  from: string;
+  to: string;
+};
 
 export type ProviderDataset = {
   dataType: string;
@@ -151,6 +157,41 @@ export class PluginRuntimeService {
     return { resources: output, limitations };
   }
 
+  async provideOperation(
+    resource: RuntimeResource,
+    operationName: string,
+    period?: RuntimeEvaluationPeriod,
+  ): Promise<ResourceExecutionDataset> {
+    const installation = resource.pluginInstallation;
+    const plugin = await this.registry.get(installation.pluginId);
+    const provider = plugin.dataProviders.find(
+      (candidate) => candidate.dataType.key === operationName
+
+    );
+    if (!provider) {
+      throw new BadRequestException(
+        `Operation ${operationName} is unavailable for resource ${resource.id}`,
+      );
+    }
+
+    const records = await provider.provide(
+      this.createContext(plugin, installation) as never,
+      toPluginResource(resource),
+    );
+    const limitations: string[] = [];
+    const filtered = period
+      ? filterPeriodRecords(records, period, limitations)
+      : [...records];
+
+    return {
+      dataType: operationName,
+      records: filtered.slice(0, MAX_RECORDS),
+      count: filtered.length,
+      truncated: filtered.length > MAX_RECORDS,
+      limitations,
+    };
+  }
+
   private createContext(
     plugin: Awaited<ReturnType<PluginRegistryService['get']>>,
     installation: RuntimeInstallation,
@@ -201,6 +242,41 @@ export class PluginRuntimeService {
     }
     return filtered;
   }
+}
+
+function toPluginResource(resource: RuntimeResource): PluginResource {
+  return {
+    name: resource.name,
+    externalId: resource.externalId,
+    type: resource.type,
+    ...(resource.description === null
+      ? {}
+      : { description: resource.description }),
+  };
+}
+
+function filterPeriodRecords(
+  records: readonly unknown[],
+  period: RuntimeEvaluationPeriod,
+  limitations: string[],
+): unknown[] {
+  const from = Date.parse(`${period.from}T00:00:00.000Z`);
+  const to = Date.parse(`${period.to}T23:59:59.999Z`);
+  let withoutTimestamp = 0;
+  const filtered = records.filter((record) => {
+    const timestamp = recordTimestamp(record);
+    if (timestamp === null) {
+      withoutTimestamp += 1;
+      return true;
+    }
+    return timestamp >= from && timestamp <= to;
+  });
+  if (withoutTimestamp > 0) {
+    limitations.push(
+      `${withoutTimestamp} records had no recognized timestamp and were retained`,
+    );
+  }
+  return filtered;
 }
 
 function asConfiguration(value: unknown): Record<string, unknown> {

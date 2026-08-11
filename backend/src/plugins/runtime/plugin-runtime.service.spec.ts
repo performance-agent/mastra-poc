@@ -154,4 +154,75 @@ describe('PluginRuntimeService', () => {
       }),
     ]);
   });
+
+  it('provides only the requested operation with inclusive period filtering', async () => {
+    const selected = {
+      dataType: { key: 'test.selected' },
+      provide: jest.fn().mockResolvedValue([
+        { id: 'before', updatedAt: '2026-06-09T23:59:59.999Z' },
+        { id: 'from', createdAt: '2026-06-10T00:00:00.000Z' },
+        { id: 'to', committedAt: '2026-06-20T23:59:59.999Z' },
+        { id: 'after', authoredAt: '2026-06-21T00:00:00.000Z' },
+        { id: 'unknown' },
+      ]),
+    };
+    const ignored = {
+      dataType: { key: 'test.ignored' },
+      provide: jest.fn(),
+    };
+    const { service } = createService([ignored, selected]);
+
+    const result = await service.provideOperation(
+      makeResource('installation-a'),
+      'test.selected',
+      { from: '2026-06-10', to: '2026-06-20' },
+    );
+
+    expect(ignored.provide).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      dataType: 'test.selected',
+      records: [
+        { id: 'from', createdAt: '2026-06-10T00:00:00.000Z' },
+        { id: 'to', committedAt: '2026-06-20T23:59:59.999Z' },
+        { id: 'unknown' },
+      ],
+      count: 3,
+      truncated: false,
+      limitations: [
+        '1 records had no recognized timestamp and were retained',
+      ],
+    });
+  });
+
+  it('rejects an operation not declared by the plugin', async () => {
+    const { service } = createService([]);
+
+    await expect(
+      service.provideOperation(
+        makeResource('installation-a'),
+        'test.missing',
+      ),
+    ).rejects.toThrow(
+      'Operation test.missing is unavailable for resource resource-installation-a',
+    );
+  });
+
+  it('truncates a requested operation and preserves its filtered count', async () => {
+    const records = Array.from({ length: 1001 }, (_, id) => ({ id }));
+    const { service } = createService([
+      {
+        dataType: { key: 'test.large' },
+        provide: jest.fn().mockResolvedValue(records),
+      },
+    ]);
+
+    const result = await service.provideOperation(
+      makeResource('installation-a'),
+      'test.large',
+    );
+
+    expect(result.records).toHaveLength(1000);
+    expect(result.count).toBe(1001);
+    expect(result.truncated).toBe(true);
+  });
 });
