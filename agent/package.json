@@ -1,10 +1,21 @@
 {
-  "name": "agent",
-  "version": "1.0.0",
-  "description": "",
+  "name": "@pa/agent",
+  "version": "0.1.0",
+  "description": "Performance Platform evaluation agent",
   "type": "module",
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "demo:flow": "tsx --env-file=.env examples/evaluation-flow-demo.ts",
     "demo:flow:llm": "tsx --env-file=.env examples/evaluation-flow-llm-demo.ts",
     "test": "tsx --test tests/*.test.ts",

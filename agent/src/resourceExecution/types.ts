@@ -10,6 +10,14 @@ export type ResourceExecutor = {
   execute(input: ResourceExecutionRequest): Promise<unknown>;
 };
 
+export type ResourceExecutionDataset = {
+  dataType: string;
+  records: readonly unknown[];
+  count: number;
+  truncated: boolean;
+  limitations: string[];
+};
+
 export type ResourceExecutionNodeOptions = {
   executor: ResourceExecutor;
   maxConcurrency?: number;

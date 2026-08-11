@@ -7,6 +7,7 @@ export type {
   ResourceExecutionNodeResult,
   ResourceExecutionNodeStatus,
   ResourceExecutionRequest,
+  ResourceExecutionDataset,
   ResourceExecutor,
   SuccessfulResourceCall,
 } from "./types.js";
