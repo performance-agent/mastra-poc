@@ -57,6 +57,72 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Test the evaluation agent
+
+Configure the backend `.env` with plugin credentials, an LLM API key, and the
+two LangChain `provider:model` identifiers:
+
+```dotenv
+RULE_UNDERSTANDING_MODEL=openai:gpt-5-mini
+RULE_SUMMARY_MODEL=openai:gpt-5
+```
+
+`RULE_UNDERSTANDING_MODEL` is used for rule interpretation and resource
+selection. `RULE_SUMMARY_MODEL` produces the final structured assessment.
+
+The workspace must have at least one active resource assigned from an active
+plugin installation. An authenticated workspace owner or admin can then run:
+
+```bash
+curl -X POST \
+  "http://localhost:3000/api/workspaces/WORKSPACE_ID/evaluations?view=report" \
+  -H "Authorization: Bearer FIREBASE_ID_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rules": [{
+      "name": "Delivery traceability",
+      "description": "Delivered code should be traceable through repository activity.",
+      "valuation": 8
+    }],
+    "period": {
+      "from": "2026-08-01",
+      "to": "2026-08-10"
+    }
+  }'
+```
+
+The default `report` view returns keyed rule assessments, limitations,
+execution counts, and diagnostics. Use `?view=full` to inspect the complete
+graph state and raw plugin records during development.
+
+## Run the backend with Docker Compose
+
+The Compose stack builds the backend and agent packages, starts PostgreSQL,
+waits for the database to become healthy, applies Prisma migrations, and then
+starts the API.
+
+From the `backend` directory, create your environment file and provide the
+Firebase service-account file referenced by `FIREBASE_CREDENTIALS_FILE`:
+
+```bash
+cp .env.example .env
+# Edit .env with real API keys, encryption key, plugin configuration, and
+# FIREBASE_CREDENTIALS_FILE (a path on the Docker host).
+docker compose up --build
+```
+
+The API is available at `http://localhost:3000/api` and Swagger at
+`http://localhost:3000/api/docs`. Change the host port with `BACKEND_PORT`.
+
+Useful lifecycle commands:
+
+```bash
+docker compose logs -f backend
+docker compose down
+# Also delete the PostgreSQL volume and all local database data:
+docker compose down --volumes
+```
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

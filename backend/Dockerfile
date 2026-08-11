@@ -19,6 +19,9 @@ RUN npm ci
 COPY agent/tsconfig.json ./
 COPY agent/src ./src
 RUN npm run build
+# The backend's file dependency resolves to /app/agent at runtime, so keep the
+# agent's own production dependencies available for Node's module resolution.
+RUN npm prune --omit=dev
 
 # Install and build backend
 WORKDIR /app/backend
@@ -44,6 +47,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/core /app/core
 COPY --from=builder /app/agent/package.json /app/agent/package.json
 COPY --from=builder /app/agent/dist /app/agent/dist
+COPY --from=builder /app/agent/node_modules /app/agent/node_modules
 COPY --from=builder /app/backend/package*.json ./
 COPY --from=builder /app/backend/node_modules ./node_modules
 COPY --from=builder /app/backend/dist ./dist
