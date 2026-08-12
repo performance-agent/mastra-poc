@@ -118,6 +118,19 @@ export interface DataType {
 
 export type PerformanceReportType = "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
+export interface EvaluationRequest {
+  rules: Array<{ name: string; description?: string; valuation: number }>;
+  period?: { from: string; to: string };
+}
+
+export interface EvaluationReport {
+  status: string;
+  assessments: Record<string, unknown>;
+  limitations: string[];
+  execution: { total: number; successful: number; failed: number } | null;
+  diagnostics: Record<string, unknown[]>;
+}
+
 export interface PerformanceReport<TData = unknown> {
   id: string;
   organizationId?: string | null;
