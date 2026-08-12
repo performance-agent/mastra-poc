@@ -9,6 +9,7 @@ import {
   groupReportContentSchema,
   groupReportSchema,
 } from '../mastra/schemas/group-report.schema';
+import { resolveModelFromEnvironment } from '../mastra/model-configuration';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -45,21 +46,25 @@ export class ReportsService {
   }
 
   private async createSoftwareReport(groupId: string) {
-    const group = await this.prisma.group.findUnique({
-      where: { id: groupId },
-      include: {
-        resourceAssignments: {
-          include: {
-            resource: { include: { pluginInstallation: true } },
+    const [group, assignedResources] = await Promise.all([
+      this.prisma.group.findUnique({
+        where: { id: groupId },
+        include: {
+          workspace: {
+            include: { organization: true },
           },
         },
-      },
-    });
+      }),
+      this.prisma.pluginInstallationResource.findMany({
+        where: {
+          active: true,
+          assignments: { some: { groupId } },
+        },
+        include: { pluginInstallation: true },
+      }),
+    ]);
     if (!group) throw new NotFoundException('Group not found');
 
-    const assignedResources = group.resourceAssignments
-      .map((assignment) => assignment.resource)
-      .filter((resource) => resource.active);
     if (!assignedResources.length) {
       throw new BadRequestException(
         'This group has no active plugin resources assigned',
@@ -91,6 +96,38 @@ export class ReportsService {
       limitations: providerData.limitations,
       coverage: buildCoverage(providerData),
     };
+
+    const configuredModel = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
+    if (typeof configuredModel !== 'string') {
+      throw new Error('GROUP_REPORT_MODEL must resolve to a model identifier');
+    }
+    this.logger.log(
+      `Group report AI call ${JSON.stringify({
+        organization: {
+          id: group.workspace.organization.id,
+          name: group.workspace.organization.name,
+        },
+        workspace: {
+          id: group.workspace.id,
+          name: group.workspace.name,
+        },
+        group: { id: group.id, name: group.name },
+        model: configuredModel,
+        resources: providerData.resources.map((resource) => ({
+          id: resource.id,
+          name: resource.name,
+          plugin: resource.pluginId,
+          type: resource.type,
+          datasets: resource.datasets.map((dataset) => ({
+            type: dataset.dataType,
+            available: dataset.count,
+            analyzed: dataset.records.length,
+            truncated: dataset.truncated,
+          })),
+        })),
+        limitations: providerData.limitations.length,
+      })}`,
+    );
 
     const prompt = `Genera el Group Report estructurado utilizando todo el historial disponible del siguiente input.
 
