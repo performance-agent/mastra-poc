@@ -116,7 +116,7 @@ export interface DataType {
   updatedAt?: string;
 }
 
-export type PerformanceReportType = "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
+export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface PerformanceReport<TData = unknown> {
   id: string;
@@ -127,6 +127,67 @@ export interface PerformanceReport<TData = unknown> {
   data: TData;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface GroupReport {
+  summary: string;
+  health: {
+    score: number;
+    status: "GOOD" | "WATCH" | "RISK";
+    summary: string;
+  };
+  historicalInsights: {
+    deliveryFlow: ReportInsight;
+    collaboration: ReportInsight;
+    ownership: ReportInsight;
+    riskAndLessons: {
+      status: "GOOD" | "WATCH" | "RISK";
+      summary: string;
+      risks: string[];
+      lessons: string[];
+    };
+  };
+  projectStages: Array<{
+    label: string;
+    period: string;
+    summary: string;
+    signals: string[];
+  }>;
+  people: Array<{
+    displayName: string;
+    contributionProfile: string;
+    summary: string;
+    metrics: Array<{ label: string; value: string | number }>;
+    strengths: string[];
+    risks: string[];
+    suggestedActions: string[];
+    notableItems: GroupReportWorkItem[];
+  }>;
+  notableWork: GroupReportWorkItem[];
+  recommendations: Array<{
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    title: string;
+    description: string;
+    action: string;
+  }>;
+  coverage: {
+    resourcesAnalyzed: number;
+    datasetsAnalyzed: number;
+    recordsAnalyzed: number;
+    firstActivityAt: string | null;
+    lastActivityAt: string | null;
+    limitations: string[];
+  };
+}
+
+export interface GroupReportWorkItem {
+  type: string;
+  resource: string;
+  reference: string | null;
+  title: string;
+  url: string | null;
+  reason: string;
+  status: string | null;
 }
 
 export interface GroupGithubActivityReport {

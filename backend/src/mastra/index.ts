@@ -10,15 +10,13 @@ import {
 } from '@mastra/observability';
 import { weatherWorkflow } from './workflows/weather-workflow';
 import { weatherAgent } from './agents/weather-agent';
-import { groupGithubActivityReportAgent } from './agents/group-github-activity-report-agent';
-import { groupGithubHistoryReportAgent } from './agents/group-github-history-report-agent';
+import { groupReportAgent } from './agents/group-report-agent';
 
 export const mastra = new Mastra({
   workflows: { weatherWorkflow },
   agents: {
     weatherAgent,
-    groupGithubActivityReportAgent,
-    groupGithubHistoryReportAgent,
+    groupReportAgent,
   },
   storage: new MastraCompositeStore({
     id: 'composite-storage',

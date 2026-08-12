@@ -21,6 +21,7 @@ import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
+import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -37,8 +38,8 @@ import { toFormInitial } from "@/lib/form-helpers";
 import type {
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
+  GroupReport,
   PerformanceReport,
-  PerformanceReportType,
   Role,
 } from "@/lib/types";
 
@@ -187,10 +188,10 @@ function GroupPage() {
     }
   };
 
-  const createReport = async (type: PerformanceReportType) => {
+  const createReport = async () => {
     setIsCreatingReport(true);
     try {
-      await api.createGroupReport(groupId, { type });
+      await api.createGroupReport(groupId, { type: "GROUP_REPORT" });
       setReportStartedAt(new Date().toISOString());
       toast.success("Report generation started");
       reportsQ.refetch();
@@ -526,14 +527,18 @@ function ReportsTab({
   onRefresh,
   onSelect,
 }: {
-  reports: Array<PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport>>;
-  selectedReport: PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport> | null;
+  reports: Array<
+    PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>
+  >;
+  selectedReport: PerformanceReport<
+    GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport
+  > | null;
   selectedReportId: string | null;
   isLoading: boolean;
   error: unknown;
   isCreating: boolean;
   isWaitingForReport: boolean;
-  onCreate: (type: PerformanceReportType) => Promise<void>;
+  onCreate: () => Promise<void>;
   onRefresh: () => void;
   onSelect: (id: string) => void;
 }) {
@@ -543,28 +548,16 @@ function ReportsTab({
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
           <p className="mt-1 max-w-2xl break-words text-xs text-muted-foreground">
-            Generate an activity snapshot or a full GitHub history report for this group.
+            Generate a full historical report from all plugin resources assigned to this group.
           </p>
         </div>
-        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
           <Button className="w-full sm:w-auto" variant="outline" onClick={onRefresh}>
             <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
           </Button>
-          <Button
-            className="w-full sm:w-auto"
-            onClick={() => onCreate("GITHUB_ACTIVITY")}
-            disabled={isCreating}
-          >
+          <Button className="w-full sm:w-auto" onClick={onCreate} disabled={isCreating}>
             <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "Activity report"}
-          </Button>
-          <Button
-            className="w-full sm:w-auto"
-            onClick={() => onCreate("GITHUB_HISTORY")}
-            disabled={isCreating}
-          >
-            <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "History report"}
+            {isCreating ? "Starting..." : "Group report"}
           </Button>
         </div>
       </div>
@@ -588,9 +581,9 @@ function ReportsTab({
         <EmptyState
           icon={<FileText className="h-4 w-4" />}
           title="No reports yet"
-          description="Generate a GitHub report to analyze the group's delivery signals."
-          actionLabel="Generate activity report"
-          onAction={() => onCreate("GITHUB_ACTIVITY")}
+          description="Generate a historical report to analyze the group's delivery signals."
+          actionLabel="Generate group report"
+          onAction={onCreate}
         />
       ) : (
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
@@ -608,7 +601,11 @@ function ReportsTab({
                   }`}
                 >
                   <div className="truncate text-sm font-medium">
-                    {report.type === "GITHUB_HISTORY" ? "GitHub history" : "GitHub activity"}
+                    {report.type === "GROUP_REPORT"
+                      ? "Group report"
+                      : report.type === "GITHUB_HISTORY"
+                        ? "GitHub history"
+                        : "GitHub activity"}
                   </div>
                   <div className="truncate text-[11px]">
                     {report.createdAt
@@ -622,7 +619,9 @@ function ReportsTab({
 
           {selectedReport ? (
             <div className="min-w-0 overflow-hidden">
-              {selectedReport.type === "GITHUB_HISTORY" ? (
+              {selectedReport.type === "GROUP_REPORT" ? (
+                <GroupReportRenderer report={selectedReport as PerformanceReport<GroupReport>} />
+              ) : selectedReport.type === "GITHUB_HISTORY" ? (
                 <GroupGithubHistoryReportRenderer
                   report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
                 />

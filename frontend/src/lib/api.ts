@@ -11,7 +11,7 @@ import type {
   PerformanceReport,
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
-  PerformanceReportType,
+  GroupReport,
   Role,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
@@ -153,10 +153,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
   setupJira: (organizationId: string, body: Record<string, unknown>) =>
-    request<PluginInstallation>(`/organizations/${organizationId}/plugin-installations/jira/setup`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    request<PluginInstallation>(
+      `/organizations/${organizationId}/plugin-installations/jira/setup`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
 
   // Workspaces → groups
   listWorkspaceGroups: (id: string) => request<Group[]>(`/workspaces/${id}/groups`),
@@ -200,17 +203,17 @@ export const api = {
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "PUT" }),
   unassignGroupResource: (groupId: string, resourceId: string) =>
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "DELETE" }),
-  createGroupReport: (groupId: string, body: { type: PerformanceReportType }) =>
-    request<{ status: "CREATING"; type: PerformanceReportType; groupId: string }>(
+  createGroupReport: (groupId: string, body: { type: "GROUP_REPORT" }) =>
+    request<{ status: "CREATING"; type: "GROUP_REPORT"; groupId: string }>(
       `/groups/${groupId}/reports`,
       { method: "POST", body: JSON.stringify(body) },
     ),
   listGroupReports: (groupId: string) =>
-    request<Array<PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport>>>(
-      `/groups/${groupId}/reports`,
-    ),
+    request<
+      Array<PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>>
+    >(`/groups/${groupId}/reports`),
   getReport: (id: string) =>
-    request<PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport>>(
+    request<PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>>(
       `/reports/${id}`,
     ),
 

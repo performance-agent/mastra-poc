@@ -3,9 +3,11 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { validateSecretsEncryptionKey } from './plugins/configuration-crypto';
+import { validateModelConfiguration } from './mastra/model-configuration';
 
 async function bootstrap() {
   validateSecretsEncryptionKey();
+  validateModelConfiguration();
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin:

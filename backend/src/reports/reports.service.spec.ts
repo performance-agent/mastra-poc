@@ -1,17 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
+import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from './reports.service';
 
-const activityGenerate = jest.fn();
-const historyGenerate = jest.fn();
+const groupGenerate = jest.fn();
 
 jest.mock('../mastra', () => ({
   mastra: {
-    getAgent: jest.fn((name: string) => ({
-      generate:
-        name === 'groupGithubHistoryReportAgent'
-          ? historyGenerate
-          : activityGenerate,
-    })),
+    getAgent: jest.fn(() => ({ generate: groupGenerate })),
   },
 }));
 
@@ -31,7 +27,7 @@ describe('ReportsService', () => {
       externalId: '123',
     },
   };
-  const prisma: any = {
+  const prisma = {
     group: { findUnique: jest.fn() },
     performanceReport: {
       create: jest.fn(),
@@ -44,7 +40,10 @@ describe('ReportsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new ReportsService(prisma, runtime as any);
+    service = new ReportsService(
+      prisma as unknown as PrismaService,
+      runtime as unknown as PluginRuntimeService,
+    );
     prisma.group.findUnique.mockResolvedValue({
       id: 'group-1',
       name: 'Core team',
@@ -71,35 +70,63 @@ describe('ReportsService', () => {
       ],
       limitations: [],
     });
-    activityGenerate.mockResolvedValue({ object: { summary: 'activity' } });
-    historyGenerate.mockResolvedValue({ object: { summary: 'history' } });
+    groupGenerate.mockResolvedValue({ object: { summary: 'group' } });
   });
 
-  it('passes plugin-native datasets to the activity agent', async () => {
-    await service.createGroupReport('group-1', { type: 'GITHUB_ACTIVITY' });
-    expect(runtime.provide).toHaveBeenCalledWith(
-      [resource],
-      'activity',
-      expect.any(Date),
-    );
-    expect(activityGenerate).toHaveBeenCalled();
-    expect(prisma.performanceReport.create).toHaveBeenCalledWith({
-      data: {
-        groupId: 'group-1',
-        type: 'GITHUB_ACTIVITY',
-        data: { summary: 'activity' },
-      },
-    });
-  });
-
-  it('passes plugin-native datasets to the history agent', async () => {
-    await service.createGroupReport('group-1', { type: 'GITHUB_HISTORY' });
+  it('passes all plugin-native history to the group report agent', async () => {
+    await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
     expect(runtime.provide).toHaveBeenCalledWith(
       [resource],
       'history',
       undefined,
     );
-    expect(historyGenerate).toHaveBeenCalled();
+    expect(groupGenerate).toHaveBeenCalled();
+    expect(prisma.performanceReport.create).toHaveBeenCalledWith({
+      data: {
+        groupId: 'group-1',
+        type: 'GROUP_REPORT',
+        data: {
+          summary: 'group',
+          coverage: {
+            resourcesAnalyzed: 1,
+            datasetsAnalyzed: 1,
+            recordsAnalyzed: 0,
+            firstActivityAt: null,
+            lastActivityAt: null,
+            limitations: [],
+          },
+        },
+      },
+    });
+  });
+
+  it.each(['GITHUB_ACTIVITY', 'GITHUB_HISTORY'] as const)(
+    'rejects legacy %s report generation',
+    (type) => {
+      expect(() => service.createGroupReport('group-1', { type })).toThrow(
+        BadRequestException,
+      );
+      expect(runtime.provide).not.toHaveBeenCalled();
+      expect(groupGenerate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('fails when the group does not exist', async () => {
+    prisma.group.findUnique.mockResolvedValue(null);
+    await expect(
+      service.createGroupReport('missing', { type: 'GROUP_REPORT' }),
+    ).rejects.toThrow('Group not found');
+  });
+
+  it('fails when the group has no active resources', async () => {
+    prisma.group.findUnique.mockResolvedValue({
+      id: 'group-1',
+      name: 'Core team',
+      resourceAssignments: [],
+    });
+    await expect(
+      service.createGroupReport('group-1', { type: 'GROUP_REPORT' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('allows partial provider failures when a dataset succeeded', async () => {
@@ -112,8 +139,8 @@ describe('ReportsService', () => {
       ],
       limitations: [{ dataType: 'github.issue', message: 'rate limited' }],
     });
-    await service.createGroupReport('group-1', { type: 'GITHUB_ACTIVITY' });
-    expect(activityGenerate).toHaveBeenCalled();
+    await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
+    expect(groupGenerate).toHaveBeenCalled();
   });
 
   it('fails when every provider failed', async () => {
@@ -122,7 +149,23 @@ describe('ReportsService', () => {
       limitations: [{ dataType: 'github.issue', message: 'rate limited' }],
     });
     await expect(
-      service.createGroupReport('group-1', { type: 'GITHUB_ACTIVITY' }),
+      service.createGroupReport('group-1', { type: 'GROUP_REPORT' }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns legacy reports without transforming them', async () => {
+    const legacyReports = [
+      { id: 'activity-1', type: 'GITHUB_ACTIVITY', data: { summary: 'old' } },
+      { id: 'history-1', type: 'GITHUB_HISTORY', data: { summary: 'old' } },
+    ];
+    prisma.performanceReport.findMany.mockResolvedValue(legacyReports);
+    prisma.performanceReport.findUnique.mockResolvedValue(legacyReports[1]);
+
+    await expect(service.findAllByGroup('group-1')).resolves.toEqual(
+      legacyReports,
+    );
+    await expect(service.findOne('history-1')).resolves.toEqual(
+      legacyReports[1],
+    );
   });
 });

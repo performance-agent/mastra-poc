@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import { modelFromEnvironment } from '../model-configuration';
 
 export const groupGithubHistoryReportAgent = new Agent({
   id: 'group-github-history-report-agent',
@@ -32,5 +33,5 @@ Important rules:
 - Keep summaries concise and actionable.
 `,
 
-  model: 'openai/gpt-5-nano',
+  model: modelFromEnvironment('GROUP_REPORT_MODEL'),
 });

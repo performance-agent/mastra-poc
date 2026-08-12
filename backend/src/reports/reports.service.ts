@@ -5,24 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { mastra } from '../mastra';
-import { groupGithubActivityReportSchema } from '../mastra/schemas/group-github-activity-report.schema';
-import { groupGithubHistoryReportSchema } from '../mastra/schemas/group-github-history-report.schema';
-import {
-  PluginRuntimeService,
-  type ReportMode,
-} from '../plugins/runtime/plugin-runtime.service';
+import { groupReportSchema } from '../mastra/schemas/group-report.schema';
+import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
 
 @Injectable()
 export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
-  private readonly activityAgent = mastra.getAgent(
-    'groupGithubActivityReportAgent',
-  );
-  private readonly historyAgent = mastra.getAgent(
-    'groupGithubHistoryReportAgent',
-  );
+  private readonly groupReportAgent = mastra.getAgent('groupReportAgent');
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,14 +21,12 @@ export class ReportsService {
   ) {}
 
   createGroupReport(groupId: string, dto: CreateReportDto) {
-    switch (dto.type) {
-      case 'GITHUB_ACTIVITY':
-        return this.createSoftwareReport(groupId, dto.type, 'activity');
-      case 'GITHUB_HISTORY':
-        return this.createSoftwareReport(groupId, dto.type, 'history');
-      default:
-        throw new BadRequestException('Unsupported report type');
+    if (dto.type !== 'GROUP_REPORT') {
+      throw new BadRequestException(
+        'Only GROUP_REPORT can be generated. Legacy report types are read-only.',
+      );
     }
+    return this.createSoftwareReport(groupId);
   }
 
   createGroupReportAsync(groupId: string, dto: CreateReportDto) {
@@ -49,14 +38,10 @@ export class ReportsService {
         stack,
       );
     });
-    return { status: 'CREATING', type: dto.type, groupId };
+    return { status: 'CREATING', type: 'GROUP_REPORT' as const, groupId };
   }
 
-  private async createSoftwareReport(
-    groupId: string,
-    type: 'GITHUB_ACTIVITY' | 'GITHUB_HISTORY',
-    mode: ReportMode,
-  ) {
+  private async createSoftwareReport(groupId: string) {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
       include: {
@@ -79,14 +64,10 @@ export class ReportsService {
     }
 
     const generatedAt = new Date();
-    const from =
-      mode === 'activity'
-        ? new Date(generatedAt.getTime() - 14 * 24 * 60 * 60 * 1000)
-        : undefined;
     const providerData = await this.runtime.provide(
       assignedResources,
-      mode,
-      from,
+      'history',
+      undefined,
     );
     const hasSuccessfulDataset = providerData.resources.some(
       (resource) => resource.datasets.length > 0,
@@ -100,47 +81,33 @@ export class ReportsService {
 
     const reportInput = {
       group: { id: group.id, name: group.name },
-      reportMode: mode,
+      reportMode: 'history',
       generatedAt: generatedAt.toISOString(),
-      period:
-        mode === 'activity'
-          ? {
-              from: from!.toISOString(),
-              to: generatedAt.toISOString(),
-              label: 'Last 14 days',
-            }
-          : null,
+      period: null,
       resources: providerData.resources,
       limitations: providerData.limitations,
+      coverage: buildCoverage(providerData),
     };
 
-    const prompt = `Generate a structured software engineering ${mode} report from the plugin-native datasets below.
+    const prompt = `Generate a structured historical group report from the plugin-native datasets below.
 
-Datasets are grouped by resource and data type. Treat limitations and truncated datasets explicitly. Do not assume every plugin uses GitHub-shaped records. Preserve the requested output schema for compatibility.
+Datasets are grouped by resource and native data type. Treat limitations and truncated datasets explicitly. Do not assume a provider, resource, record, identity, metric, or link shape. Use neutral labels and the requested output schema.
 
 Input:
 ${JSON.stringify(reportInput)}`;
-    const reportData =
-      mode === 'activity'
-        ? (
-            await this.activityAgent.generate(
-              [{ role: 'user', content: prompt }],
-              {
-                structuredOutput: { schema: groupGithubActivityReportSchema },
-              },
-            )
-          ).object
-        : (
-            await this.historyAgent.generate(
-              [{ role: 'user', content: prompt }],
-              {
-                structuredOutput: { schema: groupGithubHistoryReportSchema },
-              },
-            )
-          ).object;
+    const generatedReport = (
+      await this.groupReportAgent.generate(
+        [{ role: 'user', content: prompt }],
+        { structuredOutput: { schema: groupReportSchema } },
+      )
+    ).object;
+    const reportData = {
+      ...generatedReport,
+      coverage: reportInput.coverage,
+    };
 
     return this.prisma.performanceReport.create({
-      data: { groupId, type, data: reportData },
+      data: { groupId, type: 'GROUP_REPORT', data: reportData },
     });
   }
 
@@ -154,4 +121,65 @@ ${JSON.stringify(reportInput)}`;
       orderBy: { createdAt: 'desc' },
     });
   }
+}
+
+type ProviderData = Awaited<ReturnType<PluginRuntimeService['provide']>>;
+
+function buildCoverage(providerData: ProviderData) {
+  const datasets = providerData.resources.flatMap(
+    (resource) => resource.datasets,
+  );
+  const timestamps = datasets
+    .flatMap((dataset) => dataset.records)
+    .map(recordTimestamp)
+    .filter((value): value is number => value !== null);
+  const firstTimestamp = timestamps.reduce<number | null>(
+    (earliest, value) =>
+      earliest === null ? value : Math.min(earliest, value),
+    null,
+  );
+  const lastTimestamp = timestamps.reduce<number | null>(
+    (latest, value) => (latest === null ? value : Math.max(latest, value)),
+    null,
+  );
+  const limitations = providerData.limitations.map(
+    (limitation) =>
+      `${limitation.pluginId}/${limitation.resourceId}/${limitation.dataType}: ${limitation.message}`,
+  );
+
+  for (const resource of providerData.resources) {
+    for (const dataset of resource.datasets) {
+      if (dataset.truncated) {
+        limitations.push(
+          `${resource.pluginId}/${resource.id}/${dataset.dataType}: ${dataset.records.length} of ${dataset.count} records were analyzed`,
+        );
+      }
+    }
+  }
+
+  return {
+    resourcesAnalyzed: providerData.resources.length,
+    datasetsAnalyzed: datasets.length,
+    recordsAnalyzed: datasets.reduce(
+      (total, dataset) => total + dataset.records.length,
+      0,
+    ),
+    firstActivityAt:
+      firstTimestamp === null ? null : new Date(firstTimestamp).toISOString(),
+    lastActivityAt:
+      lastTimestamp === null ? null : new Date(lastTimestamp).toISOString(),
+    limitations,
+  };
+}
+
+function recordTimestamp(value: unknown): number | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  for (const key of ['updatedAt', 'committedAt', 'authoredAt', 'createdAt']) {
+    const candidate = record[key];
+    if (typeof candidate !== 'string') continue;
+    const timestamp = Date.parse(candidate);
+    if (Number.isFinite(timestamp)) return timestamp;
+  }
+  return null;
 }
