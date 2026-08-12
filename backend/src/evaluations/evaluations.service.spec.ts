@@ -36,6 +36,13 @@ function flowResult(): EvaluationFlowResult {
           ruleName: 'Delivery',
           overview: 'Delivery evidence was found.',
           evidence: [],
+          memberAssessments: [],
+          criteria: [{
+            criterion: 'Delivery',
+            finding: 'Repository activity supports the rule.',
+            evidenceReferences: [],
+            status: 'met',
+          }],
           rationale: 'Repository activity supports the rule.',
           verdict: 'supported',
           limitations: [],

@@ -20,10 +20,39 @@ export type RuleAssessmentEvidence = {
   relevance: string;
 };
 
+export type RuleAssessmentCriterionStatus =
+  | "met"
+  | "partially_met"
+  | "not_met"
+  | "unknown";
+
+export type RuleAssessmentCriterion = {
+  criterion: string;
+  finding: string;
+  evidenceReferences: string[];
+  status: RuleAssessmentCriterionStatus;
+};
+
+export type RuleAssessmentConfidence = "high" | "medium" | "low";
+
+export type MemberRuleAssessment = {
+  memberIdentifier: string;
+  memberName: string;
+  summary: string;
+  criteria: RuleAssessmentCriterion[];
+  evidence: RuleAssessmentEvidence[];
+  rationale: string;
+  verdict: RuleAssessmentVerdict;
+  confidence: RuleAssessmentConfidence;
+  limitations: string[];
+};
+
 export type RuleAssessment = {
   ruleName: string;
   overview: string;
   evidence: RuleAssessmentEvidence[];
+  memberAssessments: MemberRuleAssessment[];
+  criteria: RuleAssessmentCriterion[];
   rationale: string;
   verdict: RuleAssessmentVerdict;
   limitations: string[];

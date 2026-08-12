@@ -9,7 +9,11 @@ export {
   type RuleAssessmentAiOutput,
 } from "./schemas.js";
 export type {
+  MemberRuleAssessment,
   RuleAssessment,
+  RuleAssessmentConfidence,
+  RuleAssessmentCriterion,
+  RuleAssessmentCriterionStatus,
   RuleAssessmentError,
   RuleAssessmentErrorCode,
   RuleAssessmentEvidence,

@@ -86,6 +86,8 @@ function makeFlow(options: {
             observation: "Activity was returned.",
             relevance: "It addresses the expected signal.",
           }],
+          memberAssessments: [],
+          criteria: [{ criterion: "Activity", finding: "Activity was returned.", evidenceReferences: ["activity.by_period aggregate"], status: "met" }],
           rationale: "The planned evidence was available.",
           verdict: "supported",
           limitations: [],
@@ -359,6 +361,8 @@ test("keeps successful assessments when a sibling assessment fails", async () =>
       return {
         overview: "Evidence supports delivery.",
         evidence: [],
+        memberAssessments: [],
+        criteria: [{ criterion: "Delivery", finding: "Delivery evidence was available.", evidenceReferences: [], status: "met" }],
         rationale: "Delivery evidence was available.",
         verdict: "supported",
         limitations: [],

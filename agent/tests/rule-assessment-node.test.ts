@@ -118,13 +118,32 @@ function executionResult(recordCount = 3): ResourceExecutionNodeResult {
 }
 
 function validAssessment(verdict = "supported" as const) {
+  const evidence = [{
+    source: "github.commit on repository-1",
+    observation: "Three commits were returned.",
+    relevance: "Commits are a planned signal.",
+  }];
+  const criteria = [{
+    criterion: "Delivered commits",
+    finding: "Three identified commits provide direct delivery evidence.",
+    evidenceReferences: ["commit-1", "commit-2", "commit-3"],
+    status: "met" as const,
+  }];
   return {
     overview: "The available evidence supports the rule.",
-    evidence: [{
-      source: "github.commit on repository-1",
-      observation: "Three commits were returned.",
-      relevance: "Commits are a planned signal.",
+    evidence,
+    memberAssessments: [{
+      memberIdentifier: "member-1",
+      memberName: "Member One",
+      summary: "The member has attributable delivery evidence.",
+      criteria,
+      evidence,
+      rationale: "The identified commits directly support the delivery criterion.",
+      verdict,
+      confidence: "medium" as const,
+      limitations: ["Issue data was unavailable."],
     }],
+    criteria,
     rationale: "The observed commits match the expected evidence.",
     verdict,
     limitations: ["Issue data was unavailable."],
@@ -151,6 +170,7 @@ test("assesses every rule and groups shared and rule-specific calls by rule ID",
   assert.equal(result.status, "completed");
   assert.deepEqual(Object.keys(result.assessments), ["rule-1", "rule-2"]);
   assert.equal(result.assessments["rule-1"]?.ruleName, "Delivery");
+  assert.equal(result.assessments["rule-1"]?.memberAssessments[0]?.memberIdentifier, "member-1");
   assert.equal(requests[0]?.resourceCalls.length, 2);
   assert.equal(requests[1]?.resourceCalls.length, 1);
   assert.deepEqual(requests[0]?.planLimitations, ["Repository history may be truncated."]);
@@ -279,12 +299,16 @@ test("LangChain assessor sends rule, all evidence, failures, and limitations as 
   assert.match(serialized, /Issues unavailable/);
   assert.match(serialized, /Repository history may be truncated/);
   assert.match(serialized, /untrusted data/);
+  assert.match(serialized, /Rationale rubric/);
+  assert.match(serialized, /Do not compare or rank members/);
 });
 
 test("uses a portable structured-output schema and requires a dedicated model", async () => {
   const jsonSchema = toJsonSchema(ruleAssessmentAiOutputSchema);
   assert.equal(jsonSchema.type, "object");
   assert.match(JSON.stringify(jsonSchema), /partially_supported/);
+  assert.match(JSON.stringify(jsonSchema), /memberAssessments/);
+  assert.match(JSON.stringify(jsonSchema), /evidenceReferences/);
 
   await assert.rejects(
     createLangChainRuleAssessorFromEnv({}),
