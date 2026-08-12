@@ -5,7 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { mastra } from '../mastra';
-import { groupReportSchema } from '../mastra/schemas/group-report.schema';
+import {
+  groupReportContentSchema,
+  groupReportSchema,
+} from '../mastra/schemas/group-report.schema';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -89,22 +92,19 @@ export class ReportsService {
       coverage: buildCoverage(providerData),
     };
 
-    const prompt = `Generate a structured historical group report from the plugin-native datasets below.
+    const prompt = `Genera el Group Report estructurado utilizando todo el historial disponible del siguiente input.
 
-Datasets are grouped by resource and native data type. Treat limitations and truncated datasets explicitly. Do not assume a provider, resource, record, identity, metric, or link shape. Use neutral labels and the requested output schema.
-
-Input:
 ${JSON.stringify(reportInput)}`;
     const generatedReport = (
       await this.groupReportAgent.generate(
         [{ role: 'user', content: prompt }],
-        { structuredOutput: { schema: groupReportSchema } },
+        { structuredOutput: { schema: groupReportContentSchema } },
       )
     ).object;
-    const reportData = {
+    const reportData = groupReportSchema.parse({
       ...generatedReport,
       coverage: reportInput.coverage,
-    };
+    });
 
     return this.prisma.performanceReport.create({
       data: { groupId, type: 'GROUP_REPORT', data: reportData },

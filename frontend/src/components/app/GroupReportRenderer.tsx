@@ -1,31 +1,76 @@
 import { ExternalLink } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import type { GroupReport, GroupReportWorkItem, PerformanceReport } from "@/lib/types";
+import type {
+  GroupReport,
+  GroupReportAssessment,
+  GroupReportConfidence,
+  GroupReportDimensionAssessment,
+  GroupReportEvidence,
+  GroupReportStatus,
+  PerformanceReport,
+} from "@/lib/types";
 import type { ReactNode } from "react";
 
 type Props = {
   report: PerformanceReport<GroupReport>;
 };
 
-function titleCase(value: string) {
-  return value
-    .toLowerCase()
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
+type CommitReview = GroupReport["engineeringAssessment"]["commitsToReview"][number];
 
-function statusClasses(status: "GOOD" | "WATCH" | "RISK") {
+const statusLabels: Record<GroupReportStatus, string> = {
+  GOOD: "Bien",
+  WATCH: "Atención",
+  RISK: "Riesgo",
+  INSUFFICIENT_DATA: "Datos insuficientes",
+};
+
+const confidenceLabels: Record<GroupReportConfidence, string> = {
+  HIGH: "Confianza alta",
+  MEDIUM: "Confianza media",
+  LOW: "Confianza baja",
+  INSUFFICIENT: "Confianza insuficiente",
+};
+
+const consistencyLabels: Record<
+  GroupReport["people"][number]["consistency"]["level"],
+  string
+> = {
+  CONSISTENT: "Constante",
+  VARIABLE: "Variable",
+  SPORADIC: "Esporádica",
+  INSUFFICIENT_DATA: "Datos insuficientes",
+};
+
+function statusClasses(status: GroupReportStatus) {
   if (status === "GOOD") return "border-success/20 bg-success/10 text-success";
   if (status === "WATCH") return "border-warning/25 bg-warning/10 text-warning";
-  return "border-destructive/20 bg-destructive/10 text-destructive";
+  if (status === "RISK") {
+    return "border-destructive/20 bg-destructive/10 text-destructive";
+  }
+  return "border-border bg-muted text-muted-foreground";
+}
+
+function confidenceClasses(confidence: GroupReportConfidence) {
+  if (confidence === "HIGH") return "border-success/20 bg-success/10 text-success";
+  if (confidence === "MEDIUM") return "border-warning/25 bg-warning/10 text-warning";
+  if (confidence === "LOW") {
+    return "border-destructive/20 bg-destructive/10 text-destructive";
+  }
+  return "border-border bg-muted text-muted-foreground";
 }
 
 function priorityClasses(priority: "HIGH" | "MEDIUM" | "LOW") {
-  if (priority === "HIGH") return "border-destructive/20 bg-destructive/10 text-destructive";
+  if (priority === "HIGH") {
+    return "border-destructive/20 bg-destructive/10 text-destructive";
+  }
   if (priority === "MEDIUM") return "border-warning/25 bg-warning/10 text-warning";
   return "border-success/20 bg-success/10 text-success";
+}
+
+function priorityLabel(priority: "HIGH" | "MEDIUM" | "LOW") {
+  if (priority === "HIGH") return "Alta";
+  if (priority === "MEDIUM") return "Media";
+  return "Baja";
 }
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {
@@ -35,6 +80,19 @@ function Badge({ children, className }: { children: ReactNode; className: string
     >
       {children}
     </span>
+  );
+}
+
+function AssessmentBadges({ assessment }: { assessment: GroupReportAssessment }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Badge className={statusClasses(assessment.status)}>
+        {statusLabels[assessment.status]}
+      </Badge>
+      <Badge className={confidenceClasses(assessment.confidence)}>
+        {confidenceLabels[assessment.confidence]}
+      </Badge>
+    </div>
   );
 }
 
@@ -61,140 +119,409 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function WorkItemContent({ item }: { item: GroupReportWorkItem }) {
+function EvidenceContent({ evidence }: { evidence: GroupReportEvidence }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <Badge className="border-border bg-muted text-muted-foreground">
-            {titleCase(item.type)}
+            {evidence.type}
           </Badge>
-          {item.status ? (
-            <span className="text-[11px] text-muted-foreground">{item.status}</span>
-          ) : null}
+          <span className="break-all text-[11px] text-muted-foreground">
+            {evidence.resource}
+            {evidence.reference ? ` · ${evidence.reference}` : ""}
+            {evidence.subject ? ` · ${evidence.subject}` : ""}
+          </span>
         </div>
-        <h4 className="mt-2 line-clamp-2 break-words text-sm font-semibold">
-          {item.resource}
-          {item.reference ? ` ${item.reference}` : ""}: {item.title}
-        </h4>
-        <p className="mt-1 break-words text-xs text-muted-foreground">{item.reason}</p>
+        <h5 className="mt-2 break-words text-sm font-semibold">{evidence.title}</h5>
+        <p className="mt-1 break-words text-xs text-muted-foreground">
+          {evidence.observation}
+        </p>
+        <p className="mt-2 break-words text-xs">
+          <span className="font-medium">Interpretación:</span> {evidence.interpretation}
+        </p>
       </div>
-      {item.url ? <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" /> : null}
+      {evidence.url ? (
+        <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+      ) : null}
     </div>
   );
 }
 
-function WorkItem({ item }: { item: GroupReportWorkItem }) {
-  const className =
-    "block min-w-0 overflow-hidden rounded-lg border border-border bg-background p-3";
-  return item.url ? (
+function EvidenceItem({ evidence }: { evidence: GroupReportEvidence }) {
+  const className = "block min-w-0 rounded-lg border border-border bg-background p-3";
+  return evidence.url ? (
     <a
-      href={item.url}
+      href={evidence.url}
       target="_blank"
       rel="noreferrer"
       className={`${className} transition-colors hover:bg-accent`}
     >
-      <WorkItemContent item={item} />
+      <EvidenceContent evidence={evidence} />
     </a>
   ) : (
     <div className={className}>
-      <WorkItemContent item={item} />
+      <EvidenceContent evidence={evidence} />
+    </div>
+  );
+}
+
+function EvidenceList({ items, title = "Evidencia" }: { items: GroupReportEvidence[]; title?: string }) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-muted-foreground">{title}</h4>
+      <div className="mt-2 grid min-w-0 gap-2">
+        {items.map((evidence, index) => (
+          <EvidenceItem
+            key={`${evidence.resource}-${evidence.reference ?? evidence.title}-${index}`}
+            evidence={evidence}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssessmentDetails({ assessment }: { assessment: GroupReportAssessment }) {
+  return (
+    <div className="min-w-0">
+      <p className="break-words text-sm text-muted-foreground">{assessment.summary}</p>
+      <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+        <ListBlock title="Señales positivas" items={assessment.positiveSignals} />
+        <ListBlock title="Preocupaciones" items={assessment.concerns} />
+      </div>
+      <div className="mt-4">
+        <ListBlock title="Limitaciones" items={assessment.limitations} />
+      </div>
+    </div>
+  );
+}
+
+function DimensionCard({
+  title,
+  assessment,
+}: {
+  title: string;
+  assessment: GroupReportDimensionAssessment;
+}) {
+  return (
+    <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <h3 className="break-words text-sm font-semibold">{title}</h3>
+        <Badge className={statusClasses(assessment.status)}>
+          {statusLabels[assessment.status]}
+        </Badge>
+      </div>
+      <p className="mt-3 break-words text-sm text-muted-foreground">
+        {assessment.summary}
+      </p>
+    </Card>
+  );
+}
+
+function AssessmentCard({
+  title,
+  assessment,
+}: {
+  title: string;
+  assessment: GroupReportAssessment;
+}) {
+  return (
+    <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <h3 className="break-words text-sm font-semibold">{title}</h3>
+        <AssessmentBadges assessment={assessment} />
+      </div>
+      <div className="mt-3">
+        <AssessmentDetails assessment={assessment} />
+      </div>
+    </Card>
+  );
+}
+
+function SectionHeading({ title, description }: { title: string; description: string }) {
+  return (
+    <div>
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
+function CommitContent({ commit }: { commit: CommitReview }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Badge className={statusClasses(commit.status)}>{statusLabels[commit.status]}</Badge>
+          <Badge className={confidenceClasses(commit.confidence)}>
+            {confidenceLabels[commit.confidence]}
+          </Badge>
+        </div>
+        {commit.url ? <ExternalLink className="h-4 w-4 text-muted-foreground" /> : null}
+      </div>
+      <h4 className="mt-3 break-words text-sm font-semibold">{commit.message}</h4>
+      <p className="mt-1 break-all text-xs text-muted-foreground">
+        {commit.resource}
+        {commit.reference ? ` · ${commit.reference}` : ""}
+        {commit.author ? ` · ${commit.author}` : ""}
+      </p>
+      <p className="mt-3 break-words text-sm text-muted-foreground">{commit.explanation}</p>
+      <div className="mt-3">
+        <ListBlock title="Señales observadas" items={commit.signals} />
+      </div>
+      <p className="mt-3 break-words text-xs font-medium">
+        Acción recomendada: {commit.recommendedAction}
+      </p>
+    </div>
+  );
+}
+
+function CommitCard({ commit }: { commit: CommitReview }) {
+  const className = "block min-w-0 rounded-xl border border-border bg-background p-4";
+  return commit.url ? (
+    <a
+      href={commit.url}
+      target="_blank"
+      rel="noreferrer"
+      className={`${className} transition-colors hover:bg-accent`}
+    >
+      <CommitContent commit={commit} />
+    </a>
+  ) : (
+    <div className={className}>
+      <CommitContent commit={commit} />
     </div>
   );
 }
 
 export function GroupReportRenderer({ report }: Props) {
   const data = report.data;
-  const insights = [
-    ["Delivery flow", data.historicalInsights.deliveryFlow],
-    ["Collaboration", data.historicalInsights.collaboration],
-    ["Ownership", data.historicalInsights.ownership],
-    ["Risks and lessons", data.historicalInsights.riskAndLessons],
-  ] as const;
+  const overall = data.overallAssessment;
+  const evidenceForSection = (section: GroupReportEvidence["section"]) =>
+    data.evidence.filter((evidence) => evidence.section === section);
+  const evidenceForPerson = (displayName: string) =>
+    data.evidence.filter(
+      (evidence) =>
+        evidence.section === "PEOPLE" && evidence.subject === displayName,
+    );
+  const unassignedPeopleEvidence = data.evidence.filter(
+    (evidence) =>
+      evidence.section === "PEOPLE" &&
+      !data.people.some((person) => person.displayName === evidence.subject),
+  );
+  const generatedAt = report.createdAt
+    ? new Date(report.createdAt).toLocaleString("es-AR")
+    : "";
 
   return (
-    <div className="min-w-0 space-y-6 overflow-hidden">
+    <div className="min-w-0 space-y-8 overflow-hidden">
       <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
         <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 max-w-3xl">
-            <div className="text-xs text-muted-foreground">
-              Generated {report.createdAt ? new Date(report.createdAt).toLocaleString() : ""}
-            </div>
+            <div className="text-xs text-muted-foreground">Generado {generatedAt}</div>
             <h2 className="mt-2 break-words text-xl font-semibold">Group report</h2>
             <p className="mt-2 break-words text-sm text-muted-foreground">{data.summary}</p>
+            <div className="mt-3">
+              <AssessmentBadges assessment={overall} />
+            </div>
           </div>
           <div className="w-full shrink-0 rounded-xl border border-border bg-background p-4 text-center sm:w-auto sm:min-w-32">
-            <div className="text-3xl font-semibold">{data.health.score}</div>
-            <Badge className={statusClasses(data.health.status)}>
-              {titleCase(data.health.status)}
-            </Badge>
+            <div className="text-3xl font-semibold">{overall.score ?? "—"}</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">Evaluación general</div>
           </div>
         </div>
-        <p className="mt-4 break-words text-sm text-muted-foreground">{data.health.summary}</p>
+        <div className="mt-4">
+          <AssessmentDetails assessment={overall} />
+        </div>
+        <div className="mt-4">
+          <EvidenceList items={evidenceForSection("OVERALL")} />
+        </div>
       </Card>
 
       <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
-        <Metric label="Resources" value={data.coverage.resourcesAnalyzed} />
+        <Metric label="Recursos" value={data.coverage.resourcesAnalyzed} />
         <Metric label="Datasets" value={data.coverage.datasetsAnalyzed} />
-        <Metric label="Records" value={data.coverage.recordsAnalyzed} />
+        <Metric label="Registros" value={data.coverage.recordsAnalyzed} />
       </div>
 
-      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
-        {insights.map(([title, insight]) => (
-          <Card key={title} className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-              <h3 className="min-w-0 break-words text-sm font-semibold">{title}</h3>
-              <Badge className={statusClasses(insight.status)}>{titleCase(insight.status)}</Badge>
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <SectionHeading
+            title="Producto e ideación"
+            description="Problemas abordados, prioridades, alcance y evolución inferible desde tickets."
+          />
+          <Badge className="border-border bg-muted text-muted-foreground">
+            {data.productAssessment.ticketEvidenceAvailable
+              ? "Con evidencia de tickets"
+              : "Sin evidencia de tickets"}
+          </Badge>
+        </div>
+        <AssessmentCard
+          title="Evaluación del producto"
+          assessment={data.productAssessment.assessment}
+        />
+        <div className="grid min-w-0 gap-3 xl:grid-cols-3">
+          <DimensionCard
+            title="Ideación"
+            assessment={data.productAssessment.ideation}
+          />
+          <DimensionCard
+            title="Prioridades y alcance"
+            assessment={data.productAssessment.prioritiesAndScope}
+          />
+          <DimensionCard
+            title="Flujo de tickets"
+            assessment={data.productAssessment.ticketFlow}
+          />
+        </div>
+        {data.productAssessment.themes.length ? (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Temas del producto</h3>
+            <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+              {data.productAssessment.themes.map((theme, index) => (
+                <Card
+                  key={`${theme.name}-${index}`}
+                  className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
+                >
+                  <h4 className="break-words text-sm font-semibold">{theme.name}</h4>
+                  <p className="mt-2 break-words text-sm text-muted-foreground">
+                    {theme.evolution}
+                  </p>
+                </Card>
+              ))}
             </div>
-            <p className="mt-3 break-words text-sm text-muted-foreground">{insight.summary}</p>
-            {"risks" in insight ? (
-              <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
-                <ListBlock title="Risks" items={insight.risks} />
-                <ListBlock title="Lessons" items={insight.lessons} />
-              </div>
-            ) : (
-              <ListBlock title="Signals" items={insight.signals} />
-            )}
-          </Card>
-        ))}
-      </div>
+          </div>
+        ) : null}
+        <ListBlock title="Vacíos observados" items={data.productAssessment.gaps} />
+        <EvidenceList items={evidenceForSection("PRODUCT")} />
+      </section>
 
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-muted-foreground">Project stages</h3>
-        <div className="grid gap-3">
-          {data.projectStages.map((stage) => (
-            <Card
-              key={`${stage.label}-${stage.period}`}
-              className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
-            >
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 className="min-w-0 break-words text-sm font-semibold">{stage.label}</h4>
-                <Badge className="border-border bg-muted text-muted-foreground">
-                  {stage.period}
-                </Badge>
-              </div>
-              <p className="mt-2 break-words text-sm text-muted-foreground">{stage.summary}</p>
-              <ListBlock title="Signals" items={stage.signals} />
-            </Card>
-          ))}
+      <section className="space-y-4">
+        <SectionHeading
+          title="Ejecución del proyecto"
+          description="Continuidad, entrega, previsibilidad, riesgos y aprendizaje durante el historial disponible."
+        />
+        <AssessmentCard
+          title="Evaluación del proyecto"
+          assessment={data.projectAssessment.assessment}
+        />
+        <div className="grid min-w-0 gap-3 xl:grid-cols-3">
+          <DimensionCard
+            title="Flujo de entrega"
+            assessment={data.projectAssessment.deliveryFlow}
+          />
+          <DimensionCard
+            title="Continuidad"
+            assessment={data.projectAssessment.continuity}
+          />
+          <DimensionCard
+            title="Previsibilidad"
+            assessment={data.projectAssessment.predictability}
+          />
+        </div>
+        {data.projectAssessment.projectStages.length ? (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Etapas del proyecto</h3>
+            <div className="grid min-w-0 gap-3">
+              {data.projectAssessment.projectStages.map((stage, index) => (
+                <Card
+                  key={`${stage.label}-${stage.period}-${index}`}
+                  className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
+                >
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h4 className="break-words text-sm font-semibold">{stage.label}</h4>
+                    <Badge className="border-border bg-muted text-muted-foreground">
+                      {stage.period}
+                    </Badge>
+                    <Badge className={statusClasses(stage.status)}>
+                      {statusLabels[stage.status]}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 break-words text-sm text-muted-foreground">
+                    {stage.summary}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <ListBlock title="Riesgos del proyecto" items={data.projectAssessment.risks} />
+          <ListBlock title="Aprendizajes" items={data.projectAssessment.lessons} />
+        </div>
+        <EvidenceList items={evidenceForSection("PROJECT")} />
+      </section>
+
+      <section className="space-y-4">
+        <SectionHeading
+          title="Ingeniería y programación"
+          description="Trazabilidad, disciplina de cambios, revisabilidad y mantenimiento según los metadatos disponibles."
+        />
+        <AssessmentCard
+          title="Evaluación de ingeniería"
+          assessment={data.engineeringAssessment.assessment}
+        />
+        <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+          <DimensionCard
+            title="Trazabilidad"
+            assessment={data.engineeringAssessment.traceability}
+          />
+          <DimensionCard
+            title="Disciplina de cambios"
+            assessment={data.engineeringAssessment.changeDiscipline}
+          />
+          <DimensionCard
+            title="Revisabilidad"
+            assessment={data.engineeringAssessment.reviewability}
+          />
+          <DimensionCard
+            title="Señales de mantenimiento"
+            assessment={data.engineeringAssessment.maintenanceSignals}
+          />
+        </div>
+        <EvidenceList items={evidenceForSection("ENGINEERING")} />
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground">Commits para revisar</h3>
+          {data.engineeringAssessment.commitsToReview.length ? (
+            <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+              {data.engineeringAssessment.commitsToReview.map((commit, index) => (
+                <CommitCard
+                  key={`${commit.resource}-${commit.reference ?? commit.message}-${index}`}
+                  commit={commit}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No se identificaron commits que requieran revisión con la evidencia disponible.
+            </p>
+          )}
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold text-muted-foreground">People</h3>
-        <div className="grid gap-3">
+      <section className="space-y-4">
+        <SectionHeading
+          title="Personas"
+          description="Evaluaciones independientes basadas en contribuciones observables, constancia y contexto."
+        />
+        <div className="grid min-w-0 gap-4">
           {data.people.map((person, personIndex) => (
             <Card
               key={`${person.displayName}-${personIndex}`}
-              className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
+              className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5"
             >
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h4 className="break-words text-sm font-semibold">{person.displayName}</h4>
-                <Badge className="border-border bg-muted text-muted-foreground">
-                  {titleCase(person.contributionProfile)}
-                </Badge>
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="break-words text-base font-semibold">{person.displayName}</h3>
+                  <p className="mt-2 break-words text-sm text-muted-foreground">
+                    {person.contributionSummary}
+                  </p>
+                </div>
+                <AssessmentBadges assessment={person.assessment} />
               </div>
-              <p className="mt-2 break-words text-sm text-muted-foreground">{person.summary}</p>
+
               {person.metrics.length ? (
                 <div className="mt-4 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                   {person.metrics.map((metric, index) => (
@@ -206,61 +533,82 @@ export function GroupReportRenderer({ report }: Props) {
                   ))}
                 </div>
               ) : null}
-              <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-3">
-                <ListBlock title="Strengths" items={person.strengths} />
-                <ListBlock title="Risks" items={person.risks} />
-                <ListBlock title="Suggested actions" items={person.suggestedActions} />
-              </div>
-              {person.notableItems.length ? (
-                <div className="mt-4 grid min-w-0 gap-2 lg:grid-cols-2">
-                  {person.notableItems.map((item, index) => (
-                    <WorkItem key={`${person.displayName}-${index}`} item={item} />
-                  ))}
+
+              <div className="mt-4 rounded-xl border border-border bg-background p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-semibold">Constancia</h4>
+                  <Badge className="border-border bg-muted text-muted-foreground">
+                    {consistencyLabels[person.consistency.level]}
+                  </Badge>
+                  <Badge className={confidenceClasses(person.consistency.confidence)}>
+                    {confidenceLabels[person.consistency.confidence]}
+                  </Badge>
                 </div>
-              ) : null}
+                <p className="mt-2 break-words text-sm text-muted-foreground">
+                  {person.consistency.summary}
+                </p>
+                <div className="mt-4">
+                  <ListBlock title="Limitaciones" items={person.consistency.limitations} />
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <AssessmentDetails assessment={person.assessment} />
+              </div>
+              <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+                <ListBlock title="Áreas de mejora" items={person.improvementAreas} />
+                <ListBlock title="Sugerencias" items={person.suggestions} />
+              </div>
+              <div className="mt-4">
+                <EvidenceList
+                  items={evidenceForPerson(person.displayName)}
+                  title="Evidencia y trabajo relevante"
+                />
+              </div>
+            </Card>
+          ))}
+        </div>
+        <EvidenceList
+          items={unassignedPeopleEvidence}
+          title="Evidencia de personas sin asociación exacta"
+        />
+      </section>
+
+      <section className="space-y-3">
+        <SectionHeading
+          title="Recomendaciones"
+          description="Acciones priorizadas a partir de la evaluación completa."
+        />
+        <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+          {data.recommendations.map((recommendation, index) => (
+            <Card
+              key={`${recommendation.title}-${index}`}
+              className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
+            >
+              <Badge className={priorityClasses(recommendation.priority)}>
+                Prioridad {priorityLabel(recommendation.priority)}
+              </Badge>
+              <h4 className="mt-3 break-words text-sm font-semibold">
+                {recommendation.title}
+              </h4>
+              <p className="mt-1 break-words text-sm text-muted-foreground">
+                {recommendation.description}
+              </p>
+              <p className="mt-2 break-words text-xs font-medium">{recommendation.action}</p>
             </Card>
           ))}
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-        <div className="min-w-0 space-y-3">
-          <h3 className="text-sm font-semibold text-muted-foreground">Notable work</h3>
-          <div className="grid gap-2">
-            {data.notableWork.map((item, index) => (
-              <WorkItem key={`group-work-${index}`} item={item} />
-            ))}
-          </div>
-        </div>
-        <div className="min-w-0 space-y-3">
-          <h3 className="text-sm font-semibold text-muted-foreground">Recommendations</h3>
-          <div className="space-y-2">
-            {data.recommendations.map((recommendation, index) => (
-              <Card
-                key={`${recommendation.title}-${index}`}
-                className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
-              >
-                <Badge className={priorityClasses(recommendation.priority)}>
-                  {titleCase(recommendation.priority)}
-                </Badge>
-                <h4 className="mt-3 break-words text-sm font-semibold">{recommendation.title}</h4>
-                <p className="mt-1 break-words text-sm text-muted-foreground">
-                  {recommendation.description}
-                </p>
-                <p className="mt-2 break-words text-xs font-medium">{recommendation.action}</p>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
       <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
-        <h3 className="text-sm font-semibold">Coverage</h3>
+        <h3 className="text-sm font-semibold">Cobertura</h3>
         <p className="mt-2 text-xs text-muted-foreground">
-          {data.coverage.firstActivityAt ?? "Unknown start"} –{" "}
-          {data.coverage.lastActivityAt ?? "Unknown end"}
+          {data.coverage.firstActivityAt ?? "Inicio desconocido"} –{" "}
+          {data.coverage.lastActivityAt ?? "Fin desconocido"}
         </p>
-        <ListBlock title="Limitations" items={data.coverage.limitations} />
+        <div className="mt-4">
+          <ListBlock title="Limitaciones" items={data.coverage.limitations} />
+        </div>
       </Card>
     </div>
   );

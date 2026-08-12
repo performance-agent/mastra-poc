@@ -129,41 +129,98 @@ export interface PerformanceReport<TData = unknown> {
   updatedAt?: string;
 }
 
+export type GroupReportStatus = "GOOD" | "WATCH" | "RISK" | "INSUFFICIENT_DATA";
+export type GroupReportConfidence = "HIGH" | "MEDIUM" | "LOW" | "INSUFFICIENT";
+
+export interface GroupReportEvidence {
+  section: "OVERALL" | "PRODUCT" | "PROJECT" | "ENGINEERING" | "PEOPLE";
+  subject: string | null;
+  type: string;
+  resource: string;
+  reference: string | null;
+  title: string;
+  url: string | null;
+  observation: string;
+  interpretation: string;
+}
+
+export interface GroupReportAssessment {
+  status: GroupReportStatus;
+  confidence: GroupReportConfidence;
+  summary: string;
+  positiveSignals: string[];
+  concerns: string[];
+  limitations: string[];
+}
+
+export interface GroupReportDimensionAssessment {
+  status: GroupReportStatus;
+  summary: string;
+}
+
 export interface GroupReport {
   summary: string;
-  health: {
-    score: number;
-    status: "GOOD" | "WATCH" | "RISK";
-    summary: string;
+  overallAssessment: GroupReportAssessment & { score: number | null };
+  productAssessment: {
+    ticketEvidenceAvailable: boolean;
+    assessment: GroupReportAssessment;
+    ideation: GroupReportDimensionAssessment;
+    prioritiesAndScope: GroupReportDimensionAssessment;
+    ticketFlow: GroupReportDimensionAssessment;
+    themes: Array<{
+      name: string;
+      evolution: string;
+    }>;
+    gaps: string[];
   };
-  historicalInsights: {
-    deliveryFlow: ReportInsight;
-    collaboration: ReportInsight;
-    ownership: ReportInsight;
-    riskAndLessons: {
-      status: "GOOD" | "WATCH" | "RISK";
+  projectAssessment: {
+    assessment: GroupReportAssessment;
+    deliveryFlow: GroupReportDimensionAssessment;
+    continuity: GroupReportDimensionAssessment;
+    predictability: GroupReportDimensionAssessment;
+    projectStages: Array<{
+      label: string;
+      period: string;
       summary: string;
-      risks: string[];
-      lessons: string[];
-    };
+      status: GroupReportStatus;
+    }>;
+    risks: string[];
+    lessons: string[];
   };
-  projectStages: Array<{
-    label: string;
-    period: string;
-    summary: string;
-    signals: string[];
-  }>;
+  engineeringAssessment: {
+    assessment: GroupReportAssessment;
+    traceability: GroupReportDimensionAssessment;
+    changeDiscipline: GroupReportDimensionAssessment;
+    reviewability: GroupReportDimensionAssessment;
+    maintenanceSignals: GroupReportDimensionAssessment;
+    commitsToReview: Array<{
+      resource: string;
+      reference: string | null;
+      message: string;
+      author: string | null;
+      url: string | null;
+      status: "WATCH" | "RISK";
+      confidence: GroupReportConfidence;
+      signals: string[];
+      explanation: string;
+      recommendedAction: string;
+    }>;
+  };
   people: Array<{
     displayName: string;
-    contributionProfile: string;
-    summary: string;
-    metrics: Array<{ label: string; value: string | number }>;
-    strengths: string[];
-    risks: string[];
-    suggestedActions: string[];
-    notableItems: GroupReportWorkItem[];
+    assessment: GroupReportAssessment;
+    contributionSummary: string;
+    metrics: Array<{ label: string; value: string }>;
+    consistency: {
+      level: "CONSISTENT" | "VARIABLE" | "SPORADIC" | "INSUFFICIENT_DATA";
+      confidence: GroupReportConfidence;
+      summary: string;
+      limitations: string[];
+    };
+    improvementAreas: string[];
+    suggestions: string[];
   }>;
-  notableWork: GroupReportWorkItem[];
+  evidence: GroupReportEvidence[];
   recommendations: Array<{
     priority: "HIGH" | "MEDIUM" | "LOW";
     title: string;
@@ -178,16 +235,6 @@ export interface GroupReport {
     lastActivityAt: string | null;
     limitations: string[];
   };
-}
-
-export interface GroupReportWorkItem {
-  type: string;
-  resource: string;
-  reference: string | null;
-  title: string;
-  url: string | null;
-  reason: string;
-  status: string | null;
 }
 
 export interface GroupGithubActivityReport {
