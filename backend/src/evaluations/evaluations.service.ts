@@ -41,10 +41,17 @@ export class EvaluationsService {
       );
     }
 
-    const result = (await flow.invoke({
-      context: { workspaceId, ...(period ? { period } : {}) },
-      rules: dto.rules,
-    })) as EvaluationFlowResult;
+    const result = (await flow.invoke(
+      {
+        context: { workspaceId, ...(period ? { period } : {}) },
+        rules: dto.rules,
+      },
+      {
+        runName: 'workspace-evaluation-flow',
+        tags: ['backend', 'evaluation-flow'],
+        metadata: { workspaceId, view },
+      },
+    )) as EvaluationFlowResult;
 
     return view === EvaluationView.FULL ? result : toReportResponse(result);
   }

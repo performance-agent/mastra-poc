@@ -68,13 +68,20 @@ describe('EvaluationsService', () => {
     });
 
     expect(factory).toHaveBeenCalledTimes(1);
-    expect(invoke).toHaveBeenCalledWith({
-      context: {
-        workspaceId: 'workspace-1',
-        period: { from: '2026-08-01', to: '2026-08-10' },
+    expect(invoke).toHaveBeenCalledWith(
+      {
+        context: {
+          workspaceId: 'workspace-1',
+          period: { from: '2026-08-01', to: '2026-08-10' },
+        },
+        rules: [{ name: 'Delivery', valuation: 8 }],
       },
-      rules: [{ name: 'Delivery', valuation: 8 }],
-    });
+      {
+        runName: 'workspace-evaluation-flow',
+        tags: ['backend', 'evaluation-flow'],
+        metadata: { workspaceId: 'workspace-1', view: EvaluationView.REPORT },
+      },
+    );
     expect(response).toEqual({
       status: 'partial',
       assessments: expect.objectContaining({ 'rule-1': expect.any(Object) }),

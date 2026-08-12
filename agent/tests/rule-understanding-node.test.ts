@@ -163,6 +163,38 @@ test("rejects malformed AI output as a controlled rule failure", async () => {
 
   assert.equal(result.status, "failed");
   assert.equal(result.failedRules[0]?.code, "invalid_ai_output");
+  assert.match(result.failedRules[0]?.message ?? "", /evaluationQuestions/);
+  assert.match(result.failedRules[0]?.message ?? "", /expectedSignals/);
+});
+
+test("reports the exact active-branch field returned as null by the provider", async () => {
+  const fakeModel = {
+    withStructuredOutput() {
+      return {
+        async invoke() {
+          return {
+            ambiguityDetected: false,
+            interpretedGoal: "Measure delivery outcomes.",
+            evaluationQuestions: null,
+            expectedSignals: ["completed work"],
+            ambiguityReason: null,
+            clarificationQuestion: null,
+          };
+        },
+      };
+    },
+  } as unknown as BaseChatModel;
+  const node = createRuleUnderstandingNode({
+    interpreter: createLangChainRuleInterpreter(fakeModel),
+  });
+
+  const result = await node.run({ runnableRules: [preparedRule(0)], resourceCatalog: catalog });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.failedRules[0]?.code, "invalid_ai_output");
+  assert.match(result.failedRules[0]?.message ?? "", /evaluationQuestions/);
+  assert.match(result.failedRules[0]?.message ?? "", /expected array/);
+  assert.match(result.failedRules[0]?.message ?? "", /received null/);
 });
 
 test("limits concurrency while preserving source order", async () => {
@@ -269,6 +301,14 @@ test("uses a Gemini-compatible structured output schema", () => {
   assert.equal(providerJsonSchema.type, "object");
   assert.doesNotMatch(serializedSchema, /"oneOf"/);
   assert.doesNotMatch(serializedSchema, /"const"/);
+  assert.deepEqual(providerJsonSchema.required, [
+    "ambiguityDetected",
+    "interpretedGoal",
+    "evaluationQuestions",
+    "expectedSignals",
+    "ambiguityReason",
+    "clarificationQuestion",
+  ]);
 });
 
 test("environment factory requires a model identifier", async () => {

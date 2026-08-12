@@ -1,5 +1,6 @@
 import type { PreparedRuleInput } from "../ruleInput/types.js";
 import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
+import { ZodError } from "zod";
 import { ruleUnderstandingAiOutputSchema, type RuleUnderstandingAiOutput } from "./schemas.js";
 import type {
   FailedRuleUnderstanding,
@@ -44,16 +45,33 @@ async function interpretRule(
   let rawOutput: unknown;
   try {
     rawOutput = await interpreter.interpret({ preparedRule, resourceCatalog });
-  } catch {
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return failedOutcome(
+        preparedRule,
+        "invalid_ai_output",
+        `The AI model returned an invalid rule interpretation: ${formatZodIssues(error)}`,
+      );
+    }
     return failedOutcome(preparedRule, "ai_generation_failed", "The AI model could not interpret this rule.");
   }
 
   const parsedOutput = ruleUnderstandingAiOutputSchema.safeParse(rawOutput);
   if (!parsedOutput.success) {
-    return failedOutcome(preparedRule, "invalid_ai_output", "The AI model returned an invalid rule interpretation.");
+    return failedOutcome(
+      preparedRule,
+      "invalid_ai_output",
+      `The AI model returned an invalid rule interpretation: ${formatZodIssues(parsedOutput.error)}`,
+    );
   }
 
   return successfulOutcome(preparedRule, parsedOutput.data);
+}
+
+function formatZodIssues(error: ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "output"}: ${issue.message}`)
+    .join("; ");
 }
 
 function successfulOutcome(preparedRule: PreparedRuleInput, output: RuleUnderstandingAiOutput): RuleOutcome {
