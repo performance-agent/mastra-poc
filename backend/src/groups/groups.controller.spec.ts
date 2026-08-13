@@ -24,6 +24,7 @@ import { GroupsService } from './groups.service';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
 import { ReportsService } from '../reports/reports.service';
+import { InvitationsService } from '../invitations/invitations.service';
 
 describe('GroupsController', () => {
   let controller: GroupsController;
@@ -36,6 +37,7 @@ describe('GroupsController', () => {
         { provide: MembersService, useValue: {} },
         { provide: ResourcesService, useValue: {} },
         { provide: ReportsService, useValue: {} },
+        { provide: InvitationsService, useValue: {} },
       ],
     }).compile();
 

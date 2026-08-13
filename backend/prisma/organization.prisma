@@ -12,4 +12,5 @@ model Organization {
   memberships         Membership[]
   performanceReports  PerformanceReport[]
   dataTypes           DataType[]
+  invitations         Invitation[]
 }

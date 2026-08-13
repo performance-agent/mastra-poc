@@ -19,6 +19,7 @@ import { MembershipGuard } from './access-control/membership.guard';
 import { DataTypesModule } from './data-types/data-types.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { PluginInstallationsModule } from './plugin-installations/plugin-installations.module';
+import { InvitationsModule } from './invitations/invitations.module';
 import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
 @Module({
@@ -38,6 +39,7 @@ import { PerformanceMcpModule } from './mcp/performance-mcp.module';
     DataTypesModule,
     PluginsModule,
     PluginInstallationsModule,
+    InvitationsModule,
     PerformanceMcpModule,
   ],
   controllers: [AppController],

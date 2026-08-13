@@ -7,15 +7,18 @@ import { PrismaService } from '../prisma/prisma.service';
 export class UsersService {
   constructor(private readonly prismaService: PrismaService) {}
   create(createUserDto: CreateUserDto) {
+    const name =
+      createUserDto.name?.trim() || createUserDto.email.split('@')[0] || 'User';
     return this.prismaService.user.create({
       data: {
         ...createUserDto,
+        name,
         memberships: {
           create: {
             organization: {
               create: {
-                name: `${createUserDto.name}'s Organization`,
-                description: `Personal organization for ${createUserDto.name}`,
+                name: `${name}'s Organization`,
+                description: `Personal organization for ${name}`,
               },
             },
             role: 'OWNER',
@@ -41,6 +44,17 @@ export class UsersService {
     return this.prismaService.user.findUnique({
       where: {
         firebaseUid,
+      },
+    });
+  }
+
+  findOneByEmail(email: string) {
+    return this.prismaService.user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: 'insensitive',
+        },
       },
     });
   }

@@ -9,6 +9,9 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Login - Performance Agent" },
@@ -30,8 +33,12 @@ function authErrorMessage(error: unknown) {
 }
 
 function LoginPage() {
+  const { redirect } = Route.useSearch();
+  const isInviteRedirect = Boolean(redirect?.startsWith("/invite/"));
   const { firebaseUser, signIn, signUp, signInWithGoogle } = useAuth();
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [mode, setMode] = useState<"sign-in" | "sign-up">(
+    isInviteRedirect ? "sign-up" : "sign-in",
+  );
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -159,7 +166,11 @@ function LoginPage() {
               <CardTitle>{isSignUp ? "Create account" : "Sign in"}</CardTitle>
             </div>
             <CardDescription>
-              {isSignUp ? "Create your account to continue." : "Use your account to continue."}
+              {isInviteRedirect
+                ? "Create an account or sign in to accept your invitation."
+                : isSignUp
+                  ? "Create your account to continue."
+                  : "Use your account to continue."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

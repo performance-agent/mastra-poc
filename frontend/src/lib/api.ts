@@ -4,6 +4,8 @@ import type {
   Group,
   User,
   Membership,
+  Invitation,
+  InvitationPreview,
   Resource,
   PluginCatalogItem,
   PluginInstallation,
@@ -28,10 +30,16 @@ export class ApiError extends Error {
   }
 }
 
+async function getAccessToken(): Promise<string | undefined> {
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  return auth.currentUser?.getIdToken();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    const token = await getFirebaseAuth().currentUser?.getIdToken();
+    const token = await getAccessToken();
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: {
@@ -137,6 +145,14 @@ export const api = {
     }),
   removeOrgMember: (id: string, userId: string) =>
     request<void>(`/organizations/${id}/members/${userId}`, { method: "DELETE" }),
+  listOrgInvitations: (id: string) => request<Invitation[]>(`/organizations/${id}/invitations`),
+  createOrgInvitation: (id: string, email: string, role: Role) =>
+    request<Invitation>(`/organizations/${id}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    }),
+  revokeOrgInvitation: (id: string, invitationId: string) =>
+    request<void>(`/organizations/${id}/invitations/${invitationId}`, { method: "DELETE" }),
 
   // Org resources
   listOrgResources: (id: string) => request<Resource[]>(`/organizations/${id}/resources`),
@@ -186,6 +202,14 @@ export const api = {
     }),
   removeWorkspaceMember: (id: string, userId: string) =>
     request<void>(`/workspaces/${id}/members/${userId}`, { method: "DELETE" }),
+  listWorkspaceInvitations: (id: string) => request<Invitation[]>(`/workspaces/${id}/invitations`),
+  createWorkspaceInvitation: (id: string, email: string, role: Role) =>
+    request<Invitation>(`/workspaces/${id}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    }),
+  revokeWorkspaceInvitation: (id: string, invitationId: string) =>
+    request<void>(`/workspaces/${id}/invitations/${invitationId}`, { method: "DELETE" }),
 
   // Workspace resource assignments
   listWorkspaceResources: (id: string) => request<Resource[]>(`/workspaces/${id}/resources`),
@@ -208,6 +232,17 @@ export const api = {
     }),
   removeGroupMember: (id: string, userId: string) =>
     request<void>(`/groups/${id}/members/${userId}`, { method: "DELETE" }),
+  listGroupInvitations: (id: string) => request<Invitation[]>(`/groups/${id}/invitations`),
+  createGroupInvitation: (id: string, email: string, role: Role) =>
+    request<Invitation>(`/groups/${id}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    }),
+  revokeGroupInvitation: (id: string, invitationId: string) =>
+    request<void>(`/groups/${id}/invitations/${invitationId}`, { method: "DELETE" }),
+  getInvitation: (token: string) => request<InvitationPreview>(`/invitations/${token}`),
+  acceptInvitation: (token: string) =>
+    request<InvitationPreview>(`/invitations/${token}/accept`, { method: "POST" }),
 
   listGroupResources: (id: string) => request<Resource[]>(`/groups/${id}/resources`),
   assignGroupResource: (groupId: string, resourceId: string) =>
