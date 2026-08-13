@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Chrome, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -29,15 +30,85 @@ function authErrorMessage(error: unknown) {
 }
 
 function LoginPage() {
-  const { signIn, signUp, signInWithGoogle } = useAuth();
+  const { firebaseUser, signIn, signUp, signInWithGoogle } = useAuth();
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [oauthClient, setOauthClient] = useState<{
+    clientName: string;
+    redirectHost: string;
+    loopbackRedirect: boolean;
+    scopes: string[];
+  } | null>(null);
+  const oauthRequest = new URLSearchParams(window.location.search).get("oauth_request");
 
   const isSignUp = mode === "sign-up";
+
+  useEffect(() => {
+    if (!firebaseUser || !oauthRequest) return;
+    void api
+      .getMcpAuthorization(oauthRequest)
+      .then(setOauthClient)
+      .catch((cause) => setError(authErrorMessage(cause)));
+  }, [firebaseUser, oauthRequest]);
+
+  async function approveOAuth() {
+    if (!oauthRequest) return;
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const { redirectUrl } = await api.approveMcpAuthorization(oauthRequest);
+      window.location.replace(redirectUrl);
+    } catch (cause) {
+      setIsSubmitting(false);
+      setError(authErrorMessage(cause));
+    }
+  }
+
+  if (firebaseUser && oauthRequest) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+        <Card className="w-full max-w-md rounded-lg shadow-card">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <CardTitle>Connect {oauthClient?.clientName ?? "MCP client"}</CardTitle>
+            </div>
+            <CardDescription>
+              This client can read your permitted groups and create reports only where you are an
+              owner or admin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {error ? (
+              <p className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Access remains limited by your current organization, workspace, and group
+                memberships. Callback: {oauthClient?.redirectHost ?? "loading..."}. Requested
+                scopes: {oauthClient?.scopes.join(", ") ?? "loading..."}
+              </p>
+            )}
+            {oauthClient?.loopbackRedirect ? (
+              <p className="mt-3 rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                This client uses a local callback. Continue only if you started the connection from
+                an application running on this device.
+              </p>
+            ) : null}
+            <Button className="mt-4 w-full" onClick={approveOAuth} disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Connect MCP client
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -101,6 +101,9 @@ function AuthGate() {
   const location = useLocation();
   const navigate = useNavigate();
   const isLogin = location.pathname === "/login";
+  const oauthRequest = isLogin
+    ? new URLSearchParams(window.location.search).get("oauth_request")
+    : null;
 
   useEffect(() => {
     if (isLoading) return;
@@ -110,6 +113,7 @@ function AuthGate() {
       return;
     }
     if (firebaseUser && isLogin) {
+      if (oauthRequest) return;
       const redirect = new URLSearchParams(window.location.search).get("redirect");
       if (redirect?.startsWith("/") && !redirect.startsWith("//")) {
         window.location.replace(redirect);
@@ -117,7 +121,7 @@ function AuthGate() {
       }
       navigate({ to: "/organizations", replace: true });
     }
-  }, [firebaseUser, isLoading, isLogin, navigate]);
+  }, [firebaseUser, isLoading, isLogin, navigate, oauthRequest]);
 
   if (isLoading) {
     return (
@@ -132,7 +136,7 @@ function AuthGate() {
     );
   }
 
-  if ((!firebaseUser && !isLogin) || (firebaseUser && isLogin)) return null;
+  if ((!firebaseUser && !isLogin) || (firebaseUser && isLogin && !oauthRequest)) return null;
 
   return <Outlet />;
 }

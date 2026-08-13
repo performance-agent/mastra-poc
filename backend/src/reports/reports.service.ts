@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { mastra } from '../mastra';
+import { GROUP_REPORT_GENERATION_PROMPT } from '../mastra/group-report-instructions';
 import {
   groupReportContentSchema,
   groupReportSchema,
@@ -46,6 +47,53 @@ export class ReportsService {
   }
 
   private async createSoftwareReport(groupId: string) {
+    const prepared = await this.prepareGroupReport(groupId);
+    const { group, providerData, reportInput } = prepared;
+
+    const configuredModel = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
+    if (typeof configuredModel !== 'string') {
+      throw new Error('GROUP_REPORT_MODEL must resolve to a model identifier');
+    }
+    this.logger.log(
+      `Group report AI call ${JSON.stringify({
+        organization: {
+          id: group.workspace.organization.id,
+          name: group.workspace.organization.name,
+        },
+        workspace: {
+          id: group.workspace.id,
+          name: group.workspace.name,
+        },
+        group: { id: group.id, name: group.name },
+        model: configuredModel,
+        resources: providerData.resources.map((resource) => ({
+          id: resource.id,
+          name: resource.name,
+          plugin: resource.pluginId,
+          type: resource.type,
+          datasets: resource.datasets.map((dataset) => ({
+            type: dataset.dataType,
+            available: dataset.count,
+            analyzed: dataset.records.length,
+            truncated: dataset.truncated,
+          })),
+        })),
+        limitations: providerData.limitations.length,
+      })}`,
+    );
+
+    const prompt = `${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(reportInput)}`;
+    const generatedReport = (
+      await this.groupReportAgent.generate(
+        [{ role: 'user', content: prompt }],
+        { structuredOutput: { schema: groupReportContentSchema } },
+      )
+    ).object;
+
+    return this.persistGroupReport(groupId, generatedReport, prepared.coverage);
+  }
+
+  async prepareGroupReport(groupId: string) {
     const [group, assignedResources] = await Promise.all([
       this.prisma.group.findUnique({
         where: { id: groupId },
@@ -87,6 +135,7 @@ export class ReportsService {
       });
     }
 
+    const coverage = buildCoverage(providerData);
     const reportInput = {
       group: { id: group.id, name: group.name },
       reportMode: 'history',
@@ -94,53 +143,26 @@ export class ReportsService {
       period: null,
       resources: providerData.resources,
       limitations: providerData.limitations,
-      coverage: buildCoverage(providerData),
+      coverage,
     };
 
-    const configuredModel = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
-    if (typeof configuredModel !== 'string') {
-      throw new Error('GROUP_REPORT_MODEL must resolve to a model identifier');
-    }
-    this.logger.log(
-      `Group report AI call ${JSON.stringify({
-        organization: {
-          id: group.workspace.organization.id,
-          name: group.workspace.organization.name,
-        },
-        workspace: {
-          id: group.workspace.id,
-          name: group.workspace.name,
-        },
-        group: { id: group.id, name: group.name },
-        model: configuredModel,
-        resources: providerData.resources.map((resource) => ({
-          id: resource.id,
-          name: resource.name,
-          plugin: resource.pluginId,
-          type: resource.type,
-          datasets: resource.datasets.map((dataset) => ({
-            type: dataset.dataType,
-            available: dataset.count,
-            analyzed: dataset.records.length,
-            truncated: dataset.truncated,
-          })),
-        })),
-        limitations: providerData.limitations.length,
-      })}`,
-    );
+    return { group, providerData, reportInput, coverage };
+  }
 
-    const prompt = `Genera el Group Report estructurado utilizando todo el historial disponible del siguiente input.
+  async createGroupReportFromContent(groupId: string, content: unknown) {
+    const prepared = await this.prepareGroupReport(groupId);
+    return this.persistGroupReport(groupId, content, prepared.coverage);
+  }
 
-${JSON.stringify(reportInput)}`;
-    const generatedReport = (
-      await this.groupReportAgent.generate(
-        [{ role: 'user', content: prompt }],
-        { structuredOutput: { schema: groupReportContentSchema } },
-      )
-    ).object;
+  private persistGroupReport(
+    groupId: string,
+    content: unknown,
+    coverage: ReturnType<typeof buildCoverage>,
+  ) {
+    const generatedReport = groupReportContentSchema.parse(content);
     const reportData = groupReportSchema.parse({
       ...generatedReport,
-      coverage: reportInput.coverage,
+      coverage,
     });
 
     return this.prisma.performanceReport.create({
