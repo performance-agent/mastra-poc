@@ -164,7 +164,7 @@ export class PerformanceMcpService {
         );
         return {
           id: created.id,
-          groupId: created.groupId,
+          groupId,
           type: 'GROUP_REPORT' as const,
           createdAt: created.createdAt.toISOString(),
         };
