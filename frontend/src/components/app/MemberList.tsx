@@ -6,14 +6,19 @@ import { Trash2 } from "lucide-react";
 import type { Membership, Role } from "@/lib/types";
 import { EmptyState } from "./EmptyState";
 import { Users } from "lucide-react";
+import { roleSelectOptions, ROLES_BY_HIERARCHY } from "@/lib/membership-role";
 
 export function MemberList({
   members,
+  currentUserId,
+  actorRole,
   onRoleChange,
   onRemove,
   onInvite,
 }: {
   members: Membership[];
+  currentUserId?: string;
+  actorRole?: Role;
   onRoleChange?: (userId: string, role: Role) => void;
   onRemove?: (userId: string) => void;
   onInvite?: () => void;
@@ -29,12 +34,26 @@ export function MemberList({
       />
     );
   }
+
+  const ownerCount = members.filter((member) => member.role === "OWNER").length;
+
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       <ul className="divide-y divide-border">
         {members.map((m) => {
           const u = m.user;
           const display = u.name || u.email || m.userId;
+          const options = !onRoleChange
+            ? null
+            : currentUserId && actorRole
+              ? roleSelectOptions({
+                  actorRole,
+                  actorUserId: currentUserId,
+                  targetUserId: m.userId,
+                  targetRole: m.role,
+                  ownerCount,
+                })
+              : ROLES_BY_HIERARCHY;
           return (
             <li key={m.userId} className="flex items-center gap-3 p-3 sm:p-4">
               <Avatar name={display} src={u?.photoUrl} />
@@ -44,8 +63,12 @@ export function MemberList({
                   <div className="truncate text-xs text-muted-foreground">{u.email}</div>
                 )}
               </div>
-              {onRoleChange ? (
-                <RoleSelect value={m.role} onChange={(r) => onRoleChange(m.userId, r)} />
+              {options ? (
+                <RoleSelect
+                  value={m.role}
+                  allowedRoles={options}
+                  onChange={(r) => onRoleChange?.(m.userId, r)}
+                />
               ) : (
                 <RoleBadge role={m.role} />
               )}

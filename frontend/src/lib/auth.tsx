@@ -51,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (trimmedName) {
       await updateProfile(credential.user, { displayName: trimmedName });
     }
+    await credential.user.getIdToken(true);
   }, []);
 
   const signInWithGoogle = useCallback(async () => {

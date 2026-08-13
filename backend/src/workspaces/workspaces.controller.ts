@@ -119,11 +119,13 @@ export class WorkspacesController {
   })
   @Put(':id/members/:userId')
   setWorkspaceMember(
+    @CurrentUser() user: User,
     @Param('id') workspaceId: string,
     @Param('userId') userId: string,
     @Body() setMemberDto: SetMemberDto,
   ) {
     return this.membersService.setWorkspaceMember(
+      user.id,
       workspaceId,
       userId,
       setMemberDto,

@@ -117,11 +117,13 @@ export class OrganizationsController {
   })
   @Put(':id/members/:userId')
   setOrganizationMember(
+    @CurrentUser() user: User,
     @Param('id') organizationId: string,
     @Param('userId') userId: string,
     @Body() setMemberDto: SetMemberDto,
   ) {
     return this.membersService.setOrganizationMember(
+      user.id,
       organizationId,
       userId,
       setMemberDto,

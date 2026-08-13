@@ -44,7 +44,7 @@ export interface Membership {
   userId: string;
   role: Role;
   createdAt?: string;
-  user: Pick<User, "id" | "name" | "email" | "photoUrl">;
+  user: Pick<User, "id" | "name" | "email" | "photoUrl" | "firebaseUid">;
 }
 
 export interface Resource {

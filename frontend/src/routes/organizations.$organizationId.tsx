@@ -52,8 +52,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toFormInitial } from "@/lib/form-helpers";
 import { savePendingGithubSetup } from "@/lib/github-setup";
+import {
+  assignableRoles,
+  canManageMemberRoles,
+  findCurrentMembership,
+} from "@/lib/membership-role";
 import type {
   DataType,
   PluginCatalogItem,
@@ -414,6 +420,7 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
 
 function MembersTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
   const [addOpen, setAddOpen] = useState(false);
   const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
@@ -422,43 +429,63 @@ function MembersTab({ organizationId }: { organizationId: string }) {
     queryFn: () => api.listOrgMembers(organizationId),
   });
   const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: addOpen });
+  const members = membersQ.data ?? [];
+  const currentMembership = findCurrentMembership(members, {
+    uid: firebaseUser?.uid,
+    email: firebaseUser?.email,
+  });
+  const actorRole = currentMembership?.role;
+  const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
 
   const refresh = () =>
     qc.invalidateQueries({ queryKey: ["organization", organizationId, "members"] });
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> Add member
-        </Button>
-      </div>
+      {canManageRoles && (
+        <div className="flex justify-end">
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add member
+          </Button>
+        </div>
+      )}
       {membersQ.isLoading ? (
         <LoadingState />
       ) : membersQ.error ? (
         <ErrorState message={errorMessage(membersQ.error)} onRetry={() => membersQ.refetch()} />
       ) : (
         <MemberList
-          members={membersQ.data ?? []}
-          onInvite={() => setAddOpen(true)}
-          onRoleChange={async (uid, r) => {
-            try {
-              await api.upsertOrgMember(organizationId, uid, r);
-              toast.success("Role updated");
-              refresh();
-            } catch (e) {
-              toast.error(errorMessage(e));
-            }
-          }}
-          onRemove={async (uid) => {
-            try {
-              await api.removeOrgMember(organizationId, uid);
-              toast.success("Member removed");
-              refresh();
-            } catch (e) {
-              toast.error(errorMessage(e));
-            }
-          }}
+          members={members}
+          currentUserId={currentMembership?.userId}
+          actorRole={actorRole}
+          onInvite={canManageRoles ? () => setAddOpen(true) : undefined}
+          onRoleChange={
+            canManageRoles
+              ? async (uid, r) => {
+                  try {
+                    await api.upsertOrgMember(organizationId, uid, r);
+                    toast.success("Role updated");
+                    refresh();
+                  } catch (e) {
+                    toast.error(errorMessage(e));
+                  }
+                }
+              : undefined
+          }
+          onRemove={
+            actorRole === "OWNER" || !actorRole
+              ? async (uid) => {
+                  try {
+                    await api.removeOrgMember(organizationId, uid);
+                    toast.success("Member removed");
+                    refresh();
+                  } catch (e) {
+                    toast.error(errorMessage(e));
+                  }
+                }
+              : undefined
+          }
         />
       )}
 
@@ -475,11 +502,12 @@ function MembersTab({ organizationId }: { organizationId: string }) {
         usersLoading={usersQ.isLoading}
         usersError={usersQ.error}
         retryUsers={() => usersQ.refetch()}
-        excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
+        excludeIds={members.map((m) => m.userId)}
         userId={userId}
         setUserId={setUserId}
         role={role}
         setRole={setRole}
+        allowedRoles={inviteRoles}
         onConfirm={async () => {
           if (!userId) return;
           try {
@@ -510,6 +538,7 @@ function AddMemberDialog({
   setUserId,
   role,
   setRole,
+  allowedRoles,
   onConfirm,
 }: {
   open: boolean;
@@ -523,6 +552,7 @@ function AddMemberDialog({
   setUserId: (id?: string) => void;
   role: Role;
   setRole: (r: Role) => void;
+  allowedRoles?: Role[];
   onConfirm: () => Promise<void>;
 }) {
   return (
@@ -548,7 +578,7 @@ function AddMemberDialog({
           </div>
           <div className="space-y-2">
             <Label>Role</Label>
-            <RoleSelect value={role} onChange={setRole} />
+            <RoleSelect value={role} allowedRoles={allowedRoles} onChange={setRole} />
           </div>
         </div>
         <DialogFooter>

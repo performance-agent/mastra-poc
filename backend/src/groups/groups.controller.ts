@@ -14,6 +14,8 @@ import { SetMemberDto } from '../members/dto/set-member.dto';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
 import { RequireMembership } from '../access-control/require-membership.decorator';
+import { CurrentUser } from '../auth/decorators/user.decorator';
+import { type User } from '../auth/types/user.type';
 import { ReportsService } from '../reports/reports.service';
 import { CreateReportDto } from '../reports/dto/create-report.dto';
 
@@ -89,11 +91,17 @@ export class GroupsController {
   })
   @Put(':id/members/:userId')
   setGroupMember(
+    @CurrentUser() user: User,
     @Param('id') groupId: string,
     @Param('userId') userId: string,
     @Body() setMemberDto: SetMemberDto,
   ) {
-    return this.membersService.setGroupMember(groupId, userId, setMemberDto);
+    return this.membersService.setGroupMember(
+      user.id,
+      groupId,
+      userId,
+      setMemberDto,
+    );
   }
 
   @RequireMembership({

@@ -5,8 +5,10 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { FirebaseService } from '../firebase/firebase.service';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from './decorators/public.decorator';
@@ -14,6 +16,8 @@ import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly logger = new Logger(AuthGuard.name);
+
   constructor(
     private readonly firebaseService: FirebaseService,
     private readonly reflector: Reflector,
@@ -39,27 +43,47 @@ export class AuthGuard implements CanActivate {
 
     try {
       const decodedToken = await this.firebaseService.verifyIdToken(token);
+      const email = decodedToken.email?.trim();
+
+      if (!email) {
+        throw new UnauthorizedException('Authenticated user is missing an email');
+      }
+
+      const name =
+        decodedToken.name?.trim() || email.split('@')[0] || 'User';
 
       let user = await this.usersService.findOneByFirebaseUid(decodedToken.uid);
 
       if (!user) {
         user = await this.usersService.create({
-          name: decodedToken.name,
-          email: decodedToken.email!,
+          name,
+          email,
           firebaseUid: decodedToken.uid,
           photoUrl: decodedToken.picture,
         });
       }
 
       request['user'] = { ...decodedToken, id: user.id };
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      this.logger.error(
+        'Failed to authenticate request',
+        error instanceof Error ? error.stack : undefined,
+      );
       throw new UnauthorizedException();
     }
     return true;
   }
 
   private extractTokenFromHeader(request: Request): string | undefined {
-    const [type, token] = request.headers['authorization']?.split(' ') ?? [];
+    const raw = request.headers.authorization;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (!value) {
+      return undefined;
+    }
+    const [type, token] = value.split(' ');
     return type === 'Bearer' ? token : undefined;
   }
 }

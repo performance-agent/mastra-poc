@@ -32,7 +32,14 @@ import {
 import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toFormInitial } from "@/lib/form-helpers";
+import {
+  assignableRoles,
+  canManageMemberRoles,
+  findCurrentMembership,
+  highestRole,
+} from "@/lib/membership-role";
 import type { Group, Role } from "@/lib/types";
 
 const tabSchema = z.object({
@@ -169,7 +176,9 @@ function WorkspacePage() {
           {tab === "groups" && (
             <GroupsTab organizationId={organizationId} workspaceId={workspaceId} />
           )}
-          {tab === "members" && <WorkspaceMembersTab workspaceId={workspaceId} />}
+          {tab === "members" && (
+            <WorkspaceMembersTab organizationId={organizationId} workspaceId={workspaceId} />
+          )}
           {tab === "resources" && (
             <WorkspaceResourcesTab organizationId={organizationId} workspaceId={workspaceId} />
           )}
@@ -340,8 +349,15 @@ function GroupsTab({
   );
 }
 
-function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
+function WorkspaceMembersTab({
+  organizationId,
+  workspaceId,
+}: {
+  organizationId: string;
+  workspaceId: string;
+}) {
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
   const [open, setOpen] = useState(false);
   const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
@@ -349,42 +365,66 @@ function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
     queryKey: ["workspace", workspaceId, "members"],
     queryFn: () => api.listWorkspaceMembers(workspaceId),
   });
+  const orgMembersQ = useQuery({
+    queryKey: ["organization", organizationId, "members"],
+    queryFn: () => api.listOrgMembers(organizationId),
+  });
   const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: open });
   const refresh = () => qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "members"] });
+  const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
+  const members = membersQ.data ?? [];
+  const workspaceMembership = findCurrentMembership(members, identity);
+  const organizationMembership = findCurrentMembership(orgMembersQ.data ?? [], identity);
+  const actorRole = highestRole([workspaceMembership?.role, organizationMembership?.role]);
+  const currentUserId = workspaceMembership?.userId ?? organizationMembership?.userId;
+  const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> Add member
-        </Button>
-      </div>
+      {canManageRoles && (
+        <div className="flex justify-end">
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add member
+          </Button>
+        </div>
+      )}
       {membersQ.isLoading ? (
         <LoadingState />
       ) : membersQ.error ? (
         <ErrorState message={errorMessage(membersQ.error)} onRetry={() => membersQ.refetch()} />
       ) : (
         <MemberList
-          members={membersQ.data ?? []}
-          onInvite={() => setOpen(true)}
-          onRoleChange={async (uid, r) => {
-            try {
-              await api.upsertWorkspaceMember(workspaceId, uid, r);
-              toast.success("Role updated");
-              refresh();
-            } catch (e) {
-              toast.error(errorMessage(e));
-            }
-          }}
-          onRemove={async (uid) => {
-            try {
-              await api.removeWorkspaceMember(workspaceId, uid);
-              toast.success("Member removed");
-              refresh();
-            } catch (e) {
-              toast.error(errorMessage(e));
-            }
-          }}
+          members={members}
+          currentUserId={currentUserId}
+          actorRole={actorRole}
+          onInvite={canManageRoles ? () => setOpen(true) : undefined}
+          onRoleChange={
+            canManageRoles
+              ? async (uid, r) => {
+                  try {
+                    await api.upsertWorkspaceMember(workspaceId, uid, r);
+                    toast.success("Role updated");
+                    refresh();
+                  } catch (e) {
+                    toast.error(errorMessage(e));
+                  }
+                }
+              : undefined
+          }
+          onRemove={
+            canManageRoles
+              ? async (uid) => {
+                  try {
+                    await api.removeWorkspaceMember(workspaceId, uid);
+                    toast.success("Member removed");
+                    refresh();
+                  } catch (e) {
+                    toast.error(errorMessage(e));
+                  }
+                }
+              : undefined
+          }
         />
       )}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -404,13 +444,13 @@ function WorkspaceMembersTab({ workspaceId }: { workspaceId: string }) {
                   users={usersQ.data ?? []}
                   value={userId}
                   onChange={setUserId}
-                  excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
+                  excludeIds={members.map((m) => m.userId)}
                 />
               )}
             </div>
             <div className="space-y-2">
               <Label>Role</Label>
-              <RoleSelect value={role} onChange={setRole} />
+              <RoleSelect value={role} allowedRoles={inviteRoles} onChange={setRole} />
             </div>
           </div>
           <DialogFooter>

@@ -34,7 +34,14 @@ import {
 import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toFormInitial } from "@/lib/form-helpers";
+import {
+  assignableRoles,
+  canManageMemberRoles,
+  findCurrentMembership,
+  highestRole,
+} from "@/lib/membership-role";
 import type {
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
@@ -70,6 +77,7 @@ function GroupPage() {
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
@@ -96,6 +104,14 @@ function GroupPage() {
   const membersQ = useQuery({
     queryKey: ["group", groupId, "members"],
     queryFn: () => api.listGroupMembers(groupId),
+  });
+  const orgMembersQ = useQuery({
+    queryKey: ["organization", organizationId, "members"],
+    queryFn: () => api.listOrgMembers(organizationId),
+  });
+  const workspaceMembersQ = useQuery({
+    queryKey: ["workspace", workspaceId, "members"],
+    queryFn: () => api.listWorkspaceMembers(workspaceId),
   });
   const usersQ = useQuery({
     queryKey: ["users"],
@@ -165,6 +181,20 @@ function GroupPage() {
   }, [reportStartedAt, reportsQ.data]);
 
   const refreshMembers = () => qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
+  const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
+  const members = membersQ.data ?? [];
+  const groupMembership = findCurrentMembership(members, identity);
+  const workspaceMembership = findCurrentMembership(workspaceMembersQ.data ?? [], identity);
+  const organizationMembership = findCurrentMembership(orgMembersQ.data ?? [], identity);
+  const actorRole = highestRole([
+    groupMembership?.role,
+    workspaceMembership?.role,
+    organizationMembership?.role,
+  ]);
+  const currentUserId =
+    groupMembership?.userId ?? workspaceMembership?.userId ?? organizationMembership?.userId;
+  const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
   const refreshResources = () => {
     qc.invalidateQueries({ queryKey: ["group", groupId, "resources"] });
     qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] });
@@ -273,11 +303,13 @@ function GroupPage() {
 
           {tab === "members" && (
             <div className="space-y-4">
-              <div className="flex justify-end">
-                <Button onClick={() => setMemberOpen(true)}>
-                  <Plus className="mr-1.5 h-4 w-4" /> Add member
-                </Button>
-              </div>
+              {canManageRoles && (
+                <div className="flex justify-end">
+                  <Button onClick={() => setMemberOpen(true)}>
+                    <Plus className="mr-1.5 h-4 w-4" /> Add member
+                  </Button>
+                </div>
+              )}
               {membersQ.isLoading ? (
                 <LoadingState />
               ) : membersQ.error ? (
@@ -287,26 +319,36 @@ function GroupPage() {
                 />
               ) : (
                 <MemberList
-                  members={membersQ.data ?? []}
-                  onInvite={() => setMemberOpen(true)}
-                  onRoleChange={async (uid, r) => {
-                    try {
-                      await api.upsertGroupMember(groupId, uid, r);
-                      toast.success("Role updated");
-                      refreshMembers();
-                    } catch (e) {
-                      toast.error(errorMessage(e));
-                    }
-                  }}
-                  onRemove={async (uid) => {
-                    try {
-                      await api.removeGroupMember(groupId, uid);
-                      toast.success("Member removed");
-                      refreshMembers();
-                    } catch (e) {
-                      toast.error(errorMessage(e));
-                    }
-                  }}
+                  members={members}
+                  currentUserId={currentUserId}
+                  actorRole={actorRole}
+                  onInvite={canManageRoles ? () => setMemberOpen(true) : undefined}
+                  onRoleChange={
+                    canManageRoles
+                      ? async (uid, r) => {
+                          try {
+                            await api.upsertGroupMember(groupId, uid, r);
+                            toast.success("Role updated");
+                            refreshMembers();
+                          } catch (e) {
+                            toast.error(errorMessage(e));
+                          }
+                        }
+                      : undefined
+                  }
+                  onRemove={
+                    canManageRoles
+                      ? async (uid) => {
+                          try {
+                            await api.removeGroupMember(groupId, uid);
+                            toast.success("Member removed");
+                            refreshMembers();
+                          } catch (e) {
+                            toast.error(errorMessage(e));
+                          }
+                        }
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -477,13 +519,13 @@ function GroupPage() {
                   users={usersQ.data ?? []}
                   value={userId}
                   onChange={setUserId}
-                  excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
+                  excludeIds={members.map((m) => m.userId)}
                 />
               )}
             </div>
             <div className="space-y-2">
               <Label>Role</Label>
-              <RoleSelect value={role} onChange={setRole} />
+              <RoleSelect value={role} allowedRoles={inviteRoles} onChange={setRole} />
             </div>
           </div>
           <DialogFooter>

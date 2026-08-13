@@ -28,10 +28,16 @@ export class ApiError extends Error {
   }
 }
 
+async function getAccessToken(): Promise<string | undefined> {
+  const auth = getFirebaseAuth();
+  await auth.authStateReady();
+  return auth.currentUser?.getIdToken();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    const token = await getFirebaseAuth().currentUser?.getIdToken();
+    const token = await getAccessToken();
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: {
