@@ -8,6 +8,7 @@ import { WorkspacesService } from './workspaces.service';
 import { GroupsService } from '../groups/groups.service';
 import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
+import { InvitationsService } from '../invitations/invitations.service';
 
 describe('WorkspacesController', () => {
   let controller: WorkspacesController;
@@ -20,6 +21,7 @@ describe('WorkspacesController', () => {
         { provide: GroupsService, useValue: {} },
         { provide: MembersService, useValue: {} },
         { provide: ResourcesService, useValue: {} },
+        { provide: InvitationsService, useValue: {} },
       ],
     }).compile();
 

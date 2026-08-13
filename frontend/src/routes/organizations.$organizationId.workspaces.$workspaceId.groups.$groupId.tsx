@@ -16,22 +16,14 @@ import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EntityFormDialog } from "@/components/app/EntityFormDialog";
 import { ResourceCard } from "@/components/app/ResourceCard";
 import { MemberList } from "@/components/app/MemberList";
-import { UserPicker } from "@/components/app/UserPicker";
-import { RoleSelect } from "@/components/app/RoleSelect";
+import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
+import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -81,7 +73,6 @@ function GroupPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
-  const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
   const [resSearch, setResSearch] = useState("");
   const [pending, setPending] = useState<Record<string, "assign" | "unassign" | undefined>>({});
@@ -112,11 +103,6 @@ function GroupPage() {
   const workspaceMembersQ = useQuery({
     queryKey: ["workspace", workspaceId, "members"],
     queryFn: () => api.listWorkspaceMembers(workspaceId),
-  });
-  const usersQ = useQuery({
-    queryKey: ["users"],
-    queryFn: api.listUsers,
-    enabled: memberOpen,
   });
   const groupResourcesQ = useQuery({
     queryKey: ["group", groupId, "resources"],
@@ -180,7 +166,10 @@ function GroupPage() {
     }
   }, [reportStartedAt, reportsQ.data]);
 
-  const refreshMembers = () => qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
+  const refreshMembers = () => {
+    qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
+    qc.invalidateQueries({ queryKey: ["group", groupId, "invitations"] });
+  };
   const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
   const members = membersQ.data ?? [];
   const groupMembership = findCurrentMembership(members, identity);
@@ -195,6 +184,11 @@ function GroupPage() {
     groupMembership?.userId ?? workspaceMembership?.userId ?? organizationMembership?.userId;
   const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
   const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
+  const invitationsQ = useQuery({
+    queryKey: ["group", groupId, "invitations"],
+    queryFn: () => api.listGroupInvitations(groupId),
+    enabled: actorRole === "OWNER" || actorRole === "ADMIN",
+  });
   const refreshResources = () => {
     qc.invalidateQueries({ queryKey: ["group", groupId, "resources"] });
     qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] });
@@ -306,7 +300,7 @@ function GroupPage() {
               {canManageRoles && (
                 <div className="flex justify-end">
                   <Button onClick={() => setMemberOpen(true)}>
-                    <Plus className="mr-1.5 h-4 w-4" /> Add member
+                    <Plus className="mr-1.5 h-4 w-4" /> Invite member
                   </Button>
                 </div>
               )}
@@ -349,6 +343,20 @@ function GroupPage() {
                         }
                       : undefined
                   }
+                />
+              )}
+              {canManageRoles && (
+                <PendingInvitationList
+                  invitations={invitationsQ.data ?? []}
+                  onRevoke={async (invitationId) => {
+                    try {
+                      await api.revokeGroupInvitation(groupId, invitationId);
+                      toast.success("Invitation revoked");
+                      refreshMembers();
+                    } catch (e) {
+                      toast.error(errorMessage(e));
+                    }
+                  }}
                 />
               )}
             </div>
@@ -502,57 +510,18 @@ function GroupPage() {
         }}
       />
 
-      <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add member</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>User</Label>
-              {usersQ.isLoading ? (
-                <LoadingState />
-              ) : usersQ.error ? (
-                <ErrorState message={errorMessage(usersQ.error)} onRetry={() => usersQ.refetch()} />
-              ) : (
-                <UserPicker
-                  users={usersQ.data ?? []}
-                  value={userId}
-                  onChange={setUserId}
-                  excludeIds={members.map((m) => m.userId)}
-                />
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <RoleSelect value={role} allowedRoles={inviteRoles} onChange={setRole} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMemberOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!userId}
-              onClick={async () => {
-                if (!userId) return;
-                try {
-                  await api.upsertGroupMember(groupId, userId, role);
-                  toast.success("Member added");
-                  setMemberOpen(false);
-                  setUserId(undefined);
-                  setRole("VIEWER");
-                  refreshMembers();
-                } catch (e) {
-                  toast.error(errorMessage(e));
-                }
-              }}
-            >
-              Add
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <InviteMemberDialog
+        open={memberOpen}
+        onOpenChange={setMemberOpen}
+        role={role}
+        setRole={setRole}
+        allowedRoles={inviteRoles}
+        onInvite={async (email, invitedRole) => {
+          const invitation = await api.createGroupInvitation(groupId, email, invitedRole);
+          refreshMembers();
+          return invitation;
+        }}
+      />
     </AppShell>
   );
 }

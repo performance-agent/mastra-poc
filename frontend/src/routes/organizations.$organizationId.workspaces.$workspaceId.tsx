@@ -17,19 +17,11 @@ import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EntityFormDialog } from "@/components/app/EntityFormDialog";
 import { ResourceCard } from "@/components/app/ResourceCard";
 import { MemberList } from "@/components/app/MemberList";
-import { UserPicker } from "@/components/app/UserPicker";
-import { RoleSelect } from "@/components/app/RoleSelect";
+import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
+import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -359,7 +351,6 @@ function WorkspaceMembersTab({
   const qc = useQueryClient();
   const { firebaseUser } = useAuth();
   const [open, setOpen] = useState(false);
-  const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
   const membersQ = useQuery({
     queryKey: ["workspace", workspaceId, "members"],
@@ -369,13 +360,20 @@ function WorkspaceMembersTab({
     queryKey: ["organization", organizationId, "members"],
     queryFn: () => api.listOrgMembers(organizationId),
   });
-  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: open });
-  const refresh = () => qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "members"] });
   const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
   const members = membersQ.data ?? [];
   const workspaceMembership = findCurrentMembership(members, identity);
   const organizationMembership = findCurrentMembership(orgMembersQ.data ?? [], identity);
   const actorRole = highestRole([workspaceMembership?.role, organizationMembership?.role]);
+  const invitationsQ = useQuery({
+    queryKey: ["workspace", workspaceId, "invitations"],
+    queryFn: () => api.listWorkspaceInvitations(workspaceId),
+    enabled: actorRole === "OWNER" || actorRole === "ADMIN",
+  });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "members"] });
+    qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "invitations"] });
+  };
   const currentUserId = workspaceMembership?.userId ?? organizationMembership?.userId;
   const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
   const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
@@ -385,7 +383,7 @@ function WorkspaceMembersTab({
       {canManageRoles && (
         <div className="flex justify-end">
           <Button onClick={() => setOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> Add member
+            <Plus className="mr-1.5 h-4 w-4" /> Invite member
           </Button>
         </div>
       )}
@@ -427,57 +425,36 @@ function WorkspaceMembersTab({
           }
         />
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add member</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>User</Label>
-              {usersQ.isLoading ? (
-                <LoadingState />
-              ) : usersQ.error ? (
-                <ErrorState message={errorMessage(usersQ.error)} onRetry={() => usersQ.refetch()} />
-              ) : (
-                <UserPicker
-                  users={usersQ.data ?? []}
-                  value={userId}
-                  onChange={setUserId}
-                  excludeIds={members.map((m) => m.userId)}
-                />
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <RoleSelect value={role} allowedRoles={inviteRoles} onChange={setRole} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!userId}
-              onClick={async () => {
-                if (!userId) return;
-                try {
-                  await api.upsertWorkspaceMember(workspaceId, userId, role);
-                  toast.success("Member added");
-                  setOpen(false);
-                  setUserId(undefined);
-                  setRole("VIEWER");
-                  refresh();
-                } catch (e) {
-                  toast.error(errorMessage(e));
-                }
-              }}
-            >
-              Add
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {canManageRoles && (
+        <PendingInvitationList
+          invitations={invitationsQ.data ?? []}
+          onRevoke={async (invitationId) => {
+            try {
+              await api.revokeWorkspaceInvitation(workspaceId, invitationId);
+              toast.success("Invitation revoked");
+              refresh();
+            } catch (e) {
+              toast.error(errorMessage(e));
+            }
+          }}
+        />
+      )}
+      <InviteMemberDialog
+        open={open}
+        onOpenChange={setOpen}
+        role={role}
+        setRole={setRole}
+        allowedRoles={inviteRoles}
+        onInvite={async (email, invitedRole) => {
+          const invitation = await api.createWorkspaceInvitation(
+            workspaceId,
+            email,
+            invitedRole,
+          );
+          refresh();
+          return invitation;
+        }}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OrganizationsIndexRouteImport } from './routes/organizations.index'
 import { Route as OrganizationsOrganizationIdRouteImport } from './routes/organizations.$organizationId'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IntegrationsGithubSetupRouteImport } from './routes/integrations.github.setup'
 import { Route as OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteImport } from './routes/organizations.$organizationId.workspaces.$workspaceId'
 import { Route as OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRouteImport } from './routes/organizations.$organizationId.workspaces.$workspaceId.groups.$groupId'
@@ -44,6 +45,11 @@ const OrganizationsOrganizationIdRoute =
     path: '/organizations/$organizationId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IntegrationsGithubSetupRoute = IntegrationsGithubSetupRouteImport.update({
   id: '/integrations/github/setup',
   path: '/integrations/github/setup',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/users': typeof UsersRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations/': typeof OrganizationsIndexRoute
   '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/users': typeof UsersRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations': typeof OrganizationsIndexRoute
   '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
@@ -90,6 +98,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/users': typeof UsersRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations/': typeof OrganizationsIndexRoute
   '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
@@ -102,6 +111,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/users'
+    | '/invite/$token'
     | '/organizations/$organizationId'
     | '/organizations/'
     | '/integrations/github/setup'
@@ -112,6 +122,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/users'
+    | '/invite/$token'
     | '/organizations/$organizationId'
     | '/organizations'
     | '/integrations/github/setup'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/users'
+    | '/invite/$token'
     | '/organizations/$organizationId'
     | '/organizations/'
     | '/integrations/github/setup'
@@ -133,6 +145,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   UsersRoute: typeof UsersRoute
+  InviteTokenRoute: typeof InviteTokenRoute
   OrganizationsOrganizationIdRoute: typeof OrganizationsOrganizationIdRouteWithChildren
   OrganizationsIndexRoute: typeof OrganizationsIndexRoute
   IntegrationsGithubSetupRoute: typeof IntegrationsGithubSetupRoute
@@ -173,6 +186,13 @@ declare module '@tanstack/react-router' {
       path: '/organizations/$organizationId'
       fullPath: '/organizations/$organizationId'
       preLoaderRoute: typeof OrganizationsOrganizationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/integrations/github/setup': {
@@ -233,6 +253,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   UsersRoute: UsersRoute,
+  InviteTokenRoute: InviteTokenRoute,
   OrganizationsOrganizationIdRoute:
     OrganizationsOrganizationIdRouteWithChildren,
   OrganizationsIndexRoute: OrganizationsIndexRoute,

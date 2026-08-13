@@ -223,6 +223,34 @@ export class MembersService {
     });
   }
 
+  async getEffectiveRole(
+    userId: string,
+    scope: {
+      organizationId?: string;
+      workspaceId?: string;
+      groupId?: string;
+    },
+  ) {
+    const roles = await this.rolesFor(
+      this.prismaService,
+      userId,
+      this.actorPredicates(scope),
+    );
+    return highestMembershipRole(roles);
+  }
+
+  addMembership(data: {
+    userId: string;
+    role: MembershipRole;
+    organizationId?: string;
+    workspaceId?: string;
+    groupId?: string;
+  }) {
+    return this.prismaService.membership.create({
+      data,
+    });
+  }
+
   private setMemberRole(args: {
     actorUserId: string;
     targetUserId: string;
@@ -298,6 +326,23 @@ export class MembersService {
 
   private organizationActorPredicates(organizationId: string) {
     return [{ organizationId }];
+  }
+
+  private actorPredicates(scope: {
+    organizationId?: string;
+    workspaceId?: string;
+    groupId?: string;
+  }): Prisma.MembershipWhereInput[] {
+    if (scope.organizationId) {
+      return this.organizationActorPredicates(scope.organizationId);
+    }
+    if (scope.workspaceId) {
+      return this.workspaceActorPredicates(scope.workspaceId);
+    }
+    if (scope.groupId) {
+      return this.groupActorPredicates(scope.groupId);
+    }
+    return [];
   }
 
   private workspaceActorPredicates(workspaceId: string) {

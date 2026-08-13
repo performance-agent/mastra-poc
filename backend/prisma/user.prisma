@@ -4,7 +4,8 @@ model User {
   name        String
   email       String       @unique
   photoUrl    String?
-  memberships Membership[]
+  memberships     Membership[]
+  sentInvitations Invitation[] @relation("InvitedBy")
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

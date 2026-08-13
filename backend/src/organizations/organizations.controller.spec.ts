@@ -18,6 +18,7 @@ import { MembersService } from '../members/members.service';
 import { ResourcesService } from '../resources/resources.service';
 import { PluginInstallationsService } from '../plugin-installations/plugin-installations.service';
 import { DataTypesService } from '../data-types/data-types.service';
+import { InvitationsService } from '../invitations/invitations.service';
 
 describe('OrganizationsController', () => {
   let controller: OrganizationsController;
@@ -32,6 +33,7 @@ describe('OrganizationsController', () => {
         { provide: ResourcesService, useValue: {} },
         { provide: PluginInstallationsService, useValue: {} },
         { provide: DataTypesService, useValue: {} },
+        { provide: InvitationsService, useValue: {} },
       ],
     }).compile();
 

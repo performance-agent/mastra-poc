@@ -18,6 +18,8 @@ import { ResourcesService } from '../resources/resources.service';
 import { RequireMembership } from '../access-control/require-membership.decorator';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
+import { InvitationsService } from '../invitations/invitations.service';
+import { CreateInvitationDto } from '../invitations/dto/create-invitation.dto';
 
 @Controller('workspaces')
 export class WorkspacesController {
@@ -26,6 +28,7 @@ export class WorkspacesController {
     private readonly groupsService: GroupsService,
     private readonly membersService: MembersService,
     private readonly resourcesService: ResourcesService,
+    private readonly invitationsService: InvitationsService,
   ) {}
 
   @RequireMembership({
@@ -153,6 +156,47 @@ export class WorkspacesController {
     @Param('userId') userId: string,
   ) {
     return this.membersService.removeWorkspaceMember(workspaceId, userId);
+  }
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/invitations')
+  createWorkspaceInvitation(
+    @CurrentUser() user: User,
+    @Param('id') workspaceId: string,
+    @Body() createInvitationDto: CreateInvitationDto,
+  ) {
+    return this.invitationsService.createWorkspaceInvitation(
+      user.id,
+      workspaceId,
+      createInvitationDto,
+    );
+  }
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Get(':id/invitations')
+  listWorkspaceInvitations(@Param('id') workspaceId: string) {
+    return this.invitationsService.listWorkspaceInvitations(workspaceId);
+  }
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Delete(':id/invitations/:invitationId')
+  revokeWorkspaceInvitation(
+    @Param('id') workspaceId: string,
+    @Param('invitationId') invitationId: string,
+  ) {
+    return this.invitationsService.revoke(invitationId, { workspaceId });
   }
 
   @RequireMembership({

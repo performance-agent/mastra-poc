@@ -47,6 +47,31 @@ export interface Membership {
   user: Pick<User, "id" | "name" | "email" | "photoUrl" | "firebaseUid">;
 }
 
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Role;
+  status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+  expiresAt: string;
+  createdAt?: string;
+  inviteUrl: string;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  groupId?: string | null;
+}
+
+export interface InvitationPreview {
+  email: string;
+  role: Role;
+  status: string;
+  expiresAt: string;
+  scope: {
+    type: "organization" | "workspace" | "group";
+    id: string;
+    name: string;
+  } | null;
+}
+
 export interface Resource {
   id: string;
   name: string;

@@ -28,7 +28,7 @@ export function MemberList({
       <EmptyState
         icon={<Users className="h-4 w-4" />}
         title="No members yet"
-        description="Add a user to give them access at this level."
+        description="Invite someone by email to give them access at this level."
         actionLabel={onInvite ? "Add member" : undefined}
         onAction={onInvite}
       />

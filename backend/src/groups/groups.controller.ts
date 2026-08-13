@@ -18,6 +18,8 @@ import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { ReportsService } from '../reports/reports.service';
 import { CreateReportDto } from '../reports/dto/create-report.dto';
+import { InvitationsService } from '../invitations/invitations.service';
+import { CreateInvitationDto } from '../invitations/dto/create-invitation.dto';
 
 @Controller('groups')
 export class GroupsController {
@@ -26,6 +28,7 @@ export class GroupsController {
     private readonly membersService: MembersService,
     private readonly resourcesService: ResourcesService,
     private readonly reportsService: ReportsService,
+    private readonly invitationsService: InvitationsService,
   ) {}
 
   @RequireMembership({
@@ -125,6 +128,47 @@ export class GroupsController {
     @Param('userId') userId: string,
   ) {
     return this.membersService.removeGroupMember(groupId, userId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/invitations')
+  createGroupInvitation(
+    @CurrentUser() user: User,
+    @Param('id') groupId: string,
+    @Body() createInvitationDto: CreateInvitationDto,
+  ) {
+    return this.invitationsService.createGroupInvitation(
+      user.id,
+      groupId,
+      createInvitationDto,
+    );
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Get(':id/invitations')
+  listGroupInvitations(@Param('id') groupId: string) {
+    return this.invitationsService.listGroupInvitations(groupId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Delete(':id/invitations/:invitationId')
+  revokeGroupInvitation(
+    @Param('id') groupId: string,
+    @Param('invitationId') invitationId: string,
+  ) {
+    return this.invitationsService.revoke(invitationId, { groupId });
   }
 
   @RequireMembership({

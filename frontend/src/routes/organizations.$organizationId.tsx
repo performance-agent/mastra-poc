@@ -30,8 +30,8 @@ import { DataTypeFormDialog, type DataTypeFormValues } from "@/components/app/Da
 import { FormModal } from "@/components/app/FormModal";
 import { ResourceCard } from "@/components/app/ResourceCard";
 import { MemberList } from "@/components/app/MemberList";
-import { UserPicker } from "@/components/app/UserPicker";
-import { RoleSelect } from "@/components/app/RoleSelect";
+import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
+import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,13 +41,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -422,31 +415,36 @@ function MembersTab({ organizationId }: { organizationId: string }) {
   const qc = useQueryClient();
   const { firebaseUser } = useAuth();
   const [addOpen, setAddOpen] = useState(false);
-  const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
   const membersQ = useQuery({
     queryKey: ["organization", organizationId, "members"],
     queryFn: () => api.listOrgMembers(organizationId),
   });
-  const usersQ = useQuery({ queryKey: ["users"], queryFn: api.listUsers, enabled: addOpen });
   const members = membersQ.data ?? [];
   const currentMembership = findCurrentMembership(members, {
     uid: firebaseUser?.uid,
     email: firebaseUser?.email,
   });
   const actorRole = currentMembership?.role;
+  const invitationsQ = useQuery({
+    queryKey: ["organization", organizationId, "invitations"],
+    queryFn: () => api.listOrgInvitations(organizationId),
+    enabled: actorRole === "OWNER" || actorRole === "ADMIN",
+  });
   const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
   const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
 
-  const refresh = () =>
+  const refresh = () => {
     qc.invalidateQueries({ queryKey: ["organization", organizationId, "members"] });
+    qc.invalidateQueries({ queryKey: ["organization", organizationId, "invitations"] });
+  };
 
   return (
     <div className="space-y-4">
       {canManageRoles && (
         <div className="flex justify-end">
           <Button onClick={() => setAddOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> Add member
+            <Plus className="mr-1.5 h-4 w-4" /> Invite member
           </Button>
         </div>
       )}
@@ -488,109 +486,34 @@ function MembersTab({ organizationId }: { organizationId: string }) {
           }
         />
       )}
+      {canManageRoles && (
+        <PendingInvitationList
+          invitations={invitationsQ.data ?? []}
+          onRevoke={async (invitationId) => {
+            try {
+              await api.revokeOrgInvitation(organizationId, invitationId);
+              toast.success("Invitation revoked");
+              refresh();
+            } catch (e) {
+              toast.error(errorMessage(e));
+            }
+          }}
+        />
+      )}
 
-      <AddMemberDialog
+      <InviteMemberDialog
         open={addOpen}
-        onOpenChange={(v) => {
-          setAddOpen(v);
-          if (!v) {
-            setUserId(undefined);
-            setRole("VIEWER");
-          }
-        }}
-        users={usersQ.data ?? []}
-        usersLoading={usersQ.isLoading}
-        usersError={usersQ.error}
-        retryUsers={() => usersQ.refetch()}
-        excludeIds={members.map((m) => m.userId)}
-        userId={userId}
-        setUserId={setUserId}
+        onOpenChange={setAddOpen}
         role={role}
         setRole={setRole}
         allowedRoles={inviteRoles}
-        onConfirm={async () => {
-          if (!userId) return;
-          try {
-            await api.upsertOrgMember(organizationId, userId, role);
-            toast.success("Member added");
-            setAddOpen(false);
-            setUserId(undefined);
-            setRole("VIEWER");
-            refresh();
-          } catch (e) {
-            toast.error(errorMessage(e));
-          }
+        onInvite={async (email, invitedRole) => {
+          const invitation = await api.createOrgInvitation(organizationId, email, invitedRole);
+          refresh();
+          return invitation;
         }}
       />
     </div>
-  );
-}
-
-function AddMemberDialog({
-  open,
-  onOpenChange,
-  users,
-  usersLoading,
-  usersError,
-  retryUsers,
-  excludeIds,
-  userId,
-  setUserId,
-  role,
-  setRole,
-  allowedRoles,
-  onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  users: { id: string; name: string; email: string; photoUrl?: string | null }[];
-  usersLoading: boolean;
-  usersError: unknown;
-  retryUsers: () => void;
-  excludeIds: string[];
-  userId?: string;
-  setUserId: (id?: string) => void;
-  role: Role;
-  setRole: (r: Role) => void;
-  allowedRoles?: Role[];
-  onConfirm: () => Promise<void>;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add member</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>User</Label>
-            {usersLoading ? (
-              <LoadingState />
-            ) : usersError ? (
-              <ErrorState message={errorMessage(usersError)} onRetry={retryUsers} />
-            ) : (
-              <UserPicker
-                users={users.filter((u) => !excludeIds.includes(u.id))}
-                value={userId}
-                onChange={setUserId}
-              />
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label>Role</Label>
-            <RoleSelect value={role} allowedRoles={allowedRoles} onChange={setRole} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={!userId}>
-            Add
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

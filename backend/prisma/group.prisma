@@ -12,6 +12,7 @@ model Group {
   memberships         Membership[]
   resourceAssignments PluginInstallationResourceAssignment[]
   performanceReports  PerformanceReport[]
+  invitations         Invitation[]
 
   @@index([workspaceId])
 }

@@ -1,0 +1,35 @@
+model Invitation {
+  id     String           @id @default(cuid())
+  email  String
+  token  String           @unique
+  role   MembershipRole
+  status InvitationStatus @default(PENDING)
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspaceId    String?
+  workspace      Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  groupId        String?
+  group          Group?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  invitedByUserId String
+  invitedBy       User   @relation("InvitedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  expiresAt  DateTime  @db.Timestamptz(3)
+  acceptedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([email, status])
+  @@index([organizationId])
+  @@index([workspaceId])
+  @@index([groupId])
+  @@index([invitedByUserId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}

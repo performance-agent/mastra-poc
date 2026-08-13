@@ -48,6 +48,17 @@ export class UsersService {
     });
   }
 
+  findOneByEmail(email: string) {
+    return this.prismaService.user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: 'insensitive',
+        },
+      },
+    });
+  }
+
   update(id: string, updateUserDto: UpdateUserDto) {
     return this.prismaService.user.update({
       where: {

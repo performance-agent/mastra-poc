@@ -24,6 +24,8 @@ import { type User } from '../auth/types/user.type';
 import { RequireMembership } from '../access-control/require-membership.decorator';
 import { DataTypesService } from '../data-types/data-types.service';
 import { CreateDataTypeDto } from '../data-types/dto/create-data-type.dto';
+import { InvitationsService } from '../invitations/invitations.service';
+import { CreateInvitationDto } from '../invitations/dto/create-invitation.dto';
 
 @Controller('organizations')
 export class OrganizationsController {
@@ -34,6 +36,7 @@ export class OrganizationsController {
     private readonly resourcesService: ResourcesService,
     private readonly pluginInstallationsService: PluginInstallationsService,
     private readonly dataTypesService: DataTypesService,
+    private readonly invitationsService: InvitationsService,
   ) {}
 
   @Post()
@@ -151,6 +154,47 @@ export class OrganizationsController {
     @Param('userId') userId: string,
   ) {
     return this.membersService.removeOrganizationMember(organizationId, userId);
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/invitations')
+  createOrganizationInvitation(
+    @CurrentUser() user: User,
+    @Param('id') organizationId: string,
+    @Body() createInvitationDto: CreateInvitationDto,
+  ) {
+    return this.invitationsService.createOrganizationInvitation(
+      user.id,
+      organizationId,
+      createInvitationDto,
+    );
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Get(':id/invitations')
+  listOrganizationInvitations(@Param('id') organizationId: string) {
+    return this.invitationsService.listOrganizationInvitations(organizationId);
+  }
+
+  @RequireMembership({
+    resource: 'organization',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Delete(':id/invitations/:invitationId')
+  revokeOrganizationInvitation(
+    @Param('id') organizationId: string,
+    @Param('invitationId') invitationId: string,
+  ) {
+    return this.invitationsService.revoke(invitationId, { organizationId });
   }
 
   @RequireMembership({
