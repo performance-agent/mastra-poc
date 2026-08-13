@@ -1,0 +1,52 @@
+model McpOAuthAuthorization {
+  id            String   @id @default(cuid())
+  clientId      String
+  clientName    String
+  redirectUri   String
+  state         String
+  codeChallenge String
+  scope         String
+  resource      String
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash      String?  @unique
+  expiresAt     DateTime @db.Timestamptz(3)
+  approvedAt    DateTime? @db.Timestamptz(3)
+  consumedAt    DateTime? @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+model McpOAuthClient {
+  id                      String   @id
+  clientName              String
+  redirectUris            Json
+  grantTypes              Json
+  responseTypes           Json
+  tokenEndpointAuthMethod String   @default("none")
+  applicationType         String?
+  createdAt               DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model McpOAuthToken {
+  id        String            @id @default(cuid())
+  tokenHash String            @unique
+  kind      McpOAuthTokenKind
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String
+  scope     String
+  resource  String
+  expiresAt DateTime          @db.Timestamptz(3)
+  revokedAt DateTime?         @db.Timestamptz(3)
+  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, kind, expiresAt])
+}
+
+enum McpOAuthTokenKind {
+  ACCESS
+  REFRESH
+}

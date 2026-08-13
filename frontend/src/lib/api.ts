@@ -88,6 +88,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<unknown>("/"),
+  getMcpAuthorization: (authorizationId: string) =>
+    request<{
+      clientName: string;
+      redirectHost: string;
+      loopbackRedirect: boolean;
+      scopes: string[];
+    }>(`/oauth/authorizations/${authorizationId}`),
+  approveMcpAuthorization: (authorizationId: string) =>
+    request<{ redirectUrl: string }>(`/oauth/authorizations/${authorizationId}/approve`, {
+      method: "POST",
+    }),
 
   // Organizations
   listOrganizations: () => request<Organization[]>("/organizations"),
