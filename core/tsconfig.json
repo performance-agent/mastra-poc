@@ -19,8 +19,9 @@
       "@pa/core": ["packages/core/src/index.ts"],
       "@pa/sdk": ["packages/sdk/src/index.ts"],
       "@pa/plugin-github": ["packages/plugin-github/src/index.ts"],
-      "@pa/plugin-jira": ["packages/plugin-jira/src/index.ts"]
+      "@pa/plugin-jira": ["packages/plugin-jira/src/index.ts"],
+      "@pa/plugin-salesforce": ["packages/plugin-salesforce/src/index.ts"]
     }
   },
-  "include": ["packages/core/src/index.ts", "packages/sdk/src/index.ts", "packages/plugin-github/src/index.ts", "packages/plugin-jira/src/index.ts", "tests/*.test.ts"]
+  "include": ["packages/core/src/index.ts", "packages/sdk/src/index.ts", "packages/plugin-github/src/index.ts", "packages/plugin-jira/src/index.ts", "packages/plugin-salesforce/src/index.ts", "tests/*.test.ts"]
 }

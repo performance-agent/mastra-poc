@@ -10,6 +10,7 @@ The plugin layer does not define canonical platform `DataType` records or mappin
 - `@pa/sdk`: typed JSON Schema DSL and runtime validation helpers.
 - `@pa/plugin-github`: GitHub App implementation using Octokit.
 - `@pa/plugin-jira`: Jira Cloud implementation using an Atlassian API token.
+- `@pa/plugin-salesforce`: read-only Salesforce implementation using OAuth client credentials.
 
 ## Plugin shape
 

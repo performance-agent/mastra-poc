@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/core", "packages/sdk", "packages/plugin-github", "packages/plugin-jira"],
+  "workspaces": ["packages/core", "packages/sdk", "packages/plugin-github", "packages/plugin-jira", "packages/plugin-salesforce"],
   "scripts": {
-    "build": "npm run build -w @pa/core && npm run build -w @pa/sdk && npm run build -w @pa/plugin-github && npm run build -w @pa/plugin-jira",
-    "clean": "npm run clean -w @pa/core && npm run clean -w @pa/sdk && npm run clean -w @pa/plugin-github && npm run clean -w @pa/plugin-jira",
+    "build": "npm run build -w @pa/core && npm run build -w @pa/sdk && npm run build -w @pa/plugin-github && npm run build -w @pa/plugin-jira && npm run build -w @pa/plugin-salesforce",
+    "clean": "npm run clean -w @pa/core && npm run clean -w @pa/sdk && npm run clean -w @pa/plugin-github && npm run clean -w @pa/plugin-jira && npm run clean -w @pa/plugin-salesforce",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
