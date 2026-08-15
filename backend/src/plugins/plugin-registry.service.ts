@@ -29,6 +29,7 @@ export class PluginRegistryService {
     return Promise.all([
       this.getGitHub().then((plugin) => this.toCatalogEntry(plugin)),
       this.getJira().then((plugin) => this.toCatalogEntry(plugin)),
+      this.getSalesforce().then((plugin) => this.toCatalogEntry(plugin)),
     ]);
   }
 
@@ -44,6 +45,10 @@ export class PluginRegistryService {
     return this.get('jira');
   }
 
+  getSalesforce() {
+    return this.get('salesforce');
+  }
+
   get(pluginId: string): Promise<PluginDefinition> {
     let plugin = this.plugins.get(pluginId);
     if (!plugin) {
@@ -54,6 +59,10 @@ export class PluginRegistryService {
       } else if (pluginId === 'jira') {
         plugin = import('@pa/plugin-jira').then(({ createJiraPlugin }) =>
           createJiraPlugin(),
+        );
+      } else if (pluginId === 'salesforce') {
+        plugin = import('@pa/plugin-salesforce').then(
+          ({ createSalesforcePlugin }) => createSalesforcePlugin(),
         );
       } else {
         throw new NotFoundException(`Plugin not found: ${pluginId}`);

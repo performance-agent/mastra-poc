@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { PluginInstallationsService } from './plugin-installations.service';
 
 describe('PluginInstallationsService', () => {
@@ -182,18 +183,41 @@ describe('PluginInstallationsService', () => {
     },
   );
 
-  it('rejects an installation owned by another organization', async () => {
-    prisma.pluginInstallation.findUnique.mockResolvedValue({
-      id: 'one',
-      organizationId: 'other-org',
-      status: 'ACTIVE',
+  it('allows the same GitHub installation in different organizations', async () => {
+    prisma.pluginInstallation.findUnique.mockResolvedValue(null);
+    prisma.pluginInstallation.create
+      .mockResolvedValueOnce({ id: 'one' })
+      .mockResolvedValueOnce({ id: 'two' });
+    const sync = jest.spyOn(service, 'sync').mockResolvedValue({} as never);
+
+    await service.setupGitHub('org-one', {
+      installationId: '101',
+      setupAction: 'install',
     });
-    await expect(
-      service.setupGitHub('org', {
-        installationId: '101',
-        setupAction: 'update',
-      }),
-    ).rejects.toBeInstanceOf(ConflictException);
+    await service.setupGitHub('org-two', {
+      installationId: '101',
+      setupAction: 'install',
+    });
+
+    expect(prisma.pluginInstallation.findUnique).toHaveBeenNthCalledWith(1, {
+      where: {
+        organizationId_pluginId_externalId: {
+          organizationId: 'org-one',
+          pluginId: 'github',
+          externalId: '101',
+        },
+      },
+    });
+    expect(prisma.pluginInstallation.findUnique).toHaveBeenNthCalledWith(2, {
+      where: {
+        organizationId_pluginId_externalId: {
+          organizationId: 'org-two',
+          pluginId: 'github',
+          externalId: '101',
+        },
+      },
+    });
+    expect(sync).toHaveBeenCalledTimes(2);
   });
 
   it.each(['DISABLED', 'REVOKED'])(
@@ -212,6 +236,100 @@ describe('PluginInstallationsService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     },
   );
+
+  it('creates configured Salesforce with encrypted secrets and stable identity', async () => {
+    runtime.getPlugin.mockResolvedValue(salesforcePlugin());
+    prisma.pluginInstallation.findUnique.mockResolvedValue(null);
+    prisma.pluginInstallation.create
+      .mockResolvedValueOnce({ id: 'salesforce-one' })
+      .mockResolvedValueOnce({ id: 'salesforce-two' });
+    jest.spyOn(service, 'sync').mockResolvedValue({} as never);
+
+    await service.setupPlugin('org', 'salesforce', {
+      name: 'Salesforce',
+      configuration: {
+        loginUrl: 'https://ACME.my.salesforce.com/',
+        clientId: ' client-id ',
+        clientSecret: 'first-secret',
+        apiVersion: '67.0',
+      },
+    });
+    await service.setupPlugin('other-org', 'salesforce', {
+      name: 'Salesforce 2',
+      configuration: {
+        loginUrl: 'https://acme.my.salesforce.com',
+        clientId: 'client-id',
+        clientSecret: 'rotated-secret',
+      },
+    });
+
+    const first = prisma.pluginInstallation.create.mock.calls[0][0].data;
+    const second = prisma.pluginInstallation.create.mock.calls[1][0].data;
+    const expectedExternalId = createHash('sha256')
+      .update(
+        JSON.stringify([
+          ['clientId', 'client-id'],
+          ['loginUrl', 'https://acme.my.salesforce.com'],
+        ]),
+      )
+      .digest('hex');
+    expect(first.externalId).toBe(expectedExternalId);
+    expect(second.externalId).toBe(expectedExternalId);
+    expect(first.configuration.clientSecret).toMatch(/^enc:v1:/);
+    expect(JSON.stringify(first)).not.toContain('first-secret');
+    expect(first.organizationId).toBe('org');
+    expect(second.organizationId).toBe('other-org');
+  });
+
+  it('rejects duplicate configured plugins within one organization', async () => {
+    runtime.getPlugin.mockResolvedValue(salesforcePlugin());
+    prisma.pluginInstallation.findUnique.mockResolvedValue({ id: 'existing' });
+
+    await expect(
+      service.setupPlugin('org', 'salesforce', {
+        name: 'Salesforce',
+        configuration: salesforceConfiguration(),
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.pluginInstallation.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects undeclared configured plugin fields', async () => {
+    runtime.getPlugin.mockResolvedValue(salesforcePlugin());
+
+    await expect(
+      service.setupPlugin('org', 'salesforce', {
+        name: 'Salesforce',
+        configuration: { ...salesforceConfiguration(), unknown: 'value' },
+      }),
+    ).rejects.toThrow('not configurable');
+  });
+
+  it('rejects missing and non-string configured plugin fields', async () => {
+    runtime.getPlugin.mockResolvedValue(salesforcePlugin());
+
+    await expect(
+      service.setupPlugin('org', 'salesforce', {
+        name: 'Salesforce',
+        configuration: {
+          clientId: 'client-id',
+          clientSecret: 'secret',
+        },
+      }),
+    ).rejects.toThrow(
+      'Required plugin configuration field is missing: loginUrl',
+    );
+    await expect(
+      service.setupPlugin('org', 'salesforce', {
+        name: 'Salesforce',
+        configuration: {
+          ...salesforceConfiguration(),
+          clientId: 42,
+        },
+      }),
+    ).rejects.toThrow('Plugin configuration field must be a string: clientId');
+  });
+
   it('upserts discovered resources and deactivates missing ones', async () => {
     prisma.pluginInstallation.findUnique.mockResolvedValue({
       id: 'one',
@@ -239,3 +357,26 @@ describe('PluginInstallationsService', () => {
     );
   });
 });
+
+function salesforcePlugin() {
+  return {
+    id: 'salesforce',
+    version: '1.0.0',
+    secrets: {
+      definitions: [
+        { key: 'loginUrl', sensitive: false, required: true },
+        { key: 'clientId', sensitive: false, required: true },
+        { key: 'clientSecret', sensitive: true, required: true },
+        { key: 'apiVersion', sensitive: false, required: false },
+      ],
+    },
+  };
+}
+
+function salesforceConfiguration() {
+  return {
+    loginUrl: 'https://acme.my.salesforce.com',
+    clientId: 'client-id',
+    clientSecret: 'secret',
+  };
+}

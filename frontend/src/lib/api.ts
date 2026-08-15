@@ -171,6 +171,15 @@ export const api = {
         body: JSON.stringify(body),
       },
     ),
+  setupPlugin: (
+    organizationId: string,
+    pluginId: string,
+    body: { name: string; configuration: Record<string, string> },
+  ) =>
+    request<PluginInstallation>(
+      `/organizations/${organizationId}/plugin-installations/${pluginId}`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 
   // Workspaces → groups
   listWorkspaceGroups: (id: string) => request<Group[]>(`/workspaces/${id}/groups`),

@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePluginInstallationDto } from './dto/update-plugin-installation.dto';
 import { SetupJiraDto } from './dto/setup-jira.dto';
 import { createHash } from 'node:crypto';
+import { SetupPluginDto } from './dto/setup-plugin.dto';
 import {
   decryptConfiguration,
   encryptConfiguration,
@@ -102,10 +103,13 @@ export class PluginInstallationsService {
     if (!/^\d+$/.test(dto.installationId))
       throw new BadRequestException('Invalid GitHub installationId');
     const plugin = await this.runtime.getPlugin('github');
-    const existing = await this.findGitHubInstallation(dto.installationId);
+    const existing = await this.findGitHubInstallation(
+      organizationId,
+      dto.installationId,
+    );
 
     if (existing) {
-      return this.syncSetupInstallation(existing, organizationId);
+      return this.syncSetupInstallation(existing);
     }
 
     try {
@@ -125,10 +129,11 @@ export class PluginInstallationsService {
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         const racedInstallation = await this.findGitHubInstallation(
+          organizationId,
           dto.installationId,
         );
         if (racedInstallation) {
-          return this.syncSetupInstallation(racedInstallation, organizationId);
+          return this.syncSetupInstallation(racedInstallation);
         }
       }
       throw error;
@@ -143,14 +148,15 @@ export class PluginInstallationsService {
       .update(`${siteUrl.toLowerCase()}\n${email}`)
       .digest('hex');
     const existing = await this.prisma.pluginInstallation.findUnique({
-      where: { pluginId_externalId: { pluginId: 'jira', externalId } },
+      where: {
+        organizationId_pluginId_externalId: {
+          organizationId,
+          pluginId: 'jira',
+          externalId,
+        },
+      },
     });
     if (existing) {
-      if (existing.organizationId !== organizationId) {
-        throw new ConflictException(
-          'This Jira connection belongs to another organization',
-        );
-      }
       throw new ConflictException('This Jira connection already exists');
     }
     const configuration = await this.prepareConfiguration('jira', {
@@ -171,10 +177,53 @@ export class PluginInstallationsService {
     return this.sync(installation.id);
   }
 
-  private findGitHubInstallation(externalId: string) {
+  async setupPlugin(
+    organizationId: string,
+    pluginId: string,
+    dto: SetupPluginDto,
+  ) {
+    const plugin = await this.runtime.getPlugin(pluginId);
+    const values = asRecord(dto.configuration);
+    const configuration = await this.prepareConfiguration(pluginId, values);
+    const externalId = configuredPluginExternalId(plugin, values);
+    const uniqueWhere = {
+      organizationId_pluginId_externalId: {
+        organizationId,
+        pluginId,
+        externalId,
+      },
+    };
+    const existing = await this.prisma.pluginInstallation.findUnique({
+      where: uniqueWhere,
+    });
+    if (existing) {
+      throw new ConflictException('This plugin connection already exists');
+    }
+    try {
+      const installation = await this.prisma.pluginInstallation.create({
+        data: {
+          pluginId: plugin.id,
+          pluginVersion: plugin.version,
+          name: dto.name.trim(),
+          externalId,
+          configuration: configuration as never,
+          organizationId,
+        },
+      });
+      return await this.sync(installation.id);
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('This plugin connection already exists');
+      }
+      throw error;
+    }
+  }
+
+  private findGitHubInstallation(organizationId: string, externalId: string) {
     return this.prisma.pluginInstallation.findUnique({
       where: {
-        pluginId_externalId: {
+        organizationId_pluginId_externalId: {
+          organizationId,
           pluginId: 'github',
           externalId,
         },
@@ -182,19 +231,7 @@ export class PluginInstallationsService {
     });
   }
 
-  private syncSetupInstallation(
-    installation: {
-      id: string;
-      organizationId: string;
-      status: string;
-    },
-    organizationId: string,
-  ) {
-    if (installation.organizationId !== organizationId) {
-      throw new ConflictException(
-        'This GitHub installation belongs to another organization',
-      );
-    }
+  private syncSetupInstallation(installation: { id: string; status: string }) {
     if (['DISABLED', 'REVOKED'].includes(installation.status)) {
       throw new BadRequestException(
         `Cannot update a ${installation.status.toLowerCase()} GitHub installation`,
@@ -270,7 +307,8 @@ export class PluginInstallationsService {
       ]),
     );
     for (const [key, value] of Object.entries(values)) {
-      if (!definitions.has(key) || isHostProvidedPluginField(pluginId, key)) {
+      const definition = definitions.get(key);
+      if (!definition || isHostProvidedPluginField(pluginId, key)) {
         throw new BadRequestException(
           `Plugin configuration field is not configurable: ${key}`,
         );
@@ -280,12 +318,16 @@ export class PluginInstallationsService {
           `Plugin configuration field must be a string: ${key}`,
         );
       }
+      if (!definition.required && !value.trim()) delete values[key];
     }
     for (const definition of plugin.secrets.definitions) {
+      const value = values[definition.key];
       if (
         definition.required &&
         !isHostProvidedPluginField(pluginId, definition.key) &&
-        !Object.prototype.hasOwnProperty.call(values, definition.key)
+        (!Object.prototype.hasOwnProperty.call(values, definition.key) ||
+          typeof value !== 'string' ||
+          !value.trim())
       ) {
         throw new BadRequestException(
           `Required plugin configuration field is missing: ${definition.key}`,
@@ -346,4 +388,48 @@ function mergeConfiguration(
         : value;
   }
   return output;
+}
+
+function configuredPluginExternalId(
+  plugin: Awaited<ReturnType<PluginRuntimeService['getPlugin']>>,
+  configuration: Readonly<Record<string, unknown>>,
+): string {
+  const identity = plugin.secrets.definitions
+    .filter(
+      (definition) =>
+        definition.required &&
+        !definition.sensitive &&
+        isPluginFieldConfigurable(plugin.id, definition.key),
+    )
+    .map((definition) => {
+      const value = configuration[definition.key];
+      if (typeof value !== 'string') {
+        throw new BadRequestException(
+          `Plugin identity field must be a string: ${definition.key}`,
+        );
+      }
+      return [definition.key, normalizeIdentityValue(definition.key, value)];
+    })
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (!identity.length) {
+    throw new BadRequestException(
+      'Plugin does not declare configurable identity fields',
+    );
+  }
+  return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+}
+
+function normalizeIdentityValue(key: string, value: string): string {
+  const normalized = value.trim();
+  if (key.toLowerCase().includes('email')) return normalized.toLowerCase();
+  if (key.toLowerCase().includes('url')) {
+    try {
+      const url = new URL(normalized);
+      const path = url.pathname.replace(/\/+$/, '');
+      return `${url.origin}${path}${url.search}${url.hash}`;
+    } catch {
+      return normalized.replace(/\/+$/, '');
+    }
+  }
+  return normalized;
 }

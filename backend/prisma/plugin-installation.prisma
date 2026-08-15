@@ -16,7 +16,7 @@ model PluginInstallation {
   organizationId              String
   pluginInstallationResources PluginInstallationResource[]
 
-  @@unique([pluginId, externalId])
+  @@unique([organizationId, pluginId, externalId])
   @@index([status])
   @@index([organizationId])
 }

@@ -42,7 +42,37 @@ describe('PluginRegistryService', () => {
         secrets: [],
       },
     } as never);
-    const [github] = await service.findAll();
+    jest.spyOn(service, 'getSalesforce').mockResolvedValue({
+      id: 'salesforce',
+      name: 'Salesforce',
+      version: '1.0.0',
+      manifest: {
+        id: 'salesforce',
+        name: 'Salesforce',
+        version: '1.0.0',
+        resourceTypes: [
+          { key: 'salesforce.opportunity', name: 'Salesforce opportunity' },
+          { key: 'salesforce.account', name: 'Salesforce account' },
+          { key: 'salesforce.user', name: 'Salesforce user' },
+        ],
+        dataTypes: [],
+        secrets: [
+          {
+            key: 'loginUrl',
+            label: 'Salesforce My Domain URL',
+            sensitive: false,
+            required: true,
+          },
+          {
+            key: 'clientSecret',
+            label: 'Salesforce client secret',
+            sensitive: true,
+            required: true,
+          },
+        ],
+      },
+    } as never);
+    const [github, , salesforce] = await service.findAll();
     expect(github.id).toBe('github');
     expect(github.configurationFields).toEqual(
       expect.arrayContaining([
@@ -60,6 +90,26 @@ describe('PluginRegistryService', () => {
     );
     expect(JSON.stringify(github)).not.toContain(
       process.env.GITHUB_PRIVATE_KEY ?? 'never-present',
+    );
+    expect(salesforce.resourceTypes.map((type) => type.key)).toEqual([
+      'salesforce.opportunity',
+      'salesforce.account',
+      'salesforce.user',
+    ]);
+    expect(salesforce.configurationFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'loginUrl',
+          source: 'installation',
+          configurable: true,
+        }),
+        expect.objectContaining({
+          key: 'clientSecret',
+          sensitive: true,
+          source: 'installation',
+          configurable: true,
+        }),
+      ]),
     );
   });
 });
