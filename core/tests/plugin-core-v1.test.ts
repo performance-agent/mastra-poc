@@ -47,6 +47,11 @@ function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory
             id: "20", repository: name, number: 2, title: "Fix", state: "merged",
             labels: [], author: "octocat", comments: 2, reviewComments: 4,
             additions: 10, deletions: 2, changedFiles: 3,
+            body: "## Context\nRaw PR description",
+            files: [{ filename: "src/fix.ts", status: "modified", additions: 10, deletions: 2, changes: 12, patch: "@@ raw patch @@" }],
+            issueComments: [{ author: "reviewer", body: "General **comment**", createdAt: "2026-01-02T00:00:00.000Z" }],
+            reviewCommentsData: [{ author: "reviewer", body: "Inline `comment`", path: "src/fix.ts", line: 12, createdAt: "2026-01-02T01:00:00.000Z" }],
+            reviews: [{ author: "reviewer", state: "APPROVED", body: "Looks good", submittedAt: "2026-01-02T02:00:00.000Z" }],
             createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-03T00:00:00.000Z",
           }];
         },
@@ -121,6 +126,29 @@ test("all GitHub providers return schema-valid native data", async () => {
   assert.equal(issues[0]?.comments, 3);
   assert.equal(pullRequests[0]?.reviewComments, 4);
   assert.equal(pullRequests[0]?.changedFiles, 3);
+  assert.equal(pullRequests[0]?.body, "## Context\nRaw PR description");
+  assert.equal(pullRequests[0]?.files[0]?.patch, "@@ raw patch @@");
+  assert.equal(pullRequests[0]?.issueComments[0]?.body, "General **comment**");
+  assert.equal(pullRequests[0]?.reviewCommentsData[0]?.line, 12);
+  assert.equal(pullRequests[0]?.reviews[0]?.state, "APPROVED");
+});
+
+test("GitHub pull request JSON Schema exposes raw context collections", () => {
+  const pullRequestSchema = createGitHubPlugin({ clientFactory: fakeFactory() }).manifest.dataTypes[1]?.schema as {
+    required?: string[];
+    properties?: Record<string, { type?: string; items?: { properties?: Record<string, unknown> } }>;
+  };
+  assert.deepEqual(
+    ["files", "issueComments", "reviewCommentsData", "reviews"].map((key) => pullRequestSchema.required?.includes(key)),
+    [true, true, true, true],
+  );
+  assert.equal(pullRequestSchema.properties?.body?.type, "string");
+  assert.deepEqual(Object.keys(pullRequestSchema.properties?.files?.items?.properties ?? {}), [
+    "filename", "status", "additions", "deletions", "changes", "patch",
+  ]);
+  assert.deepEqual(Object.keys(pullRequestSchema.properties?.reviews?.items?.properties ?? {}), [
+    "author", "state", "body", "submittedAt",
+  ]);
 });
 
 test("provider output is rejected when it does not match its schema", async () => {

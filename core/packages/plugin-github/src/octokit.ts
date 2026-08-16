@@ -14,9 +14,13 @@ type OctokitClient = InstanceType<typeof Octokit>;
 
 export const octokitGitHubClientFactory: GitHubClientFactory = {
   create(secrets) {
-    return new OctokitGitHubClient(createOctokit(secrets));
+    return createOctokitGitHubClient(createOctokit(secrets));
   },
 };
+
+export function createOctokitGitHubClient(octokit: OctokitClient): GitHubClient {
+  return new OctokitGitHubClient(octokit);
+}
 
 function createOctokit(secrets: GitHubSecrets): OctokitClient {
   return new Octokit({
@@ -67,7 +71,15 @@ class OctokitGitHubClient implements GitHubClient {
   async listPullRequests(repository: string): Promise<readonly GitHubPullRequest[]> {
     const { owner, repo } = repositoryName(repository);
     const pulls = await this.octokit.paginate(this.octokit.rest.pulls.list, { owner, repo, state: "all", per_page: 100 });
-    return pulls.map((pull) => {
+    return Promise.all(pulls.map(async (listedPull) => {
+      const pullNumber = listedPull.number;
+      const [{ data: pull }, files, issueComments, reviewCommentsData, reviews] = await Promise.all([
+        this.octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
+        this.octokit.paginate(this.octokit.rest.pulls.listFiles, { owner, repo, pull_number: pullNumber, per_page: 100 }),
+        this.octokit.paginate(this.octokit.rest.issues.listComments, { owner, repo, issue_number: pullNumber, per_page: 100 }),
+        this.octokit.paginate(this.octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 100 }),
+        this.octokit.paginate(this.octokit.rest.pulls.listReviews, { owner, repo, pull_number: pullNumber, per_page: 100 }),
+      ]);
       const mergedAt = isoDate(pull.merged_at);
       const closedAt = isoDate(pull.closed_at);
       return {
@@ -75,16 +87,33 @@ class OctokitGitHubClient implements GitHubClient {
         state: pull.draft ? "draft" as const : mergedAt ? "merged" as const : pull.state === "closed" ? "closed" as const : "open" as const,
         labels: pull.labels.map((label) => label.name).filter((label): label is string => Boolean(label)),
         createdAt: new Date(pull.created_at).toISOString(), updatedAt: new Date(pull.updated_at).toISOString(),
-        ...(optionalNumber(pull, "comments") === undefined ? {} : { comments: optionalNumber(pull, "comments") }),
-        ...(optionalNumber(pull, "review_comments") === undefined ? {} : { reviewComments: optionalNumber(pull, "review_comments") }),
+        comments: pull.comments, reviewComments: pull.review_comments,
+        additions: pull.additions, deletions: pull.deletions, changedFiles: pull.changed_files,
+        files: files.map((file) => ({
+          filename: file.filename, status: file.status, additions: file.additions,
+          deletions: file.deletions, changes: file.changes,
+          ...(file.patch === undefined ? {} : { patch: file.patch }),
+        })),
+        issueComments: issueComments.map((comment) => ({
+          body: requiredString(comment.body, "issue comment body"), createdAt: new Date(comment.created_at).toISOString(),
+          ...(comment.user?.login ? { author: comment.user.login } : {}),
+        })),
+        reviewCommentsData: reviewCommentsData.map((comment) => ({
+          body: comment.body, path: comment.path, createdAt: new Date(comment.created_at).toISOString(),
+          ...(comment.user?.login ? { author: comment.user.login } : {}),
+          ...(comment.line == null ? {} : { line: comment.line }),
+        })),
+        reviews: reviews.map((review) => ({
+          state: review.state, body: review.body,
+          ...(review.user?.login ? { author: review.user.login } : {}),
+          ...(isoDate(review.submitted_at) ? { submittedAt: isoDate(review.submitted_at) } : {}),
+        })),
         ...(pull.user?.login ? { author: pull.user.login } : {}), ...(pull.html_url ? { url: pull.html_url } : {}),
         ...(pull.base.ref ? { baseBranch: pull.base.ref } : {}), ...(pull.head.ref ? { headBranch: pull.head.ref } : {}),
         ...(closedAt ? { closedAt } : {}), ...(mergedAt ? { mergedAt } : {}),
-        ...(optionalNumber(pull, "additions") === undefined ? {} : { additions: optionalNumber(pull, "additions") }),
-        ...(optionalNumber(pull, "deletions") === undefined ? {} : { deletions: optionalNumber(pull, "deletions") }),
-        ...(optionalNumber(pull, "changed_files") === undefined ? {} : { changedFiles: optionalNumber(pull, "changed_files") }),
+        ...(pull.body === null ? {} : { body: pull.body }),
       };
-    });
+    }));
   }
 
   async listCommits(repository: string): Promise<readonly GitHubCommit[]> {
@@ -116,7 +145,7 @@ function isoDate(value: string | null | undefined): string | undefined {
   return value ? new Date(value).toISOString() : undefined;
 }
 
-function optionalNumber(value: object, key: string): number | undefined {
-  const candidate = (value as Record<string, unknown>)[key];
-  return typeof candidate === "number" ? candidate : undefined;
+function requiredString(value: string | null | undefined, field: string): string {
+  if (typeof value !== "string") throw new Error(`GitHub response omitted required ${field}`);
+  return value;
 }
