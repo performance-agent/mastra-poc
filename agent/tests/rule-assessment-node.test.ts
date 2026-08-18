@@ -300,6 +300,13 @@ test("LangChain assessor sends rule, all evidence, failures, and limitations as 
   assert.match(serialized, /Repository history may be truncated/);
   assert.match(serialized, /untrusted data/);
   assert.match(serialized, /Rationale rubric/);
+  assert.match(serialized, /Support every material claim with inline evidence/);
+  assert.match(serialized, /commit SHA plus/);
+  assert.match(serialized, /Do not cite only internal execution labels/);
+  assert.match(serialized, /Decision resolution/);
+  assert.match(serialized, /Member rationale style/);
+  assert.match(serialized, /two or three short sentences/);
+  assert.match(serialized, /absence of evidence alone is not contrary evidence/);
   assert.match(serialized, /Do not compare or rank members/);
 });
 
