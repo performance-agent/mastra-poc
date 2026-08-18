@@ -41,7 +41,9 @@ const evidenceSchema = z.object({
   subject: z
     .string()
     .nullable()
-    .describe('displayName exacto para PEOPLE; null para las demás secciones.'),
+    .describe(
+      'displayName canónico de la identidad reconciliada para PEOPLE, coincidente exactamente con people[].displayName; null para las demás secciones.',
+    ),
   type: z.string().describe('Tipo nativo del registro.'),
   resource: z.string().describe('Recurso de origen.'),
   reference: z
@@ -174,7 +176,9 @@ export const groupReportContentSchema = z.object({
     z.object({
       displayName: z
         .string()
-        .describe('Identidad exactamente como aparece en la evidencia.'),
+        .describe(
+          'Nombre canónico, completo y legible elegido tras reconciliar los alias respaldados por la evidencia entre proveedores.',
+        ),
       assessment: sectionAssessmentSchema,
       contributionSummary: z
         .string()
