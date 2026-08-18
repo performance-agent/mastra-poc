@@ -125,10 +125,52 @@ export interface EvaluationRequest {
 
 export interface EvaluationReport {
   status: string;
-  assessments: Record<string, unknown>;
+  assessments: Record<string, RuleAssessment>;
   limitations: string[];
   execution: { total: number; successful: number; failed: number } | null;
-  diagnostics: Record<string, unknown[]>;
+  diagnostics: Record<string, Array<Record<string, unknown>>>;
+}
+
+export type AssessmentVerdict =
+  | "supported"
+  | "partially_supported"
+  | "not_supported"
+  | "not_evaluable";
+
+export interface AssessmentEvidence {
+  source: string;
+  observation: string;
+  relevance: string;
+}
+
+export interface AssessmentCriterion {
+  criterion: string;
+  finding: string;
+  evidenceReferences: string[];
+  status: "met" | "partially_met" | "not_met" | "unknown";
+}
+
+export interface MemberAssessment {
+  memberIdentifier: string;
+  memberName: string;
+  summary: string;
+  criteria: AssessmentCriterion[];
+  evidence: AssessmentEvidence[];
+  rationale: string;
+  verdict: AssessmentVerdict;
+  confidence: "high" | "medium" | "low";
+  limitations: string[];
+}
+
+export interface RuleAssessment {
+  ruleName: string;
+  overview: string;
+  evidence: AssessmentEvidence[];
+  memberAssessments: MemberAssessment[];
+  criteria: AssessmentCriterion[];
+  rationale: string;
+  verdict: AssessmentVerdict;
+  limitations: string[];
 }
 
 export interface PerformanceReport<TData = unknown> {

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check, Users, FileText, RefreshCw, FlaskConical } from "lucide-react";
+import { Plus, Boxes, Check, Users, FileText, RefreshCw, Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -21,6 +21,7 @@ import { RoleSelect } from "@/components/app/RoleSelect";
 import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
+import { EvaluationWorkbench } from "@/components/app/EvaluationWorkbench";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -31,8 +32,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 
 import { api, errorMessage } from "@/lib/api";
 import { toFormInitial } from "@/lib/form-helpers";
@@ -236,7 +235,7 @@ function GroupPage() {
             onChange={setTab}
             items={[
               { value: "overview", label: "Overview" },
-              { value: "evaluation", label: "Test evaluation" },
+              { value: "evaluation", label: "Agent evaluation" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
@@ -247,13 +246,13 @@ function GroupPage() {
             <div className="space-y-6">
               <Card className="flex flex-col gap-3 rounded-xl border-primary/20 bg-primary/5 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="font-semibold">Probar endpoint de evaluación</h2>
+                  <h2 className="font-semibold">Evaluate this team with the agent</h2>
                   <p className="text-sm text-muted-foreground">
-                    Envía workspace, autenticación Firebase y una regla precargada al backend.
+                    Turn workspace evidence into an explainable, rule-by-rule report.
                   </p>
                 </div>
                 <Button onClick={() => setTab("evaluation")}>
-                  <FlaskConical className="mr-1.5 h-4 w-4" /> Abrir prueba
+                  <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Start evaluation
                 </Button>
               </Card>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -284,7 +283,9 @@ function GroupPage() {
             </div>
           )}
 
-          {tab === "evaluation" && <EvaluationTester workspaceId={workspaceId} groupName={group.name} />}
+          {tab === "evaluation" && (
+            <EvaluationWorkbench workspaceId={workspaceId} groupName={group.name} />
+          )}
 
           {tab === "members" && (
             <div className="space-y-4">
@@ -527,81 +528,6 @@ function GroupPage() {
         </DialogContent>
       </Dialog>
     </AppShell>
-  );
-}
-
-function EvaluationTester({ workspaceId, groupName }: { workspaceId: string; groupName: string }) {
-  const [name, setName] = useState(`${groupName} delivery performance`);
-  const [description, setDescription] = useState(
-    `Evaluate delivery activity, collaboration, and traceability for ${groupName}.`,
-  );
-  const [valuation, setValuation] = useState(8);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [view, setView] = useState<"report" | "full">("report");
-  const [result, setResult] = useState<unknown>();
-  const [isRunning, setIsRunning] = useState(false);
-
-  const runEvaluation = async () => {
-    setIsRunning(true);
-    setResult(undefined);
-    try {
-      const period = from && to ? { from, to } : undefined;
-      const response = await api.evaluateWorkspace(
-        workspaceId,
-        { rules: [{ name: name.trim(), description: description.trim() || undefined, valuation }], period },
-        view,
-      );
-      setResult(response);
-      toast.success("Evaluation completed");
-    } catch (error) {
-      toast.error(errorMessage(error));
-      setResult({ error: errorMessage(error) });
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="space-y-4 rounded-xl p-5 shadow-card">
-        <div>
-          <h2 className="font-semibold">Evaluation endpoint test</h2>
-          <p className="text-xs text-muted-foreground">
-            Workspace and Firebase authentication are supplied automatically. You must be a workspace owner or admin.
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="evaluation-name">Rule name</Label>
-          <Input id="evaluation-name" value={name} onChange={(event) => setName(event.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="evaluation-description">Description</Label>
-          <Textarea id="evaluation-description" value={description} onChange={(event) => setDescription(event.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="evaluation-valuation">Valuation (1–10)</Label>
-          <Input id="evaluation-valuation" type="number" min={1} max={10} value={valuation} onChange={(event) => setValuation(Number(event.target.value))} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2"><Label htmlFor="evaluation-from">From (optional)</Label><Input id="evaluation-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></div>
-          <div className="space-y-2"><Label htmlFor="evaluation-to">To (optional)</Label><Input id="evaluation-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} /></div>
-        </div>
-        <div className="flex gap-2">
-          <Button type="button" variant={view === "report" ? "default" : "outline"} onClick={() => setView("report")}>Report</Button>
-          <Button type="button" variant={view === "full" ? "default" : "outline"} onClick={() => setView("full")}>Full</Button>
-        </div>
-        <Button className="w-full" disabled={isRunning || !name.trim() || valuation < 1 || valuation > 10 || Boolean(from) !== Boolean(to)} onClick={runEvaluation}>
-          <FlaskConical className="mr-1.5 h-4 w-4" /> {isRunning ? "Running evaluation…" : "Run evaluation"}
-        </Button>
-      </Card>
-      <Card className="min-w-0 rounded-xl p-5 shadow-card">
-        <h2 className="mb-3 font-semibold">Endpoint response</h2>
-        {isRunning ? <LoadingState /> : result ? (
-          <pre className="max-h-[640px] overflow-auto rounded-lg bg-muted p-4 text-xs">{JSON.stringify(result, null, 2)}</pre>
-        ) : <p className="text-sm text-muted-foreground">Run the evaluation to inspect its JSON response here.</p>}
-      </Card>
-    </div>
   );
 }
 
