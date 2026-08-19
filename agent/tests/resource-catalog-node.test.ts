@@ -23,7 +23,10 @@ const githubPlugin: CatalogPluginDefinition = {
       },
       {
         key: "github.pullRequest",
-        schema: { type: "object", properties: { number: { type: "number" } } },
+        schema: { type: "object", properties: { number: { type: "number" }, changedFiles: { type: "integer" } } },
+        description: "Pull requests with changed-file totals.",
+        freshness: "realtime",
+        limitations: ["Pull requests are not commit activity."],
       },
       {
         key: "github.commit",
@@ -84,6 +87,11 @@ test("transforms an active resource into a resource descriptor", () => {
     "github.pullRequest",
     "github.commit",
   ]);
+  const pullRequestOperation = result.resources[0]?.availableOperations.find((operation) => operation.name === "github.pullRequest");
+  assert.equal(pullRequestOperation?.description, "Pull requests with changed-file totals.");
+  assert.equal(pullRequestOperation?.freshness, "realtime");
+  assert.deepEqual(pullRequestOperation?.limitations, ["Pull requests are not commit activity."]);
+  assert.deepEqual(result.resources[0]?.limitations, ["Pull requests are not commit activity."]);
   assert.equal(result.warnings.length, 0);
 });
 

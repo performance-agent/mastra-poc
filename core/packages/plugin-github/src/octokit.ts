@@ -5,7 +5,10 @@ import type {
   GitHubClientFactory,
   GitHubCommit,
   GitHubIssue,
+  GitHubParticipation,
   GitHubPullRequest,
+  GitHubPullRequestCommit,
+  GitHubPullRequestFile,
   GitHubRepository,
   GitHubSecrets,
 } from "./types.js";
@@ -67,7 +70,10 @@ class OctokitGitHubClient implements GitHubClient {
   async listPullRequests(repository: string): Promise<readonly GitHubPullRequest[]> {
     const { owner, repo } = repositoryName(repository);
     const pulls = await this.octokit.paginate(this.octokit.rest.pulls.list, { owner, repo, state: "all", per_page: 100 });
-    return pulls.map((pull) => {
+    const detailedPulls = await Promise.all(pulls.map(async (pull) => (
+      await this.octokit.rest.pulls.get({ owner, repo, pull_number: pull.number })
+    ).data));
+    return detailedPulls.map((pull) => {
       const mergedAt = isoDate(pull.merged_at);
       const closedAt = isoDate(pull.closed_at);
       return {
@@ -80,9 +86,9 @@ class OctokitGitHubClient implements GitHubClient {
         ...(pull.user?.login ? { author: pull.user.login } : {}), ...(pull.html_url ? { url: pull.html_url } : {}),
         ...(pull.base.ref ? { baseBranch: pull.base.ref } : {}), ...(pull.head.ref ? { headBranch: pull.head.ref } : {}),
         ...(closedAt ? { closedAt } : {}), ...(mergedAt ? { mergedAt } : {}),
-        ...(optionalNumber(pull, "additions") === undefined ? {} : { additions: optionalNumber(pull, "additions") }),
-        ...(optionalNumber(pull, "deletions") === undefined ? {} : { deletions: optionalNumber(pull, "deletions") }),
-        ...(optionalNumber(pull, "changed_files") === undefined ? {} : { changedFiles: optionalNumber(pull, "changed_files") }),
+        additions: pull.additions,
+        deletions: pull.deletions,
+        changedFiles: pull.changed_files,
       };
     });
   }
@@ -98,6 +104,59 @@ class OctokitGitHubClient implements GitHubClient {
       ...(commit.html_url ? { url: commit.html_url } : {}),
     }));
   }
+
+  async listPullRequestFiles(repository: string, pullNumber: number): Promise<readonly GitHubPullRequestFile[]> {
+    const { owner, repo } = repositoryName(repository);
+    const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
+      owner, repo, pull_number: pullNumber, per_page: 100,
+    });
+    return files.map((file) => ({
+      repository, pullRequestNumber: pullNumber, filename: file.filename,
+      status: file.status, additions: file.additions, deletions: file.deletions, changes: file.changes,
+      ...(file.sha ? { sha: file.sha } : {}),
+      ...(file.blob_url ? { blobUrl: file.blob_url } : {}),
+      ...(file.raw_url ? { rawUrl: file.raw_url } : {}),
+      ...(file.contents_url ? { contentsUrl: file.contents_url } : {}),
+      ...(file.previous_filename ? { previousFilename: file.previous_filename } : {}),
+      ...(file.patch ? { patch: file.patch } : {}),
+    }));
+  }
+
+  async listPullRequestCommits(repository: string, pullNumber: number): Promise<readonly GitHubPullRequestCommit[]> {
+    const { owner, repo } = repositoryName(repository);
+    const commits = await this.octokit.paginate(this.octokit.rest.pulls.listCommits, {
+      owner, repo, pull_number: pullNumber, per_page: 100,
+    });
+    return commits.map((commit) => ({
+      sha: commit.sha, repository, pullRequestNumber: pullNumber, message: commit.commit.message,
+      ...(commit.author?.login ? { author: commit.author.login } : commit.commit.author?.name ? { author: commit.commit.author.name } : {}),
+      ...(isoDate(commit.commit.author?.date) ? { authoredAt: isoDate(commit.commit.author?.date) } : {}),
+      ...(isoDate(commit.commit.committer?.date) ? { committedAt: isoDate(commit.commit.committer?.date) } : {}),
+      ...(commit.html_url ? { url: commit.html_url } : {}),
+    }));
+  }
+
+  async getParticipation(repository: string): Promise<GitHubParticipation> {
+    const { owner, repo } = repositoryName(repository);
+    const { data } = await this.octokit.rest.repos.getParticipationStats({ owner, repo });
+    const coverageTo = utcMidnight(new Date());
+    const coverageFrom = new Date(coverageTo.getTime() - data.all.length * 7 * 24 * 60 * 60 * 1000);
+    return {
+      repository,
+      metric: "commits",
+      bucketUnit: "week",
+      timezone: "UTC",
+      order: "oldest_to_newest",
+      coverageFrom: coverageFrom.toISOString(),
+      coverageTo: coverageTo.toISOString(),
+      all: data.all,
+      owner: data.owner,
+    };
+  }
+}
+
+function utcMidnight(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
 }
 
 function repositoryName(value: string): { owner: string; repo: string } {

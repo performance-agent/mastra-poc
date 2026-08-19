@@ -38,7 +38,7 @@ export const githubPullRequestSchema = schema.object({
   state: schema.enum(["open", "closed", "merged", "draft"]), author: schema.optional(schema.string()), url: schema.optional(schema.string({ format: "uri" })),
   labels: schema.array(schema.string()), baseBranch: schema.optional(schema.string()), headBranch: schema.optional(schema.string()),
   comments: schema.optional(schema.integer({ minimum: 0 })), reviewComments: schema.optional(schema.integer({ minimum: 0 })),
-  additions: schema.optional(schema.integer({ minimum: 0 })), deletions: schema.optional(schema.integer({ minimum: 0 })), changedFiles: schema.optional(schema.integer({ minimum: 0 })),
+  additions: schema.integer({ minimum: 0 }), deletions: schema.integer({ minimum: 0 }), changedFiles: schema.integer({ minimum: 0 }),
   createdAt: schema.string({ format: "date-time" }), updatedAt: schema.string({ format: "date-time" }),
   closedAt: schema.optional(schema.string({ format: "date-time" })), mergedAt: schema.optional(schema.string({ format: "date-time" })),
 });
@@ -49,9 +49,54 @@ export const githubCommitSchema = schema.object({
   url: schema.optional(schema.string({ format: "uri" })),
 });
 
+export const githubPullRequestFileSchema = schema.object({
+  sha: schema.optional(schema.string()), repository: schema.string(), pullRequestNumber: schema.integer({ minimum: 1 }),
+  filename: schema.string(), status: schema.string(), additions: schema.integer({ minimum: 0 }),
+  deletions: schema.integer({ minimum: 0 }), changes: schema.integer({ minimum: 0 }),
+  blobUrl: schema.optional(schema.string({ format: "uri" })), rawUrl: schema.optional(schema.string({ format: "uri" })),
+  contentsUrl: schema.optional(schema.string({ format: "uri" })), previousFilename: schema.optional(schema.string()),
+  patch: schema.optional(schema.string()),
+});
+
+export const githubPullRequestCommitSchema = schema.object({
+  sha: schema.string(), repository: schema.string(), pullRequestNumber: schema.integer({ minimum: 1 }),
+  message: schema.string(), author: schema.optional(schema.string()),
+  authoredAt: schema.optional(schema.string({ format: "date-time" })),
+  committedAt: schema.optional(schema.string({ format: "date-time" })),
+  url: schema.optional(schema.string({ format: "uri" })),
+});
+
+export const githubParticipationSchema = schema.object({
+  repository: schema.string(),
+  metric: schema.enum(["commits"]),
+  bucketUnit: schema.enum(["week"]),
+  timezone: schema.enum(["UTC"]),
+  order: schema.enum(["oldest_to_newest"]),
+  coverageFrom: schema.string({ format: "date-time" }),
+  coverageTo: schema.string({ format: "date-time" }),
+  all: schema.array(schema.integer({ minimum: 0 })),
+  owner: schema.array(schema.integer({ minimum: 0 })),
+});
+
 export const githubIssue = dataType({ key: "github.issue", schema: githubIssueSchema });
-export const githubPullRequest = dataType({ key: "github.pullRequest", schema: githubPullRequestSchema });
+export const githubPullRequest = dataType({
+  key: "github.pullRequest",
+  schema: githubPullRequestSchema,
+  description: "Pull requests with lifecycle timestamps and guaranteed additions, deletions, and changedFiles totals.",
+  freshness: "realtime",
+  limitations: ["Pull request activity is not equivalent to commit activity."],
+});
 export const githubCommit = dataType({ key: "github.commit", schema: githubCommitSchema });
+export const githubPullRequestFile = dataType({ key: "github.pullRequestFile", schema: githubPullRequestFileSchema });
+export const githubPullRequestCommit = dataType({ key: "github.pullRequestCommit", schema: githubPullRequestCommitSchema });
+export const githubParticipation = dataType({
+  key: "github.participation",
+  schema: githubParticipationSchema,
+  description: "Weekly commit counts for all contributors and the repository owner; arrays run from oldest to newest in UTC.",
+  freshness: "realtime",
+  timeCoverage: "Rolling last 52 weeks, including the latest seven-day UTC bucket.",
+  limitations: ["Counts commits, not pull requests.", "GitHub repository statistics exclude merge commits."],
+});
 
 const githubRepository = resourceType({
   key: "github.repository",
@@ -89,6 +134,29 @@ export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
         async provide(context, resource) {
           const client = await clients.create(await readSecrets(context));
           return client.listCommits(resource.externalId);
+        },
+      }),
+      providesData(githubPullRequestFile, {
+        secrets: githubSecrets,
+        async provide(context, resource) {
+          const client = await clients.create(await readSecrets(context));
+          const pulls = await client.listPullRequests(resource.externalId);
+          return (await Promise.all(pulls.map((pull) => client.listPullRequestFiles(resource.externalId, pull.number)))).flat();
+        },
+      }),
+      providesData(githubPullRequestCommit, {
+        secrets: githubSecrets,
+        async provide(context, resource) {
+          const client = await clients.create(await readSecrets(context));
+          const pulls = await client.listPullRequests(resource.externalId);
+          return (await Promise.all(pulls.map((pull) => client.listPullRequestCommits(resource.externalId, pull.number)))).flat();
+        },
+      }),
+      providesData(githubParticipation, {
+        secrets: githubSecrets,
+        async provide(context, resource) {
+          const client = await clients.create(await readSecrets(context));
+          return [await client.getParticipation(resource.externalId)];
         },
       }),
     ] as const,

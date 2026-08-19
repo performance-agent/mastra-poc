@@ -32,7 +32,7 @@ RuleInput → ResourceCatalog → RuleUnderstanding → ResourceSelection → Ev
 
 Las reglas entendidas siguen hasta el plan aunque otras necesiten aclaración o fallen; esos diagnósticos quedan disponibles y el resultado general se marca como `partial`.
 
-`RuleAssessment` ejecuta una evaluación estructurada por regla sobre la evidencia obtenida. El resultado queda indexado por el identificador estable de la regla e incluye resumen, filas de evidencia, justificación concisa, veredicto de soporte y limitaciones.
+`RuleAssessment` ejecuta una evaluación estructurada por regla sobre la evidencia obtenida. El resultado queda indexado por el identificador estable de la regla e incluye resumen, criterios evaluados con referencias de evidencia, evaluaciones por miembro, justificación basada en una rúbrica explícita, veredicto de soporte y limitaciones.
 
 ## Modelo de ejecución del reporte
 

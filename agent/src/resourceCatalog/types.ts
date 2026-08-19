@@ -8,6 +8,9 @@ export type ResourceOperation = {
   name: string;
   description: string;
   outputSchema?: JsonSchema;
+  freshness?: ResourceFreshness;
+  timeCoverage?: string;
+  limitations?: string[];
 };
 
 export type ResourceDescriptor = {
@@ -58,6 +61,10 @@ export type CatalogResourceInput = {
 export type CatalogDataType = {
   key: string;
   schema: JsonSchema;
+  description?: string;
+  freshness?: ResourceFreshness;
+  timeCoverage?: string;
+  limitations?: readonly string[];
 };
 
 export type CatalogPluginDefinition = {

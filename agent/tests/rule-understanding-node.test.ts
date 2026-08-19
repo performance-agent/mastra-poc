@@ -255,6 +255,9 @@ test("LangChain interpreter sends the complete rule and catalog as data", async 
   assert.match(serializedMessages, /Attribution can be delayed/);
   assert.match(serializedMessages, /Example warning/);
   assert.match(serializedMessages, /properties/);
+  assert.match(serializedMessages, /Prefer a reasonable, conventional interpretation/);
+  assert.match(serializedMessages, /Do not call a rule ambiguous because it is broad/);
+  assert.match(serializedMessages, /Resource-catalog limitations must not prevent understanding a rule/);
   assert.deepEqual(result, {
     ambiguityDetected: false,
     interpretedGoal: "Measure campaign efficiency.",
