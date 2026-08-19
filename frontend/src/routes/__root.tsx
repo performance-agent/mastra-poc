@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import isotipo from "@/assets/brand/isotipo.svg";
 
 import { useEffect } from "react";
 
@@ -127,10 +128,10 @@ function AuthGate() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center">
-          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
-            PA
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">Loading session...</p>
+          <img src={isotipo} alt="" className="mx-auto h-10 w-10" />
+          <span className="sr-only" role="status">
+            Loading session...
+          </span>
         </div>
       </div>
     );

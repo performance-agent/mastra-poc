@@ -4,6 +4,8 @@ import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
+import isotipo from "@/assets/brand/isotipo.svg";
+import logotipo from "@/assets/brand/logotipo.svg";
 
 function initials(name?: string | null, email?: string | null) {
   const source = name || email || "User";
@@ -21,11 +23,13 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Link to="/organizations" className="group flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-semibold">
-            PA
-          </div>
-          <span className="text-sm font-semibold tracking-tight">Performance Agent</span>
+        <Link
+          to="/organizations"
+          aria-label="Performance Agent"
+          className="group flex items-center gap-2"
+        >
+          <img src={isotipo} alt="" className="h-7 w-7 shrink-0" />
+          <img src={logotipo} alt="" className="hidden h-7 w-auto sm:block" />
         </Link>
         <div className="flex items-center gap-2">
           <HealthIndicator />

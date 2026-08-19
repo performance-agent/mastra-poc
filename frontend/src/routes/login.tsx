@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
+import isotipo from "@/assets/brand/isotipo.svg";
+import logotipo from "@/assets/brand/logotipo.svg";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -36,9 +38,7 @@ function LoginPage() {
   const { redirect } = Route.useSearch();
   const isInviteRedirect = Boolean(redirect?.startsWith("/invite/"));
   const { firebaseUser, signIn, signUp, signInWithGoogle } = useAuth();
-  const [mode, setMode] = useState<"sign-in" | "sign-up">(
-    isInviteRedirect ? "sign-up" : "sign-in",
-  );
+  const [mode, setMode] = useState<"sign-in" | "sign-up">(isInviteRedirect ? "sign-up" : "sign-in");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -148,15 +148,12 @@ function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
-            PA
+      <div className="w-full max-w-md space-y-6 gap-4 flex flex-col">
+        <div className="text-center m-0">
+          <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
+            <img src={isotipo} alt="" className="h-16 w-16 shrink-0" />
+            <img src={logotipo} alt="Performance Agent" className="h-auto w-48 max-w-full" />
           </div>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Performance Agent</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Access your organizations, workspaces, groups, and resources.
-          </p>
         </div>
 
         <Card className="rounded-lg shadow-card">
