@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import isotipo from "@/assets/brand/isotipo.svg";
 
 import { useEffect } from "react";
 
@@ -101,6 +102,9 @@ function AuthGate() {
   const location = useLocation();
   const navigate = useNavigate();
   const isLogin = location.pathname === "/login";
+  const oauthRequest = isLogin
+    ? new URLSearchParams(window.location.search).get("oauth_request")
+    : null;
 
   useEffect(() => {
     if (isLoading) return;
@@ -110,6 +114,7 @@ function AuthGate() {
       return;
     }
     if (firebaseUser && isLogin) {
+      if (oauthRequest) return;
       const redirect = new URLSearchParams(window.location.search).get("redirect");
       if (redirect?.startsWith("/") && !redirect.startsWith("//")) {
         window.location.replace(redirect);
@@ -117,22 +122,22 @@ function AuthGate() {
       }
       navigate({ to: "/organizations", replace: true });
     }
-  }, [firebaseUser, isLoading, isLogin, navigate]);
+  }, [firebaseUser, isLoading, isLogin, navigate, oauthRequest]);
 
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center">
-          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
-            PA
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">Loading session...</p>
+          <img src={isotipo} alt="" className="mx-auto h-10 w-10" />
+          <span className="sr-only" role="status">
+            Loading session...
+          </span>
         </div>
       </div>
     );
   }
 
-  if ((!firebaseUser && !isLogin) || (firebaseUser && isLogin)) return null;
+  if ((!firebaseUser && !isLogin) || (firebaseUser && isLogin && !oauthRequest)) return null;
 
   return <Outlet />;
 }

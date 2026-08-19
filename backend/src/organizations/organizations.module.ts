@@ -7,6 +7,7 @@ import { ResourcesModule } from '../resources/resources.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { DataTypesModule } from '../data-types/data-types.module';
 import { PluginInstallationsModule } from '../plugin-installations/plugin-installations.module';
+import { InvitationsModule } from '../invitations/invitations.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PluginInstallationsModule } from '../plugin-installations/plugin-instal
     PluginInstallationsModule,
     AccessControlModule,
     DataTypesModule,
+    InvitationsModule,
   ],
   controllers: [OrganizationsController],
   providers: [OrganizationsService],

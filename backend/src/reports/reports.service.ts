@@ -5,24 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { mastra } from '../mastra';
-import { groupGithubActivityReportSchema } from '../mastra/schemas/group-github-activity-report.schema';
-import { groupGithubHistoryReportSchema } from '../mastra/schemas/group-github-history-report.schema';
+import { GROUP_REPORT_GENERATION_PROMPT } from '../mastra/group-report-instructions';
 import {
-  PluginRuntimeService,
-  type ReportMode,
-} from '../plugins/runtime/plugin-runtime.service';
+  groupReportContentSchema,
+  groupReportSchema,
+} from '../mastra/schemas/group-report.schema';
+import { resolveModelFromEnvironment } from '../mastra/model-configuration';
+import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
 
 @Injectable()
 export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
-  private readonly activityAgent = mastra.getAgent(
-    'groupGithubActivityReportAgent',
-  );
-  private readonly historyAgent = mastra.getAgent(
-    'groupGithubHistoryReportAgent',
-  );
+  private readonly groupReportAgent = mastra.getAgent('groupReportAgent');
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,14 +26,12 @@ export class ReportsService {
   ) {}
 
   createGroupReport(groupId: string, dto: CreateReportDto) {
-    switch (dto.type) {
-      case 'GITHUB_ACTIVITY':
-        return this.createSoftwareReport(groupId, dto.type, 'activity');
-      case 'GITHUB_HISTORY':
-        return this.createSoftwareReport(groupId, dto.type, 'history');
-      default:
-        throw new BadRequestException('Unsupported report type');
+    if (dto.type !== 'GROUP_REPORT') {
+      throw new BadRequestException(
+        'Only GROUP_REPORT can be generated. Legacy report types are read-only.',
+      );
     }
+    return this.createSoftwareReport(groupId);
   }
 
   createGroupReportAsync(groupId: string, dto: CreateReportDto) {
@@ -49,29 +43,76 @@ export class ReportsService {
         stack,
       );
     });
-    return { status: 'CREATING', type: dto.type, groupId };
+    return { status: 'CREATING', type: 'GROUP_REPORT' as const, groupId };
   }
 
-  private async createSoftwareReport(
-    groupId: string,
-    type: 'GITHUB_ACTIVITY' | 'GITHUB_HISTORY',
-    mode: ReportMode,
-  ) {
-    const group = await this.prisma.group.findUnique({
-      where: { id: groupId },
-      include: {
-        resourceAssignments: {
-          include: {
-            resource: { include: { pluginInstallation: true } },
+  private async createSoftwareReport(groupId: string) {
+    const prepared = await this.prepareGroupReport(groupId);
+    const { group, providerData, reportInput } = prepared;
+
+    const configuredModel = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
+    if (typeof configuredModel !== 'string') {
+      throw new Error('GROUP_REPORT_MODEL must resolve to a model identifier');
+    }
+    this.logger.log(
+      `Group report AI call ${JSON.stringify({
+        organization: {
+          id: group.workspace.organization.id,
+          name: group.workspace.organization.name,
+        },
+        workspace: {
+          id: group.workspace.id,
+          name: group.workspace.name,
+        },
+        group: { id: group.id, name: group.name },
+        model: configuredModel,
+        resources: providerData.resources.map((resource) => ({
+          id: resource.id,
+          name: resource.name,
+          plugin: resource.pluginId,
+          type: resource.type,
+          datasets: resource.datasets.map((dataset) => ({
+            type: dataset.dataType,
+            available: dataset.count,
+            analyzed: dataset.records.length,
+            truncated: dataset.truncated,
+          })),
+        })),
+        limitations: providerData.limitations.length,
+      })}`,
+    );
+
+    const prompt = `${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(reportInput)}`;
+    const generatedReport = (
+      await this.groupReportAgent.generate(
+        [{ role: 'user', content: prompt }],
+        { structuredOutput: { schema: groupReportContentSchema } },
+      )
+    ).object;
+
+    return this.persistGroupReport(groupId, generatedReport, prepared.coverage);
+  }
+
+  async prepareGroupReport(groupId: string) {
+    const [group, assignedResources] = await Promise.all([
+      this.prisma.group.findUnique({
+        where: { id: groupId },
+        include: {
+          workspace: {
+            include: { organization: true },
           },
         },
-      },
-    });
+      }),
+      this.prisma.pluginInstallationResource.findMany({
+        where: {
+          active: true,
+          assignments: { some: { groupId } },
+        },
+        include: { pluginInstallation: true },
+      }),
+    ]);
     if (!group) throw new NotFoundException('Group not found');
 
-    const assignedResources = group.resourceAssignments
-      .map((assignment) => assignment.resource)
-      .filter((resource) => resource.active);
     if (!assignedResources.length) {
       throw new BadRequestException(
         'This group has no active plugin resources assigned',
@@ -79,14 +120,10 @@ export class ReportsService {
     }
 
     const generatedAt = new Date();
-    const from =
-      mode === 'activity'
-        ? new Date(generatedAt.getTime() - 14 * 24 * 60 * 60 * 1000)
-        : undefined;
     const providerData = await this.runtime.provide(
       assignedResources,
-      mode,
-      from,
+      'history',
+      undefined,
     );
     const hasSuccessfulDataset = providerData.resources.some(
       (resource) => resource.datasets.length > 0,
@@ -98,49 +135,38 @@ export class ReportsService {
       });
     }
 
+    const coverage = buildCoverage(providerData);
     const reportInput = {
       group: { id: group.id, name: group.name },
-      reportMode: mode,
+      reportMode: 'history',
       generatedAt: generatedAt.toISOString(),
-      period:
-        mode === 'activity'
-          ? {
-              from: from!.toISOString(),
-              to: generatedAt.toISOString(),
-              label: 'Last 14 days',
-            }
-          : null,
+      period: null,
       resources: providerData.resources,
       limitations: providerData.limitations,
+      coverage,
     };
 
-    const prompt = `Generate a structured software engineering ${mode} report from the plugin-native datasets below.
+    return { group, providerData, reportInput, coverage };
+  }
 
-Datasets are grouped by resource and data type. Treat limitations and truncated datasets explicitly. Do not assume every plugin uses GitHub-shaped records. Preserve the requested output schema for compatibility.
+  async createGroupReportFromContent(groupId: string, content: unknown) {
+    const prepared = await this.prepareGroupReport(groupId);
+    return this.persistGroupReport(groupId, content, prepared.coverage);
+  }
 
-Input:
-${JSON.stringify(reportInput)}`;
-    const reportData =
-      mode === 'activity'
-        ? (
-            await this.activityAgent.generate(
-              [{ role: 'user', content: prompt }],
-              {
-                structuredOutput: { schema: groupGithubActivityReportSchema },
-              },
-            )
-          ).object
-        : (
-            await this.historyAgent.generate(
-              [{ role: 'user', content: prompt }],
-              {
-                structuredOutput: { schema: groupGithubHistoryReportSchema },
-              },
-            )
-          ).object;
+  private persistGroupReport(
+    groupId: string,
+    content: unknown,
+    coverage: ReturnType<typeof buildCoverage>,
+  ) {
+    const generatedReport = groupReportContentSchema.parse(content);
+    const reportData = groupReportSchema.parse({
+      ...generatedReport,
+      coverage,
+    });
 
     return this.prisma.performanceReport.create({
-      data: { groupId, type, data: reportData },
+      data: { groupId, type: 'GROUP_REPORT', data: reportData },
     });
   }
 
@@ -154,4 +180,65 @@ ${JSON.stringify(reportInput)}`;
       orderBy: { createdAt: 'desc' },
     });
   }
+}
+
+type ProviderData = Awaited<ReturnType<PluginRuntimeService['provide']>>;
+
+function buildCoverage(providerData: ProviderData) {
+  const datasets = providerData.resources.flatMap(
+    (resource) => resource.datasets,
+  );
+  const timestamps = datasets
+    .flatMap((dataset) => dataset.records)
+    .map(recordTimestamp)
+    .filter((value): value is number => value !== null);
+  const firstTimestamp = timestamps.reduce<number | null>(
+    (earliest, value) =>
+      earliest === null ? value : Math.min(earliest, value),
+    null,
+  );
+  const lastTimestamp = timestamps.reduce<number | null>(
+    (latest, value) => (latest === null ? value : Math.max(latest, value)),
+    null,
+  );
+  const limitations = providerData.limitations.map(
+    (limitation) =>
+      `${limitation.pluginId}/${limitation.resourceId}/${limitation.dataType}: ${limitation.message}`,
+  );
+
+  for (const resource of providerData.resources) {
+    for (const dataset of resource.datasets) {
+      if (dataset.truncated) {
+        limitations.push(
+          `${resource.pluginId}/${resource.id}/${dataset.dataType}: ${dataset.records.length} of ${dataset.count} records were analyzed`,
+        );
+      }
+    }
+  }
+
+  return {
+    resourcesAnalyzed: providerData.resources.length,
+    datasetsAnalyzed: datasets.length,
+    recordsAnalyzed: datasets.reduce(
+      (total, dataset) => total + dataset.records.length,
+      0,
+    ),
+    firstActivityAt:
+      firstTimestamp === null ? null : new Date(firstTimestamp).toISOString(),
+    lastActivityAt:
+      lastTimestamp === null ? null : new Date(lastTimestamp).toISOString(),
+    limitations,
+  };
+}
+
+function recordTimestamp(value: unknown): number | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  for (const key of ['updatedAt', 'committedAt', 'authoredAt', 'createdAt']) {
+    const candidate = record[key];
+    if (typeof candidate !== 'string') continue;
+    const timestamp = Date.parse(candidate);
+    if (Number.isFinite(timestamp)) return timestamp;
+  }
+  return null;
 }

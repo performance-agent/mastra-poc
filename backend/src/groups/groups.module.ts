@@ -5,9 +5,16 @@ import { MembersModule } from '../members/members.module';
 import { ResourcesModule } from '../resources/resources.module';
 import { ReportsModule } from '../reports/reports.module';
 import { AccessControlModule } from '../access-control/access-control.module';
+import { InvitationsModule } from '../invitations/invitations.module';
 
 @Module({
-  imports: [MembersModule, ResourcesModule, ReportsModule, AccessControlModule],
+  imports: [
+    MembersModule,
+    ResourcesModule,
+    ReportsModule,
+    AccessControlModule,
+    InvitationsModule,
+  ],
   controllers: [GroupsController],
   providers: [GroupsService],
   exports: [GroupsService],

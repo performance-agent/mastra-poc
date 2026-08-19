@@ -215,6 +215,39 @@ export class AccessControlService {
     };
   }
 
+  buildAllAccessibleGroupsWhere(
+    userId: string,
+    roles?: MembershipRole[],
+  ): Prisma.GroupWhereInput {
+    const membership = this.membershipRelationFilter({ userId, roles });
+
+    return {
+      OR: [
+        {
+          memberships: {
+            some: membership,
+          },
+        },
+        {
+          workspace: {
+            memberships: {
+              some: membership,
+            },
+          },
+        },
+        {
+          workspace: {
+            organization: {
+              memberships: {
+                some: membership,
+              },
+            },
+          },
+        },
+      ],
+    };
+  }
+
   private async hasMembership(
     input: MembershipFilterInput,
     predicates: Prisma.MembershipWhereInput[],

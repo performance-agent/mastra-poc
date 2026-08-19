@@ -1,11 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { validateSecretsEncryptionKey } from './plugins/configuration-crypto';
+import { validateModelConfiguration } from './mastra/model-configuration';
 
 async function bootstrap() {
   validateSecretsEncryptionKey();
+  validateModelConfiguration();
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin:
@@ -22,7 +24,22 @@ async function bootstrap() {
     .build();
   const documentFactory = () => SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, documentFactory);
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: [
+      {
+        path: '.well-known/oauth-protected-resource',
+        method: RequestMethod.GET,
+      },
+      {
+        path: '.well-known/oauth-authorization-server',
+        method: RequestMethod.GET,
+      },
+      { path: 'oauth/authorize', method: RequestMethod.GET },
+      { path: 'oauth/token', method: RequestMethod.POST },
+      { path: 'oauth/revoke', method: RequestMethod.POST },
+      { path: 'oauth/register', method: RequestMethod.POST },
+    ],
+  });
   await app.listen(process.env.PORT ?? 3000);
 }
 void bootstrap();

@@ -44,7 +44,32 @@ export interface Membership {
   userId: string;
   role: Role;
   createdAt?: string;
-  user: Pick<User, "id" | "name" | "email" | "photoUrl">;
+  user: Pick<User, "id" | "name" | "email" | "photoUrl" | "firebaseUid">;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Role;
+  status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+  expiresAt: string;
+  createdAt?: string;
+  inviteUrl: string;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  groupId?: string | null;
+}
+
+export interface InvitationPreview {
+  email: string;
+  role: Role;
+  status: string;
+  expiresAt: string;
+  scope: {
+    type: "organization" | "workspace" | "group";
+    id: string;
+    name: string;
+  } | null;
 }
 
 export interface Resource {
@@ -116,7 +141,7 @@ export interface DataType {
   updatedAt?: string;
 }
 
-export type PerformanceReportType = "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
+export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface EvaluationRequest {
   rules: Array<{ name: string; description?: string; valuation: number }>;
@@ -182,6 +207,114 @@ export interface PerformanceReport<TData = unknown> {
   data: TData;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type GroupReportStatus = "GOOD" | "WATCH" | "RISK" | "INSUFFICIENT_DATA";
+export type GroupReportConfidence = "HIGH" | "MEDIUM" | "LOW" | "INSUFFICIENT";
+
+export interface GroupReportEvidence {
+  section: "OVERALL" | "PRODUCT" | "PROJECT" | "ENGINEERING" | "PEOPLE";
+  subject: string | null;
+  type: string;
+  resource: string;
+  reference: string | null;
+  title: string;
+  url: string | null;
+  observation: string;
+  interpretation: string;
+}
+
+export interface GroupReportAssessment {
+  status: GroupReportStatus;
+  confidence: GroupReportConfidence;
+  summary: string;
+  positiveSignals: string[];
+  concerns: string[];
+  limitations: string[];
+}
+
+export interface GroupReportDimensionAssessment {
+  status: GroupReportStatus;
+  summary: string;
+}
+
+export interface GroupReport {
+  summary: string;
+  overallAssessment: GroupReportAssessment & { score: number | null };
+  productAssessment: {
+    ticketEvidenceAvailable: boolean;
+    assessment: GroupReportAssessment;
+    ideation: GroupReportDimensionAssessment;
+    prioritiesAndScope: GroupReportDimensionAssessment;
+    ticketFlow: GroupReportDimensionAssessment;
+    themes: Array<{
+      name: string;
+      evolution: string;
+    }>;
+    gaps: string[];
+  };
+  projectAssessment: {
+    assessment: GroupReportAssessment;
+    deliveryFlow: GroupReportDimensionAssessment;
+    continuity: GroupReportDimensionAssessment;
+    predictability: GroupReportDimensionAssessment;
+    projectStages: Array<{
+      label: string;
+      period: string;
+      summary: string;
+      status: GroupReportStatus;
+    }>;
+    risks: string[];
+    lessons: string[];
+  };
+  engineeringAssessment: {
+    assessment: GroupReportAssessment;
+    traceability: GroupReportDimensionAssessment;
+    changeDiscipline: GroupReportDimensionAssessment;
+    reviewability: GroupReportDimensionAssessment;
+    maintenanceSignals: GroupReportDimensionAssessment;
+    commitsToReview: Array<{
+      resource: string;
+      reference: string | null;
+      message: string;
+      author: string | null;
+      url: string | null;
+      status: "WATCH" | "RISK";
+      confidence: GroupReportConfidence;
+      signals: string[];
+      explanation: string;
+      recommendedAction: string;
+    }>;
+  };
+  people: Array<{
+    displayName: string;
+    assessment: GroupReportAssessment;
+    contributionSummary: string;
+    metrics: Array<{ label: string; value: string }>;
+    consistency: {
+      level: "CONSISTENT" | "VARIABLE" | "SPORADIC" | "INSUFFICIENT_DATA";
+      confidence: GroupReportConfidence;
+      summary: string;
+      limitations: string[];
+    };
+    improvementAreas: string[];
+    suggestions: string[];
+  }>;
+  evidence: GroupReportEvidence[];
+  recommendations: Array<{
+    priority: "HIGH" | "MEDIUM" | "LOW";
+    title: string;
+    description: string;
+    action: string;
+  }>;
+  coverage: {
+    resourcesAnalyzed: number;
+    datasetsAnalyzed: number;
+    recordsAnalyzed: number;
+    firstActivityAt: string | null;
+    lastActivityAt: string | null;
+    limitations: string[];
+  };
 }
 
 export interface GroupGithubActivityReport {

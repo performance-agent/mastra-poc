@@ -20,6 +20,8 @@ import { DataTypesModule } from './data-types/data-types.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { PluginInstallationsModule } from './plugin-installations/plugin-installations.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
+import { InvitationsModule } from './invitations/invitations.module';
+import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { EvaluationsModule } from './evaluations/evaluations.module';
     PluginsModule,
     PluginInstallationsModule,
     EvaluationsModule,
+    InvitationsModule,
+    PerformanceMcpModule,
   ],
   controllers: [AppController],
   providers: [

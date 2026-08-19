@@ -5,6 +5,7 @@ import { GroupsModule } from '../groups/groups.module';
 import { MembersModule } from '../members/members.module';
 import { ResourcesModule } from '../resources/resources.module';
 import { AccessControlModule } from '../access-control/access-control.module';
+import { InvitationsModule } from '../invitations/invitations.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AccessControlModule } from '../access-control/access-control.module';
     MembersModule,
     ResourcesModule,
     AccessControlModule,
+    InvitationsModule,
   ],
   controllers: [WorkspacesController],
   providers: [WorkspacesService],

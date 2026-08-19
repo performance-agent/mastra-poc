@@ -1,4 +1,5 @@
 import { Agent } from '@mastra/core/agent';
+import { modelFromEnvironment } from '../model-configuration';
 
 export const groupGithubActivityReportAgent = new Agent({
   id: 'group-github-activity-report-agent',
@@ -31,7 +32,5 @@ Important rules:
 - Keep summaries concise and actionable.
 `,
 
-  // Usá el mismo formato/model que tengas en weather-agent.ts.
-  // Si tu weather-agent usa model: "openai/gpt-4o-mini", dejalo así.
-  model: 'openai/gpt-5-nano',
+  model: modelFromEnvironment('GROUP_REPORT_MODEL'),
 });

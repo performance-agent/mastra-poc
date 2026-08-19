@@ -16,30 +16,30 @@ import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EntityFormDialog } from "@/components/app/EntityFormDialog";
 import { ResourceCard } from "@/components/app/ResourceCard";
 import { MemberList } from "@/components/app/MemberList";
-import { UserPicker } from "@/components/app/UserPicker";
-import { RoleSelect } from "@/components/app/RoleSelect";
+import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
+import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { EvaluationWorkbench } from "@/components/app/EvaluationWorkbench";
+import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toFormInitial } from "@/lib/form-helpers";
+import {
+  assignableRoles,
+  canManageMemberRoles,
+  findCurrentMembership,
+  highestRole,
+} from "@/lib/membership-role";
 import type {
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
+  GroupReport,
   PerformanceReport,
-  PerformanceReportType,
   Role,
 } from "@/lib/types";
 
@@ -70,10 +70,10 @@ function GroupPage() {
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
-  const [userId, setUserId] = useState<string>();
   const [role, setRole] = useState<Role>("VIEWER");
   const [resSearch, setResSearch] = useState("");
   const [pending, setPending] = useState<Record<string, "assign" | "unassign" | undefined>>({});
@@ -97,10 +97,13 @@ function GroupPage() {
     queryKey: ["group", groupId, "members"],
     queryFn: () => api.listGroupMembers(groupId),
   });
-  const usersQ = useQuery({
-    queryKey: ["users"],
-    queryFn: api.listUsers,
-    enabled: memberOpen,
+  const orgMembersQ = useQuery({
+    queryKey: ["organization", organizationId, "members"],
+    queryFn: () => api.listOrgMembers(organizationId),
+  });
+  const workspaceMembersQ = useQuery({
+    queryKey: ["workspace", workspaceId, "members"],
+    queryFn: () => api.listWorkspaceMembers(workspaceId),
   });
   const groupResourcesQ = useQuery({
     queryKey: ["group", groupId, "resources"],
@@ -164,7 +167,29 @@ function GroupPage() {
     }
   }, [reportStartedAt, reportsQ.data]);
 
-  const refreshMembers = () => qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
+  const refreshMembers = () => {
+    qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
+    qc.invalidateQueries({ queryKey: ["group", groupId, "invitations"] });
+  };
+  const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
+  const members = membersQ.data ?? [];
+  const groupMembership = findCurrentMembership(members, identity);
+  const workspaceMembership = findCurrentMembership(workspaceMembersQ.data ?? [], identity);
+  const organizationMembership = findCurrentMembership(orgMembersQ.data ?? [], identity);
+  const actorRole = highestRole([
+    groupMembership?.role,
+    workspaceMembership?.role,
+    organizationMembership?.role,
+  ]);
+  const currentUserId =
+    groupMembership?.userId ?? workspaceMembership?.userId ?? organizationMembership?.userId;
+  const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
+  const invitationsQ = useQuery({
+    queryKey: ["group", groupId, "invitations"],
+    queryFn: () => api.listGroupInvitations(groupId),
+    enabled: actorRole === "OWNER" || actorRole === "ADMIN",
+  });
   const refreshResources = () => {
     qc.invalidateQueries({ queryKey: ["group", groupId, "resources"] });
     qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] });
@@ -188,10 +213,10 @@ function GroupPage() {
     }
   };
 
-  const createReport = async (type: PerformanceReportType) => {
+  const createReport = async () => {
     setIsCreatingReport(true);
     try {
-      await api.createGroupReport(groupId, { type });
+      await api.createGroupReport(groupId, { type: "GROUP_REPORT" });
       setReportStartedAt(new Date().toISOString());
       toast.success("Report generation started");
       reportsQ.refetch();
@@ -289,11 +314,13 @@ function GroupPage() {
 
           {tab === "members" && (
             <div className="space-y-4">
-              <div className="flex justify-end">
-                <Button onClick={() => setMemberOpen(true)}>
-                  <Plus className="mr-1.5 h-4 w-4" /> Add member
-                </Button>
-              </div>
+              {canManageRoles && (
+                <div className="flex justify-end">
+                  <Button onClick={() => setMemberOpen(true)}>
+                    <Plus className="mr-1.5 h-4 w-4" /> Invite member
+                  </Button>
+                </div>
+              )}
               {membersQ.isLoading ? (
                 <LoadingState />
               ) : membersQ.error ? (
@@ -303,21 +330,45 @@ function GroupPage() {
                 />
               ) : (
                 <MemberList
-                  members={membersQ.data ?? []}
-                  onInvite={() => setMemberOpen(true)}
-                  onRoleChange={async (uid, r) => {
+                  members={members}
+                  currentUserId={currentUserId}
+                  actorRole={actorRole}
+                  onInvite={canManageRoles ? () => setMemberOpen(true) : undefined}
+                  onRoleChange={
+                    canManageRoles
+                      ? async (uid, r) => {
+                          try {
+                            await api.upsertGroupMember(groupId, uid, r);
+                            toast.success("Role updated");
+                            refreshMembers();
+                          } catch (e) {
+                            toast.error(errorMessage(e));
+                          }
+                        }
+                      : undefined
+                  }
+                  onRemove={
+                    canManageRoles
+                      ? async (uid) => {
+                          try {
+                            await api.removeGroupMember(groupId, uid);
+                            toast.success("Member removed");
+                            refreshMembers();
+                          } catch (e) {
+                            toast.error(errorMessage(e));
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              )}
+              {canManageRoles && (
+                <PendingInvitationList
+                  invitations={invitationsQ.data ?? []}
+                  onRevoke={async (invitationId) => {
                     try {
-                      await api.upsertGroupMember(groupId, uid, r);
-                      toast.success("Role updated");
-                      refreshMembers();
-                    } catch (e) {
-                      toast.error(errorMessage(e));
-                    }
-                  }}
-                  onRemove={async (uid) => {
-                    try {
-                      await api.removeGroupMember(groupId, uid);
-                      toast.success("Member removed");
+                      await api.revokeGroupInvitation(groupId, invitationId);
+                      toast.success("Invitation revoked");
                       refreshMembers();
                     } catch (e) {
                       toast.error(errorMessage(e));
@@ -476,57 +527,18 @@ function GroupPage() {
         }}
       />
 
-      <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add member</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>User</Label>
-              {usersQ.isLoading ? (
-                <LoadingState />
-              ) : usersQ.error ? (
-                <ErrorState message={errorMessage(usersQ.error)} onRetry={() => usersQ.refetch()} />
-              ) : (
-                <UserPicker
-                  users={usersQ.data ?? []}
-                  value={userId}
-                  onChange={setUserId}
-                  excludeIds={(membersQ.data ?? []).map((m) => m.userId)}
-                />
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <RoleSelect value={role} onChange={setRole} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMemberOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!userId}
-              onClick={async () => {
-                if (!userId) return;
-                try {
-                  await api.upsertGroupMember(groupId, userId, role);
-                  toast.success("Member added");
-                  setMemberOpen(false);
-                  setUserId(undefined);
-                  setRole("VIEWER");
-                  refreshMembers();
-                } catch (e) {
-                  toast.error(errorMessage(e));
-                }
-              }}
-            >
-              Add
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <InviteMemberDialog
+        open={memberOpen}
+        onOpenChange={setMemberOpen}
+        role={role}
+        setRole={setRole}
+        allowedRoles={inviteRoles}
+        onInvite={async (email, invitedRole) => {
+          const invitation = await api.createGroupInvitation(groupId, email, invitedRole);
+          refreshMembers();
+          return invitation;
+        }}
+      />
     </AppShell>
   );
 }
@@ -543,14 +555,18 @@ function ReportsTab({
   onRefresh,
   onSelect,
 }: {
-  reports: Array<PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport>>;
-  selectedReport: PerformanceReport<GroupGithubActivityReport | GroupGithubHistoryReport> | null;
+  reports: Array<
+    PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>
+  >;
+  selectedReport: PerformanceReport<
+    GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport
+  > | null;
   selectedReportId: string | null;
   isLoading: boolean;
   error: unknown;
   isCreating: boolean;
   isWaitingForReport: boolean;
-  onCreate: (type: PerformanceReportType) => Promise<void>;
+  onCreate: () => Promise<void>;
   onRefresh: () => void;
   onSelect: (id: string) => void;
 }) {
@@ -560,28 +576,16 @@ function ReportsTab({
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
           <p className="mt-1 max-w-2xl break-words text-xs text-muted-foreground">
-            Generate an activity snapshot or a full GitHub history report for this group.
+            Generate a full historical report from all plugin resources assigned to this group.
           </p>
         </div>
-        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
           <Button className="w-full sm:w-auto" variant="outline" onClick={onRefresh}>
             <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
           </Button>
-          <Button
-            className="w-full sm:w-auto"
-            onClick={() => onCreate("GITHUB_ACTIVITY")}
-            disabled={isCreating}
-          >
+          <Button className="w-full sm:w-auto" onClick={onCreate} disabled={isCreating}>
             <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "Activity report"}
-          </Button>
-          <Button
-            className="w-full sm:w-auto"
-            onClick={() => onCreate("GITHUB_HISTORY")}
-            disabled={isCreating}
-          >
-            <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "History report"}
+            {isCreating ? "Starting..." : "Group report"}
           </Button>
         </div>
       </div>
@@ -605,9 +609,9 @@ function ReportsTab({
         <EmptyState
           icon={<FileText className="h-4 w-4" />}
           title="No reports yet"
-          description="Generate a GitHub report to analyze the group's delivery signals."
-          actionLabel="Generate activity report"
-          onAction={() => onCreate("GITHUB_ACTIVITY")}
+          description="Generate a historical report to analyze the group's delivery signals."
+          actionLabel="Generate group report"
+          onAction={onCreate}
         />
       ) : (
         <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
@@ -625,7 +629,11 @@ function ReportsTab({
                   }`}
                 >
                   <div className="truncate text-sm font-medium">
-                    {report.type === "GITHUB_HISTORY" ? "GitHub history" : "GitHub activity"}
+                    {report.type === "GROUP_REPORT"
+                      ? "Group report"
+                      : report.type === "GITHUB_HISTORY"
+                        ? "GitHub history"
+                        : "GitHub activity"}
                   </div>
                   <div className="truncate text-[11px]">
                     {report.createdAt
@@ -639,7 +647,9 @@ function ReportsTab({
 
           {selectedReport ? (
             <div className="min-w-0 overflow-hidden">
-              {selectedReport.type === "GITHUB_HISTORY" ? (
+              {selectedReport.type === "GROUP_REPORT" ? (
+                <GroupReportRenderer report={selectedReport as PerformanceReport<GroupReport>} />
+              ) : selectedReport.type === "GITHUB_HISTORY" ? (
                 <GroupGithubHistoryReportRenderer
                   report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
                 />
