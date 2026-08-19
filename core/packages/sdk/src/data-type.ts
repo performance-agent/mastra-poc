@@ -3,10 +3,14 @@ import { JSON_SCHEMA_DIALECT, schemaFromJson, type DataTypeDefinition, type Infe
 export function dataType<const TKey extends string, TSchema extends Schema>(input: {
   key: TKey;
   schema: TSchema;
+  description?: string;
+  freshness?: "realtime" | "hourly" | "daily" | "manual" | "unknown";
+  timeCoverage?: string;
+  limitations?: readonly string[];
 }): DataTypeDefinition<TSchema> & { readonly key: TKey } {
   const normalized = schemaFromJson<InferSchema<TSchema>>({
     $schema: JSON_SCHEMA_DIALECT,
     ...input.schema.jsonSchema,
   }) as TSchema;
-  return Object.freeze({ key: input.key, schema: normalized });
+  return Object.freeze({ ...input, schema: normalized });
 }

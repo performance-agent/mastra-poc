@@ -10,10 +10,6 @@ import type {
   ResourceOperation,
 } from "./types.js";
 
-const DEFAULT_LIMITATIONS = [
-  "El recurso no declara cobertura temporal, freshness ni limitaciones específicas.",
-];
-
 export function runResourceCatalogNode(input: ResourceCatalogNodeInput): ResourceCatalogNodeResult {
   const warnings: ResourceCatalogWarning[] = [];
   const activeResources = input.resources.filter((resource) => resource.active);
@@ -72,9 +68,9 @@ export function runResourceCatalogNode(input: ResourceCatalogNodeInput): Resourc
       availableOperations,
       dataDescription: describeData(plugin.manifest.dataTypes),
       ...(dataSchema ? { dataSchema } : {}),
-      freshness: "unknown",
+      freshness: resourceFreshness(plugin.manifest.dataTypes),
       reliability: "medium",
-      limitations: DEFAULT_LIMITATIONS,
+      limitations: resourceLimitations(plugin.manifest.dataTypes),
       accessLevel: "read_only",
     });
   }
@@ -89,12 +85,25 @@ export function runResourceCatalogNode(input: ResourceCatalogNodeInput): Resourc
 function toOperation(dataType: CatalogDataType): ResourceOperation {
   return {
     name: dataType.key,
-    description: `Read ${dataType.key} records from this resource.`,
+    description: dataType.description ?? `Read ${dataType.key} records from this resource.`,
     outputSchema: {
       type: "array",
       items: dataType.schema,
     },
+    ...(dataType.freshness === undefined ? {} : { freshness: dataType.freshness }),
+    ...(dataType.timeCoverage === undefined ? {} : { timeCoverage: dataType.timeCoverage }),
+    ...(dataType.limitations === undefined ? {} : { limitations: [...dataType.limitations] }),
   };
+}
+
+function resourceFreshness(dataTypes: readonly CatalogDataType[]): ResourceDescriptor["freshness"] {
+  const declared = new Set(dataTypes.map((item) => item.freshness).filter((value) => value !== undefined));
+  return declared.size === 1 ? [...declared][0]! : "unknown";
+}
+
+function resourceLimitations(dataTypes: readonly CatalogDataType[]): string[] {
+  const declared = [...new Set(dataTypes.flatMap((item) => item.limitations ?? []))];
+  return declared.length > 0 ? declared : ["El recurso no declara limitaciones específicas."];
 }
 
 function describeData(dataTypes: readonly CatalogDataType[]): string {

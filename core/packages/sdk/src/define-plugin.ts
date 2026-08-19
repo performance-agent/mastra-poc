@@ -48,6 +48,10 @@ function createManifest<
     dataTypes: input.dataProviders.map((provider) => ({
       key: provider.dataType.key,
       schema: provider.dataType.schema.jsonSchema,
+      ...(provider.dataType.description === undefined ? {} : { description: provider.dataType.description }),
+      ...(provider.dataType.freshness === undefined ? {} : { freshness: provider.dataType.freshness }),
+      ...(provider.dataType.timeCoverage === undefined ? {} : { timeCoverage: provider.dataType.timeCoverage }),
+      ...(provider.dataType.limitations === undefined ? {} : { limitations: [...provider.dataType.limitations] }),
     })),
   };
 }
