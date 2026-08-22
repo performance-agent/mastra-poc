@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { HealthIndicator } from "./HealthIndicator";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -90,7 +89,6 @@ export function TopBar() {
           />
         </Link>
         <div ref={rightSectionRef} className="flex items-center gap-2">
-          <HealthIndicator />
           <div className="hidden items-center gap-2 rounded-md px-2 py-1 sm:flex">
             <Avatar className="h-7 w-7">
               <AvatarImage src={photoUrl} alt={displayName} />
