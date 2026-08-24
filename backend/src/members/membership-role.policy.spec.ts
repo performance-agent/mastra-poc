@@ -9,9 +9,7 @@ describe('membership-role.policy', () => {
   describe('highestMembershipRole', () => {
     it('returns the highest role in Owner > Admin > Viewer order', () => {
       expect(highestMembershipRole(['VIEWER', 'ADMIN'])).toBe('ADMIN');
-      expect(highestMembershipRole(['ADMIN', 'OWNER', 'VIEWER'])).toBe(
-        'OWNER',
-      );
+      expect(highestMembershipRole(['ADMIN', 'OWNER', 'VIEWER'])).toBe('OWNER');
     });
 
     it('returns null when there are no roles', () => {

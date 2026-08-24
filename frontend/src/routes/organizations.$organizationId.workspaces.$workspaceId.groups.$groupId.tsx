@@ -271,9 +271,9 @@ function GroupPage() {
             <div className="space-y-6">
               <Card className="flex flex-col gap-3 rounded-xl border-primary/20 bg-primary/5 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="font-semibold">Evaluate this team with the agent</h2>
+                  <h2 className="font-semibold">Evaluate this group</h2>
                   <p className="text-sm text-muted-foreground">
-                    Turn workspace evidence into an explainable, rule-by-rule report.
+                    Turn group evidence into an explainable, rule-by-rule report.
                   </p>
                 </div>
                 <Button onClick={() => setTab("evaluation")}>

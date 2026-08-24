@@ -6,7 +6,9 @@ import { EvaluationsService } from './evaluations.service';
 describe('EvaluationsController', () => {
   it('delegates workspace, body, and response view to the service', async () => {
     const evaluate = jest.fn().mockResolvedValue({ status: 'ready' });
-    const controller = new EvaluationsController({ evaluate } as unknown as EvaluationsService);
+    const controller = new EvaluationsController({
+      evaluate,
+    } as unknown as EvaluationsService);
     const dto = { rules: [{ name: 'Delivery', valuation: 8 }] };
 
     await expect(

@@ -91,9 +91,7 @@ export class InvitationsService {
 
   async accept(token: string, userId: string, userEmail: string) {
     const invitation = await this.loadByToken(token);
-    if (
-      invitation.email.toLowerCase() !== userEmail.trim().toLowerCase()
-    ) {
+    if (invitation.email.toLowerCase() !== userEmail.trim().toLowerCase()) {
       throw new ForbiddenException(
         'This invitation was sent to a different email address',
       );
@@ -197,7 +195,9 @@ export class InvitationsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return invitations.map((invitation) => this.toCreatedInvitation(invitation));
+    return invitations.map((invitation) =>
+      this.toCreatedInvitation(invitation),
+    );
   }
 
   private async loadByToken(token: string) {

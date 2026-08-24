@@ -37,12 +37,14 @@ function flowResult(): EvaluationFlowResult {
           overview: 'Delivery evidence was found.',
           evidence: [],
           memberAssessments: [],
-          criteria: [{
-            criterion: 'Delivery',
-            finding: 'Repository activity supports the rule.',
-            evidenceReferences: [],
-            status: 'met',
-          }],
+          criteria: [
+            {
+              criterion: 'Delivery',
+              finding: 'Repository activity supports the rule.',
+              evidenceReferences: [],
+              status: 'met',
+            },
+          ],
           rationale: 'Repository activity supports the rule.',
           verdict: 'supported',
           limitations: [],
@@ -61,7 +63,9 @@ function flowResult(): EvaluationFlowResult {
 
 function setup(result = flowResult()) {
   const invoke = jest.fn().mockResolvedValue(result);
-  const factory = jest.fn().mockResolvedValue({ invoke }) as jest.MockedFunction<EvaluationFlowFactory>;
+  const factory = jest.fn().mockResolvedValue({
+    invoke,
+  }) as jest.MockedFunction<EvaluationFlowFactory>;
   return { service: new EvaluationsService(factory), factory, invoke, result };
 }
 
@@ -139,7 +143,9 @@ describe('EvaluationsService', () => {
     const factory = jest
       .fn()
       .mockRejectedValueOnce(new Error('RULE_SUMMARY_MODEL is missing'))
-      .mockResolvedValueOnce({ invoke: jest.fn().mockResolvedValue(flowResult()) });
+      .mockResolvedValueOnce({
+        invoke: jest.fn().mockResolvedValue(flowResult()),
+      });
     const service = new EvaluationsService(factory as EvaluationFlowFactory);
 
     await expect(

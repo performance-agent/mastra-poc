@@ -4,10 +4,7 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type {
-  EvaluationFlowResult,
-  EvaluationPeriod,
-} from '@pa/agent';
+import type { EvaluationFlowResult, EvaluationPeriod } from '@pa/agent';
 import { CreateEvaluationDto } from './dto/create-evaluation.dto';
 import { EvaluationView } from './dto/evaluation-view.dto';
 import {
@@ -72,8 +69,7 @@ function toReportResponse(result: EvaluationFlowResult) {
       skippedRules: result.ruleInputResult?.skippedRules ?? [],
       clarificationRequests:
         result.ruleUnderstandingResult?.clarificationRequests ?? [],
-      understandingFailures:
-        result.ruleUnderstandingResult?.failedRules ?? [],
+      understandingFailures: result.ruleUnderstandingResult?.failedRules ?? [],
       selectionFailures: result.resourceSelectionResult?.failedRules ?? [],
       assessmentErrors: result.ruleAssessmentResult?.errors ?? [],
       flowErrors: result.flowErrors ?? [],

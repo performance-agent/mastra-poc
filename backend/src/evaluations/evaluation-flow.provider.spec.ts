@@ -10,7 +10,9 @@ describe('evaluation catalog resources', () => {
       resource('revoked', true, 'REVOKED'),
     ];
     const findAllByWorkspace = jest.fn().mockResolvedValue(resources);
-    const adapter = createEvaluationCatalogResourcesService({ findAllByWorkspace } as never);
+    const adapter = createEvaluationCatalogResourcesService({
+      findAllByWorkspace,
+    } as never);
 
     await expect(adapter.findAllByWorkspace('workspace-1')).resolves.toEqual([
       resources[0],

@@ -22,16 +22,15 @@ export class PluginResourceExecutor implements ResourceExecutor {
     resourceId,
     operationName,
   }: ResourceExecutionRequest): Promise<ResourceExecutionDataset> {
-    const resource =
-      await this.prisma.pluginInstallationResource.findFirst({
-        where: {
-          id: resourceId,
-          active: true,
-          pluginInstallation: { is: { status: 'ACTIVE' } },
-          assignments: { some: { workspaceId: context.workspaceId } },
-        },
-        include: { pluginInstallation: true },
-      });
+    const resource = await this.prisma.pluginInstallationResource.findFirst({
+      where: {
+        id: resourceId,
+        active: true,
+        pluginInstallation: { is: { status: 'ACTIVE' } },
+        assignments: { some: { workspaceId: context.workspaceId } },
+      },
+      include: { pluginInstallation: true },
+    });
     if (!resource) {
       throw new NotFoundException('Executable plugin resource not found');
     }

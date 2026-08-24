@@ -39,7 +39,7 @@ export const githubPullRequestSchema = schema.object({
   state: schema.enum(["open", "closed", "merged", "draft"]), author: schema.optional(schema.string()), url: schema.optional(schema.string({ format: "uri" })),
   labels: schema.array(schema.string()), baseBranch: schema.optional(schema.string()), headBranch: schema.optional(schema.string()),
   comments: schema.optional(schema.integer({ minimum: 0 })), reviewComments: schema.optional(schema.integer({ minimum: 0 })),
-  additions: schema.integer({ minimum: 0 }), deletions: schema.integer({ minimum: 0 }), changedFiles: schema.integer({ minimum: 0 }),
+  additions: schema.optional(schema.integer({ minimum: 0 })), deletions: schema.optional(schema.integer({ minimum: 0 })), changedFiles: schema.optional(schema.integer({ minimum: 0 })),
   files: schema.array(schema.object({
     filename: schema.string(), status: schema.string(), additions: schema.integer({ minimum: 0 }),
     deletions: schema.integer({ minimum: 0 }), changes: schema.integer({ minimum: 0 }), patch: schema.optional(schema.string()),

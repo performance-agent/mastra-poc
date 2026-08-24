@@ -165,8 +165,7 @@ export class PluginRuntimeService {
     const installation = resource.pluginInstallation;
     const plugin = await this.registry.get(installation.pluginId);
     const provider = plugin.dataProviders.find(
-      (candidate) => candidate.dataType.key === operationName
-
+      (candidate) => candidate.dataType.key === operationName,
     );
     if (!provider) {
       throw new BadRequestException(
@@ -175,7 +174,7 @@ export class PluginRuntimeService {
     }
 
     const records = await provider.provide(
-      this.createContext(plugin, installation) as never,
+      this.createContext(plugin, installation),
       toPluginResource(resource),
     );
     const limitations: string[] = [];

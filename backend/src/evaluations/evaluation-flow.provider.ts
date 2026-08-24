@@ -1,7 +1,4 @@
-import type {
-  CompiledEvaluationFlow,
-  ResourceExecutionNode,
-} from '@pa/agent';
+import type { CompiledEvaluationFlow, ResourceExecutionNode } from '@pa/agent';
 import { PluginRegistryService } from '../plugins/plugin-registry.service';
 import { ResourcesService } from '../resources/resources.service';
 
@@ -22,7 +19,8 @@ export function createEvaluationFlowFactory(
       agent.createLangChainRuleAssessorFromEnv(),
     ]);
     const resourceCatalogAdapter = agent.createBackendResourceCatalogAdapter({
-      resourcesService: createEvaluationCatalogResourcesService(resourcesService),
+      resourcesService:
+        createEvaluationCatalogResourcesService(resourcesService),
       pluginRegistry,
     });
 

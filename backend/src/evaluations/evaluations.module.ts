@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PluginRegistryService } from '../plugins/plugin-registry.service';
-import {
-  RESOURCE_EXECUTION_NODE,
-} from '../plugins/runtime/plugin-resource-executor.service';
+import { RESOURCE_EXECUTION_NODE } from '../plugins/runtime/plugin-resource-executor.service';
 import { PluginsModule } from '../plugins/plugins.module';
 import { ResourcesModule } from '../resources/resources.module';
 import { ResourcesService } from '../resources/resources.service';
@@ -21,7 +19,11 @@ import { EvaluationsService } from './evaluations.service';
     {
       provide: EVALUATION_FLOW_FACTORY,
       useFactory: createEvaluationFlowFactory,
-      inject: [ResourcesService, PluginRegistryService, RESOURCE_EXECUTION_NODE],
+      inject: [
+        ResourcesService,
+        PluginRegistryService,
+        RESOURCE_EXECUTION_NODE,
+      ],
     },
   ],
 })

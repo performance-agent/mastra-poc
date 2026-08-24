@@ -7,11 +7,14 @@ import { EvaluationViewDto } from './evaluation-view.dto';
 describe('evaluation DTOs', () => {
   it('accepts a valid rule batch and calendar-date period', async () => {
     const dto = plainToInstance(CreateEvaluationDto, {
-      rules: [{
-        name: 'Delivery traceability',
-        description: 'Delivered work should be visible in repository activity.',
-        valuation: 8,
-      }],
+      rules: [
+        {
+          name: 'Delivery traceability',
+          description:
+            'Delivered work should be visible in repository activity.',
+          valuation: 8,
+        },
+      ],
       period: { from: '2026-08-01', to: '2026-08-10' },
     });
 

@@ -76,9 +76,8 @@ class OctokitGitHubClient implements GitHubClient {
     const pulls = await this.octokit.paginate(this.octokit.rest.pulls.list, { owner, repo, state: "all", per_page: 100 });
     return Promise.all(pulls.map(async (listedPull) => {
       const pullNumber = listedPull.number;
-      const [{ data: pull }, files, issueComments, reviewCommentsData, reviews] = await Promise.all([
+      const [{ data: pull }, issueComments, reviewCommentsData, reviews] = await Promise.all([
         this.octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
-        this.octokit.paginate(this.octokit.rest.pulls.listFiles, { owner, repo, pull_number: pullNumber, per_page: 100 }),
         this.octokit.paginate(this.octokit.rest.issues.listComments, { owner, repo, issue_number: pullNumber, per_page: 100 }),
         this.octokit.paginate(this.octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 100 }),
         this.octokit.paginate(this.octokit.rest.pulls.listReviews, { owner, repo, pull_number: pullNumber, per_page: 100 }),
@@ -92,10 +91,7 @@ class OctokitGitHubClient implements GitHubClient {
         createdAt: new Date(pull.created_at).toISOString(), updatedAt: new Date(pull.updated_at).toISOString(),
         comments: pull.comments, reviewComments: pull.review_comments,
         additions: pull.additions, deletions: pull.deletions, changedFiles: pull.changed_files,
-        files: files.map((file) => ({
-          filename: file.filename, status: file.status, additions: file.additions,
-          deletions: file.deletions, changes: file.changes, ...(file.patch ? { patch: file.patch } : {}),
-        })),
+        files: [],
         issueComments: issueComments.map((comment) => ({
           body: requiredString(comment.body, "issue comment body"), createdAt: new Date(comment.created_at).toISOString(),
           ...(comment.user?.login ? { author: comment.user.login } : {}),

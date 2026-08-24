@@ -258,9 +258,9 @@ export class MembersService {
     resolveActorRoles: (tx: MembershipClient) => Promise<MembershipRole[]>;
     findTargetRole: (tx: MembershipClient) => Promise<MembershipRole | null>;
     countOwners: (tx: MembershipClient) => Promise<number>;
-    upsert: (tx: MembershipClient) => ReturnType<
-      PrismaService['membership']['upsert']
-    >;
+    upsert: (
+      tx: MembershipClient,
+    ) => ReturnType<PrismaService['membership']['upsert']>;
   }) {
     return this.prismaService.$transaction(async (tx) => {
       const actorRole = highestMembershipRole(await args.resolveActorRoles(tx));

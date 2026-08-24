@@ -49,8 +49,7 @@ export function evaluateMembershipRoleChange(input: {
   }
 
   if (
-    MEMBERSHIP_ROLE_RANK[input.newRole] >
-    MEMBERSHIP_ROLE_RANK[input.actorRole]
+    MEMBERSHIP_ROLE_RANK[input.newRole] > MEMBERSHIP_ROLE_RANK[input.actorRole]
   ) {
     return 'cannot_assign_higher_role';
   }
