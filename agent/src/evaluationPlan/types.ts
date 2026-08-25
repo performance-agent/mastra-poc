@@ -8,6 +8,7 @@ export type EvaluationPeriod = {
 
 export type EvaluationContext = {
   workspaceId: string;
+  groupId?: string;
   teamId?: string;
   projectId?: string;
   period?: EvaluationPeriod;

@@ -9,6 +9,7 @@ const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date in
 
 export const evaluationContextSchema = z.object({
   workspaceId: nonEmptyText,
+  groupId: nonEmptyText.optional(),
   teamId: nonEmptyText.optional(),
   projectId: nonEmptyText.optional(),
   period: z.object({

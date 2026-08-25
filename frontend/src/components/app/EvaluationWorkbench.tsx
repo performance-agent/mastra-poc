@@ -67,10 +67,12 @@ function newRule(name = "", description = "", valuation = 5): EvaluationRule {
 function EvaluationProvider({
   workspaceId,
   groupName,
+  groupId,
   children,
 }: {
   workspaceId: string;
   groupName: string;
+  groupId: string;
   children: ReactNode;
 }) {
   const [rules, setRules] = useState(() => [
@@ -105,6 +107,7 @@ function EvaluationProvider({
             valuation,
           })),
           period: from && to ? { from, to } : undefined,
+          groupId,
         },
         "report",
       );
@@ -112,7 +115,9 @@ function EvaluationProvider({
       toast.success("Evaluation complete");
     } catch (caught) {
       const message = errorMessage(caught);
-      setError(`${message}. Check your workspace access and active resources, then try again.`);
+      setError(
+        `${message}. Check your workspace access and the group's active resources, then try again.`,
+      );
       toast.error("Evaluation could not be completed");
     } finally {
       setIsRunning(false);
@@ -124,7 +129,11 @@ function EvaluationProvider({
   return <WorkbenchContext value={value}>{children}</WorkbenchContext>;
 }
 
-export function EvaluationWorkbench(props: { workspaceId: string; groupName: string }) {
+export function EvaluationWorkbench(props: {
+  workspaceId: string;
+  groupName: string;
+  groupId: string;
+}) {
   return (
     <EvaluationProvider {...props}>
       <div className="evaluation-workbench overflow-hidden rounded-[1.35rem] border border-slate-300/70 bg-[#f7f9fb] shadow-[0_22px_70px_-38px_rgba(15,50,75,0.45)] dark:border-slate-700 dark:bg-[#111a21]">
@@ -151,8 +160,8 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
             Turn team signals into a defensible report.
           </h2>
           <p className="mt-2 max-w-xl text-pretty text-sm leading-6 text-[#496676] dark:text-slate-300">
-            Define what matters for {groupName}. The agent finds relevant workspace evidence, tests
-            each rule, and explains what supports its conclusion.
+            Define what matters for {groupName}. The agent finds relevant group evidence, tests each
+            rule, and explains what supports its conclusion.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 rounded-full border border-[#99b7c7] bg-white/55 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider dark:border-slate-600 dark:bg-black/15">

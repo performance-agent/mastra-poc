@@ -17,81 +17,108 @@ import {
 
 const catalog: ResourceCatalogNodeResult = {
   workspaceId: "workspace-1",
-  resources: [{
-    id: "activity",
-    name: "Activity",
-    description: "Team activity",
-    pluginId: "demo",
-    pluginVersion: "1.0.0",
-    availableOperations: [
-      { name: "activity.by_period", description: "Read activity." },
-      { name: "activity.history", description: "Read activity history." },
-    ],
-    dataDescription: "Activity by member and period.",
-    freshness: "daily",
-    reliability: "high",
-    limitations: [],
-    accessLevel: "read_only",
-  }],
+  resources: [
+    {
+      id: "activity",
+      name: "Activity",
+      description: "Team activity",
+      pluginId: "demo",
+      pluginVersion: "1.0.0",
+      availableOperations: [
+        { name: "activity.by_period", description: "Read activity." },
+        { name: "activity.history", description: "Read activity history." },
+      ],
+      dataDescription: "Activity by member and period.",
+      freshness: "daily",
+      reliability: "high",
+      limitations: [],
+      accessLevel: "read_only",
+    },
+  ],
   warnings: [],
 };
 
-function makeFlow(options: {
-  interpret?: RuleInterpreter["interpret"];
-  select?: ResourceSelector["select"];
-  loadCatalog?: BackendResourceCatalogAdapter["getCatalogForWorkspace"];
-  execute?: ResourceExecutor["execute"];
-  assess?: RuleAssessor["assess"];
-} = {}) {
+function makeFlow(
+  options: {
+    interpret?: RuleInterpreter["interpret"];
+    select?: ResourceSelector["select"];
+    loadCatalog?: BackendResourceCatalogAdapter["getCatalogForWorkspace"];
+    execute?: ResourceExecutor["execute"];
+    assess?: RuleAssessor["assess"];
+  } = {},
+) {
   return createEvaluationFlow({
     resourceCatalogAdapter: {
       getCatalogForWorkspace: options.loadCatalog ?? (async () => catalog),
     },
     ruleUnderstandingNode: createRuleUnderstandingNode({
       interpreter: {
-        interpret: options.interpret ?? (async () => ({
-          ambiguityDetected: false,
-          interpretedGoal: "Measure activity.",
-          evaluationQuestions: ["What activity occurred?"],
-          expectedSignals: ["activity"],
-        })),
+        interpret:
+          options.interpret ??
+          (async () => ({
+            ambiguityDetected: false,
+            interpretedGoal: "Measure activity.",
+            evaluationQuestions: ["What activity occurred?"],
+            expectedSignals: ["activity"],
+          })),
       },
     }),
     resourceSelectionNode: createResourceSelectionNode({
-      select: options.select ?? (async () => ({
-        selectedResources: [{
-          resourceId: "activity",
-          reason: "Provides activity.",
-          requiredOperations: [{
-            name: "activity.by_period",
-            reason: "Reads the requested period.",
-            expectedSignals: ["activity"],
-          }],
-        }],
-        missingEvidence: [],
-      })),
+      select:
+        options.select ??
+        (async () => ({
+          selectedResources: [
+            {
+              resourceId: "activity",
+              reason: "Provides activity.",
+              requiredOperations: [
+                {
+                  name: "activity.by_period",
+                  reason: "Reads the requested period.",
+                  expectedSignals: ["activity"],
+                },
+              ],
+            },
+          ],
+          missingEvidence: [],
+        })),
     }),
     evaluationPlanNode: createEvaluationPlanNode(),
     resourceExecutionNode: createResourceExecutionNode({
       executor: {
-        execute: options.execute ?? (async ({ resourceId, operationName }) => [{ resourceId, operationName }]),
+        execute:
+          options.execute ??
+          (async ({ resourceId, operationName }) => [
+            { resourceId, operationName },
+          ]),
       },
     }),
     ruleAssessmentNode: createRuleAssessmentNode({
       assessor: {
-        assess: options.assess ?? (async () => ({
-          overview: "The available evidence supports the rule.",
-          evidence: [{
-            source: "activity.by_period",
-            observation: "Activity was returned.",
-            relevance: "It addresses the expected signal.",
-          }],
-          memberAssessments: [],
-          criteria: [{ criterion: "Activity", finding: "Activity was returned.", evidenceReferences: ["activity.by_period aggregate"], status: "met" }],
-          rationale: "The planned evidence was available.",
-          verdict: "supported",
-          limitations: [],
-        })),
+        assess:
+          options.assess ??
+          (async () => ({
+            overview: "The available evidence supports the rule.",
+            evidence: [
+              {
+                source: "activity.by_period",
+                observation: "Activity was returned.",
+                relevance: "It addresses the expected signal.",
+              },
+            ],
+            memberAssessments: [],
+            criteria: [
+              {
+                criterion: "Activity",
+                finding: "Activity was returned.",
+                evidenceReferences: ["activity.by_period aggregate"],
+                status: "met",
+              },
+            ],
+            rationale: "The planned evidence was available.",
+            verdict: "supported",
+            limitations: [],
+          })),
       },
     }),
   });
@@ -111,9 +138,35 @@ test("runs the complete graph and produces a ready plan", async () => {
   assert.equal(result.resourceSelectionResult?.status, "ready");
   assert.equal(result.evaluationPlanResult?.status, "ready");
   assert.equal(result.resourceExecutionResult?.status, "completed");
-  assert.deepEqual(result.resourceExecutionResult?.callCounts, { total: 1, successful: 1, failed: 0 });
+  assert.deepEqual(result.resourceExecutionResult?.callCounts, {
+    total: 1,
+    successful: 1,
+    failed: 0,
+  });
   assert.equal(result.ruleAssessmentResult?.status, "completed");
-  assert.equal(result.ruleAssessmentResult?.assessments.rule_input_1_delivery?.ruleName, "Delivery");
+  assert.equal(
+    result.ruleAssessmentResult?.assessments.rule_input_1_delivery?.ruleName,
+    "Delivery",
+  );
+});
+
+test("propagates group scope through the plan to resource execution", async () => {
+  let executionContext: unknown;
+  const result = await makeFlow({
+    execute: async ({ context }) => {
+      executionContext = context;
+      return [];
+    },
+  }).invoke({
+    context: { workspaceId: "workspace-1", groupId: "group-1" },
+    rules: input.rules,
+  });
+
+  assert.equal(result.resourceExecutionResult?.status, "completed");
+  assert.deepEqual(executionContext, {
+    workspaceId: "workspace-1",
+    groupId: "group-1",
+  });
 });
 
 test("stops before catalog loading for invalid rule input", async () => {
@@ -134,18 +187,19 @@ test("stops before catalog loading for invalid rule input", async () => {
 
 test("plans understood rules while retaining clarification diagnostics", async () => {
   const flow = makeFlow({
-    interpret: async ({ preparedRule }) => preparedRule.ruleIndex === 0
-      ? {
-          ambiguityDetected: false,
-          interpretedGoal: "Measure delivery.",
-          evaluationQuestions: ["What was delivered?"],
-          expectedSignals: ["activity"],
-        }
-      : {
-          ambiguityDetected: true,
-          ambiguityReason: "The measurement is unclear.",
-          clarificationQuestion: "Should this measure speed or quality?",
-        },
+    interpret: async ({ preparedRule }) =>
+      preparedRule.ruleIndex === 0
+        ? {
+            ambiguityDetected: false,
+            interpretedGoal: "Measure delivery.",
+            evaluationQuestions: ["What was delivered?"],
+            expectedSignals: ["activity"],
+          }
+        : {
+            ambiguityDetected: true,
+            ambiguityReason: "The measurement is unclear.",
+            clarificationQuestion: "Should this measure speed or quality?",
+          },
   });
 
   const result = await flow.invoke({
@@ -195,21 +249,28 @@ test("stops when every rule needs clarification", async () => {
 test("rejects invented resource operations without building a plan", async () => {
   const result = await makeFlow({
     select: async () => ({
-      selectedResources: [{
-        resourceId: "activity",
-        reason: "Provides activity.",
-        requiredOperations: [{
-          name: "activity.invented",
-          reason: "Invented operation.",
-          expectedSignals: ["activity"],
-        }],
-      }],
+      selectedResources: [
+        {
+          resourceId: "activity",
+          reason: "Provides activity.",
+          requiredOperations: [
+            {
+              name: "activity.invented",
+              reason: "Invented operation.",
+              expectedSignals: ["activity"],
+            },
+          ],
+        },
+      ],
       missingEvidence: [],
     }),
   }).invoke(input);
 
   assert.equal(result.resourceSelectionResult?.status, "failed");
-  assert.equal(result.resourceSelectionResult?.failedRules[0]?.code, "unknown_operation");
+  assert.equal(
+    result.resourceSelectionResult?.failedRules[0]?.code,
+    "unknown_operation",
+  );
   assert.equal(result.status, "failed");
   assert.equal(result.evaluationPlanResult, undefined);
 });
@@ -217,17 +278,22 @@ test("rejects invented resource operations without building a plan", async () =>
 test("keeps selected rules when resource selection fails for a sibling rule", async () => {
   const result = await makeFlow({
     select: async ({ understoodRule }) => {
-      if (understoodRule.ruleIndex === 1) throw new Error("selector unavailable");
+      if (understoodRule.ruleIndex === 1)
+        throw new Error("selector unavailable");
       return {
-        selectedResources: [{
-          resourceId: "activity",
-          reason: "Provides activity.",
-          requiredOperations: [{
-            name: "activity.by_period",
-            reason: "Reads activity.",
-            expectedSignals: ["activity"],
-          }],
-        }],
+        selectedResources: [
+          {
+            resourceId: "activity",
+            reason: "Provides activity.",
+            requiredOperations: [
+              {
+                name: "activity.by_period",
+                reason: "Reads activity.",
+                expectedSignals: ["activity"],
+              },
+            ],
+          },
+        ],
         missingEvidence: [],
       };
     },
@@ -240,7 +306,10 @@ test("keeps selected rules when resource selection fails for a sibling rule", as
   });
 
   assert.equal(result.status, "partial");
-  assert.equal(result.resourceSelectionResult?.failedRules[0]?.code, "selection_failed");
+  assert.equal(
+    result.resourceSelectionResult?.failedRules[0]?.code,
+    "selection_failed",
+  );
   assert.equal(result.evaluationPlanResult?.status, "ready");
   if (result.evaluationPlanResult?.status === "ready") {
     assert.equal(result.evaluationPlanResult.plan.rules.length, 1);
@@ -262,40 +331,49 @@ test("returns a controlled failure when the catalog cannot be loaded", async () 
 test("keeps successful raw data when another planned resource call fails", async () => {
   const result = await makeFlow({
     select: async () => ({
-      selectedResources: [{
-        resourceId: "activity",
-        reason: "Provides current and historical activity.",
-        requiredOperations: [
-          {
-            name: "activity.by_period",
-            reason: "Reads current activity.",
-            expectedSignals: ["current activity"],
-          },
-          {
-            name: "activity.history",
-            reason: "Reads historical activity.",
-            expectedSignals: ["historical activity"],
-          },
-        ],
-      }],
+      selectedResources: [
+        {
+          resourceId: "activity",
+          reason: "Provides current and historical activity.",
+          requiredOperations: [
+            {
+              name: "activity.by_period",
+              reason: "Reads current activity.",
+              expectedSignals: ["current activity"],
+            },
+            {
+              name: "activity.history",
+              reason: "Reads historical activity.",
+              expectedSignals: ["historical activity"],
+            },
+          ],
+        },
+      ],
       missingEvidence: [],
     }),
     execute: async ({ operationName }) => {
-      if (operationName === "activity.history") throw new Error("history unavailable");
+      if (operationName === "activity.history")
+        throw new Error("history unavailable");
       return [{ id: "current" }];
     },
   }).invoke(input);
 
   assert.equal(result.status, "partial");
   assert.equal(result.resourceExecutionResult?.status, "partial");
-  assert.deepEqual(result.resourceExecutionResult?.callCounts, { total: 2, successful: 1, failed: 1 });
+  assert.deepEqual(result.resourceExecutionResult?.callCounts, {
+    total: 2,
+    successful: 1,
+    failed: 1,
+  });
   assert.equal(result.resourceExecutionResult?.calls[0]?.status, "succeeded");
   assert.equal(result.resourceExecutionResult?.calls[1]?.status, "failed");
 });
 
 test("marks the flow failed when every planned resource call fails", async () => {
   const result = await makeFlow({
-    execute: async () => { throw new Error("resource offline"); },
+    execute: async () => {
+      throw new Error("resource offline");
+    },
   }).invoke(input);
 
   assert.equal(result.status, "failed");
@@ -309,11 +387,13 @@ test("does not execute a not-plannable evaluation plan", async () => {
   const result = await makeFlow({
     select: async () => ({
       selectedResources: [],
-      missingEvidence: [{
-        description: "Delivery records",
-        impact: "The rule cannot be evaluated.",
-        expectedSignals: ["deliveries"],
-      }],
+      missingEvidence: [
+        {
+          description: "Delivery records",
+          impact: "The rule cannot be evaluated.",
+          expectedSignals: ["deliveries"],
+        },
+      ],
     }),
     execute: async () => {
       executionCalls += 1;
@@ -331,20 +411,26 @@ test("does not execute a not-plannable evaluation plan", async () => {
 test("preserves a constrained plan status after successful execution", async () => {
   const result = await makeFlow({
     select: async () => ({
-      selectedResources: [{
-        resourceId: "activity",
-        reason: "Provides activity.",
-        requiredOperations: [{
-          name: "activity.by_period",
-          reason: "Reads activity.",
-          expectedSignals: ["activity"],
-        }],
-      }],
-      missingEvidence: [{
-        description: "Validated outcomes",
-        impact: "Outcome quality cannot be confirmed.",
-        expectedSignals: ["validated outcomes"],
-      }],
+      selectedResources: [
+        {
+          resourceId: "activity",
+          reason: "Provides activity.",
+          requiredOperations: [
+            {
+              name: "activity.by_period",
+              reason: "Reads activity.",
+              expectedSignals: ["activity"],
+            },
+          ],
+        },
+      ],
+      missingEvidence: [
+        {
+          description: "Validated outcomes",
+          impact: "Outcome quality cannot be confirmed.",
+          expectedSignals: ["validated outcomes"],
+        },
+      ],
     }),
   }).invoke(input);
 
@@ -362,7 +448,14 @@ test("keeps successful assessments when a sibling assessment fails", async () =>
         overview: "Evidence supports delivery.",
         evidence: [],
         memberAssessments: [],
-        criteria: [{ criterion: "Delivery", finding: "Delivery evidence was available.", evidenceReferences: [], status: "met" }],
+        criteria: [
+          {
+            criterion: "Delivery",
+            finding: "Delivery evidence was available.",
+            evidenceReferences: [],
+            status: "met",
+          },
+        ],
         rationale: "Delivery evidence was available.",
         verdict: "supported",
         limitations: [],
@@ -379,5 +472,8 @@ test("keeps successful assessments when a sibling assessment fails", async () =>
   assert.equal(result.status, "partial");
   assert.equal(result.ruleAssessmentResult?.status, "partial");
   assert.ok(result.ruleAssessmentResult?.assessments.rule_input_1_delivery);
-  assert.equal(result.ruleAssessmentResult?.errors[0]?.ruleId, "rule_input_2_quality");
+  assert.equal(
+    result.ruleAssessmentResult?.errors[0]?.ruleId,
+    "rule_input_2_quality",
+  );
 });

@@ -309,7 +309,11 @@ function GroupPage() {
           )}
 
           {tab === "evaluation" && (
-            <EvaluationWorkbench workspaceId={workspaceId} groupName={group.name} />
+            <EvaluationWorkbench
+              workspaceId={workspaceId}
+              groupName={group.name}
+              groupId={groupId}
+            />
           )}
 
           {tab === "members" && (

@@ -8,19 +8,21 @@ import {
 
 const catalog: ResourceCatalogNodeResult = {
   workspaceId: "workspace-1",
-  resources: [{
-    id: "github-resource",
-    name: "Repository",
-    description: "Repository activity",
-    pluginId: "github",
-    pluginVersion: "1.0.0",
-    availableOperations: [],
-    dataDescription: "Repository records",
-    freshness: "realtime",
-    reliability: "high",
-    limitations: ["Work outside the repository is not represented."],
-    accessLevel: "read_only",
-  }],
+  resources: [
+    {
+      id: "github-resource",
+      name: "Repository",
+      description: "Repository activity",
+      pluginId: "github",
+      pluginVersion: "1.0.0",
+      availableOperations: [],
+      dataDescription: "Repository records",
+      freshness: "realtime",
+      reliability: "high",
+      limitations: ["Work outside the repository is not represented."],
+      accessLevel: "read_only",
+    },
+  ],
   warnings: [],
 };
 
@@ -30,7 +32,10 @@ const context = {
   period: { from: "2026-06-01", to: "2026-06-30" },
 };
 
-function selectedRule(index: number, overrides: Partial<ResourceSelectedRule> = {}): ResourceSelectedRule {
+function selectedRule(
+  index: number,
+  overrides: Partial<ResourceSelectedRule> = {},
+): ResourceSelectedRule {
   return {
     inputId: `rule-${index + 1}`,
     ruleIndex: index,
@@ -38,22 +43,30 @@ function selectedRule(index: number, overrides: Partial<ResourceSelectedRule> = 
     interpretedGoal: `Goal ${index + 1}`,
     evaluationQuestions: [`Question ${index + 1}`],
     expectedSignals: ["commits"],
-    selectedResources: [{
-      resourceId: "github-resource",
-      reason: "Provides repository activity.",
-      requiredOperations: [{
-        name: "github.commit",
-        reason: "Provides commit activity.",
-        expectedSignals: ["commits"],
-      }],
-    }],
+    selectedResources: [
+      {
+        resourceId: "github-resource",
+        reason: "Provides repository activity.",
+        requiredOperations: [
+          {
+            name: "github.commit",
+            reason: "Provides commit activity.",
+            expectedSignals: ["commits"],
+          },
+        ],
+      },
+    ],
     missingEvidence: [],
     ...overrides,
   };
 }
 
 test("builds a ready deterministic evaluation plan", () => {
-  const input = { context, selectedRules: [selectedRule(0)], resourceCatalog: catalog };
+  const input = {
+    context,
+    selectedRules: [selectedRule(0)],
+    resourceCatalog: catalog,
+  };
   const result = createEvaluationPlanNode().run(input);
 
   assert.ok("plan" in result);
@@ -63,15 +76,34 @@ test("builds a ready deterministic evaluation plan", () => {
   assert.equal(result.plan.rules[0]?.id, "rule-1");
   assert.equal(result.plan.rules[0]?.version, 1);
   assert.equal(result.plan.rules[0]?.missingEvidencePolicy, "partial");
-  assert.deepEqual(result.plan.resourcePlan, [{
-    id: "resource_usage_1",
-    resourceId: "github-resource",
-    operationName: "github.commit",
-    ruleIds: ["rule-1"],
-    expectedEvidenceIds: ["expected_evidence_1"],
-  }]);
-  assert.deepEqual(result.plan.limitations, ["Work outside the repository is not represented."]);
+  assert.deepEqual(result.plan.resourcePlan, [
+    {
+      id: "resource_usage_1",
+      resourceId: "github-resource",
+      operationName: "github.commit",
+      ruleIds: ["rule-1"],
+      expectedEvidenceIds: ["expected_evidence_1"],
+    },
+  ]);
+  assert.deepEqual(result.plan.limitations, [
+    "Work outside the repository is not represented.",
+  ]);
   assert.equal(input.selectedRules[0]?.inputId, "rule-1");
+});
+
+test("preserves group scope in the executable plan context", () => {
+  const result = createEvaluationPlanNode().run({
+    context: { workspaceId: "workspace-1", groupId: "group-1" },
+    selectedRules: [selectedRule(0)],
+    resourceCatalog: catalog,
+  });
+
+  assert.ok("plan" in result);
+  if (!("plan" in result)) return;
+  assert.deepEqual(result.plan.context, {
+    workspaceId: "workspace-1",
+    groupId: "group-1",
+  });
 });
 
 test("deduplicates the same operation across rules without losing traceability", () => {
@@ -86,7 +118,10 @@ test("deduplicates the same operation across rules without losing traceability",
   assert.equal(result.status, "ready");
   assert.equal(result.plan.resourcePlan.length, 1);
   assert.deepEqual(result.plan.resourcePlan[0]?.ruleIds, ["rule-1", "rule-2"]);
-  assert.deepEqual(result.plan.resourcePlan[0]?.expectedEvidenceIds, ["expected_evidence_1", "expected_evidence_2"]);
+  assert.deepEqual(result.plan.resourcePlan[0]?.expectedEvidenceIds, [
+    "expected_evidence_1",
+    "expected_evidence_2",
+  ]);
   assert.equal(result.plan.expectedEvidence.length, 2);
 });
 
@@ -98,43 +133,66 @@ test("keeps different operations on the same resource as separate calls", () => 
     expectedSignals: ["issues"],
   });
 
-  const result = createEvaluationPlanNode().run({ context, selectedRules: [rule], resourceCatalog: catalog });
+  const result = createEvaluationPlanNode().run({
+    context,
+    selectedRules: [rule],
+    resourceCatalog: catalog,
+  });
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
   assert.equal(result.status, "ready");
-  assert.deepEqual(result.plan.resourcePlan.map((usage) => usage.operationName), ["github.commit", "github.issue"]);
+  assert.deepEqual(
+    result.plan.resourcePlan.map((usage) => usage.operationName),
+    ["github.commit", "github.issue"],
+  );
 });
 
 test("returns a constrained plan when some evidence is missing", () => {
   const rule = selectedRule(0, {
-    missingEvidence: [{
-      description: "Validated outcomes",
-      impact: "Outcome quality cannot be confirmed.",
-      expectedSignals: ["validated outcomes"],
-    }],
+    missingEvidence: [
+      {
+        description: "Validated outcomes",
+        impact: "Outcome quality cannot be confirmed.",
+        expectedSignals: ["validated outcomes"],
+      },
+    ],
   });
 
-  const result = createEvaluationPlanNode().run({ context, selectedRules: [rule], resourceCatalog: catalog });
+  const result = createEvaluationPlanNode().run({
+    context,
+    selectedRules: [rule],
+    resourceCatalog: catalog,
+  });
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
   assert.equal(result.status, "constrained");
   assert.equal(result.plan.expectedEvidence[1]?.status, "missing");
-  assert.ok(result.plan.limitations.includes("Validated outcomes: Outcome quality cannot be confirmed."));
+  assert.ok(
+    result.plan.limitations.includes(
+      "Validated outcomes: Outcome quality cannot be confirmed.",
+    ),
+  );
 });
 
 test("retains an unexecutable rule in a not-plannable plan", () => {
   const rule = selectedRule(0, {
     selectedResources: [],
-    missingEvidence: [{
-      description: "Delivery records",
-      impact: "The rule cannot be evaluated.",
-      expectedSignals: ["deliveries"],
-    }],
+    missingEvidence: [
+      {
+        description: "Delivery records",
+        impact: "The rule cannot be evaluated.",
+        expectedSignals: ["deliveries"],
+      },
+    ],
   });
 
-  const result = createEvaluationPlanNode().run({ context, selectedRules: [rule], resourceCatalog: catalog });
+  const result = createEvaluationPlanNode().run({
+    context,
+    selectedRules: [rule],
+    resourceCatalog: catalog,
+  });
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
@@ -149,21 +207,30 @@ test("merges duplicate rule-operation expectations and their signals", () => {
   rule.selectedResources.push({
     resourceId: "github-resource",
     reason: "Second selection from the same source.",
-    requiredOperations: [{
-      name: "github.commit",
-      reason: "Also supports authored work.",
-      expectedSignals: ["authorship"],
-    }],
+    requiredOperations: [
+      {
+        name: "github.commit",
+        reason: "Also supports authored work.",
+        expectedSignals: ["authorship"],
+      },
+    ],
   });
 
-  const result = createEvaluationPlanNode().run({ context, selectedRules: [rule], resourceCatalog: catalog });
+  const result = createEvaluationPlanNode().run({
+    context,
+    selectedRules: [rule],
+    resourceCatalog: catalog,
+  });
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
   assert.equal(result.status, "ready");
   assert.equal(result.plan.resourcePlan.length, 1);
   assert.equal(result.plan.expectedEvidence.length, 1);
-  assert.deepEqual(result.plan.expectedEvidence[0]?.expectedSignals, ["commits", "authorship"]);
+  assert.deepEqual(result.plan.expectedEvidence[0]?.expectedSignals, [
+    "commits",
+    "authorship",
+  ]);
 });
 
 test("deduplicates safely canonicalized human-authored signals while preserving the first spelling", () => {
@@ -171,15 +238,31 @@ test("deduplicates safely canonicalized human-authored signals while preserving 
   rule.selectedResources.push({
     resourceId: "github-resource",
     reason: "Second selection from the same source.",
-    requiredOperations: [{
-      name: "github.commit",
-      reason: "Repeats signals with user-authored variations.",
-      expectedSignals: ["COMMITS", "code   reviews", "Ｃｏｄｅ reviews", "availabilty", "café", "cafe"],
-    }],
+    requiredOperations: [
+      {
+        name: "github.commit",
+        reason: "Repeats signals with user-authored variations.",
+        expectedSignals: [
+          "COMMITS",
+          "code   reviews",
+          "Ｃｏｄｅ reviews",
+          "availabilty",
+          "café",
+          "cafe",
+        ],
+      },
+    ],
   });
-  rule.selectedResources[0]!.requiredOperations[0]!.expectedSignals.push("Code Reviews", "availability");
+  rule.selectedResources[0]!.requiredOperations[0]!.expectedSignals.push(
+    "Code Reviews",
+    "availability",
+  );
 
-  const result = createEvaluationPlanNode().run({ context, selectedRules: [rule], resourceCatalog: catalog });
+  const result = createEvaluationPlanNode().run({
+    context,
+    selectedRules: [rule],
+    resourceCatalog: catalog,
+  });
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
@@ -199,17 +282,33 @@ test("deduplicates limitations and ignores warnings for unselected resources", (
     selectedRules: [selectedRule(0), selectedRule(1)],
     resourceCatalog: {
       ...catalog,
-      resources: [{ ...catalog.resources[0]!, limitations: ["Repeated limitation", "Repeated limitation"] }],
+      resources: [
+        {
+          ...catalog.resources[0]!,
+          limitations: ["Repeated limitation", "Repeated limitation"],
+        },
+      ],
       warnings: [
-        { code: "unknown_resource_type", message: "Relevant warning", resourceId: "github-resource" },
-        { code: "unknown_resource_type", message: "Irrelevant warning", resourceId: "other-resource" },
+        {
+          code: "unknown_resource_type",
+          message: "Relevant warning",
+          resourceId: "github-resource",
+        },
+        {
+          code: "unknown_resource_type",
+          message: "Irrelevant warning",
+          resourceId: "other-resource",
+        },
       ],
     },
   });
 
   assert.notEqual(result.status, "invalid");
   if (result.status === "invalid") return;
-  assert.deepEqual(result.plan.limitations, ["Repeated limitation", "Relevant warning"]);
+  assert.deepEqual(result.plan.limitations, [
+    "Repeated limitation",
+    "Relevant warning",
+  ]);
 });
 
 test("deduplicates canonical limitation variants while retaining first-seen text and order", () => {
@@ -218,20 +317,34 @@ test("deduplicates canonical limitation variants while retaining first-seen text
     selectedRules: [selectedRule(0)],
     resourceCatalog: {
       ...catalog,
-      resources: [{
-        ...catalog.resources[0]!,
-        limitations: ["First   limitation", "Café limitation"],
-      }],
+      resources: [
+        {
+          ...catalog.resources[0]!,
+          limitations: ["First   limitation", "Café limitation"],
+        },
+      ],
       warnings: [
-        { code: "unknown_resource_type", message: "first limitation", resourceId: "github-resource" },
-        { code: "unknown_resource_type", message: "Cafe limitation", resourceId: "github-resource" },
+        {
+          code: "unknown_resource_type",
+          message: "first limitation",
+          resourceId: "github-resource",
+        },
+        {
+          code: "unknown_resource_type",
+          message: "Cafe limitation",
+          resourceId: "github-resource",
+        },
       ],
     },
   });
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
-  assert.deepEqual(result.plan.limitations, ["First   limitation", "Café limitation", "Cafe limitation"]);
+  assert.deepEqual(result.plan.limitations, [
+    "First   limitation",
+    "Café limitation",
+    "Cafe limitation",
+  ]);
 });
 
 test("keeps equivalent user-authored rule names independently traceable", () => {
@@ -246,7 +359,10 @@ test("keeps equivalent user-authored rule names independently traceable", () => 
 
   assert.ok("plan" in result);
   if (!("plan" in result)) return;
-  assert.deepEqual(result.plan.rules.map((rule) => rule.id), ["rule-1", "rule-2"]);
+  assert.deepEqual(
+    result.plan.rules.map((rule) => rule.id),
+    ["rule-1", "rule-2"],
+  );
   assert.deepEqual(result.plan.resourcePlan[0]?.ruleIds, ["rule-1", "rule-2"]);
 });
 
@@ -262,7 +378,11 @@ test("returns controlled validation errors for invalid context and input", () =>
     selectedRules: [selectedRule(0)],
     resourceCatalog: catalog,
   });
-  const empty = node.run({ context, selectedRules: [], resourceCatalog: catalog });
+  const empty = node.run({
+    context,
+    selectedRules: [],
+    resourceCatalog: catalog,
+  });
   const mismatched = node.run({
     context,
     selectedRules: [selectedRule(0)],

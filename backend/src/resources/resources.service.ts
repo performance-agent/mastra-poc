@@ -53,6 +53,21 @@ export class ResourcesService {
     );
   }
 
+  async findAllByGroupInWorkspace(groupId: string, workspaceId: string) {
+    return this.sanitize(
+      await this.prismaService.pluginInstallationResource.findMany({
+        where: {
+          assignments: {
+            some: {
+              group: { id: groupId, workspaceId },
+            },
+          },
+        },
+        include: { pluginInstallation: true },
+      }),
+    );
+  }
+
   async findOne(id: string) {
     const value =
       await this.prismaService.pluginInstallationResource.findUnique({

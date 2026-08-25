@@ -17,17 +17,28 @@ const REPORT_TYPE = "standard_performance_report";
 const DEFAULT_RULE_VERSION = 1;
 const DEFAULT_MISSING_EVIDENCE_POLICY = "partial";
 
-type PlannedExpectedEvidenceAccumulator = Omit<PlannedExpectedEvidence, "expectedSignals"> & {
+type PlannedExpectedEvidenceAccumulator = Omit<
+  PlannedExpectedEvidence,
+  "expectedSignals"
+> & {
   expectedSignals: Map<string, string>;
 };
 
-type MissingExpectedEvidenceAccumulator = Omit<MissingExpectedEvidence, "expectedSignals"> & {
+type MissingExpectedEvidenceAccumulator = Omit<
+  MissingExpectedEvidence,
+  "expectedSignals"
+> & {
   expectedSignals: Map<string, string>;
 };
 
-type ExpectedEvidenceAccumulator = PlannedExpectedEvidenceAccumulator | MissingExpectedEvidenceAccumulator;
+type ExpectedEvidenceAccumulator =
+  | PlannedExpectedEvidenceAccumulator
+  | MissingExpectedEvidenceAccumulator;
 
-type PlannedResourceUsageAccumulator = Omit<PlannedResourceUsage, "ruleIds" | "expectedEvidenceIds"> & {
+type PlannedResourceUsageAccumulator = Omit<
+  PlannedResourceUsage,
+  "ruleIds" | "expectedEvidenceIds"
+> & {
   ruleIds: Map<string, string>;
   expectedEvidenceIds: Map<string, string>;
 };
@@ -40,14 +51,20 @@ export function createEvaluationPlanNode(): EvaluationPlanNode {
         return { status: "invalid", errors: mapZodErrors(parsedInput.error) };
       }
 
-      if (parsedInput.data.context.workspaceId !== input.resourceCatalog.workspaceId) {
+      if (
+        parsedInput.data.context.workspaceId !==
+        input.resourceCatalog.workspaceId
+      ) {
         return {
           status: "invalid",
-          errors: [{
-            path: "resourceCatalog.workspaceId",
-            code: "workspace_mismatch",
-            message: "Resource catalog workspace must match the evaluation context workspace.",
-          }],
+          errors: [
+            {
+              path: "resourceCatalog.workspaceId",
+              code: "workspace_mismatch",
+              message:
+                "Resource catalog workspace must match the evaluation context workspace.",
+            },
+          ],
         };
       }
 
@@ -62,9 +79,18 @@ export function createEvaluationPlanNode(): EvaluationPlanNode {
         reportType: REPORT_TYPE,
         context: {
           workspaceId: parsedInput.data.context.workspaceId,
-          ...(parsedInput.data.context.teamId === undefined ? {} : { teamId: parsedInput.data.context.teamId }),
-          ...(parsedInput.data.context.projectId === undefined ? {} : { projectId: parsedInput.data.context.projectId }),
-          ...(parsedInput.data.context.period === undefined ? {} : { period: parsedInput.data.context.period }),
+          ...(parsedInput.data.context.groupId === undefined
+            ? {}
+            : { groupId: parsedInput.data.context.groupId }),
+          ...(parsedInput.data.context.teamId === undefined
+            ? {}
+            : { teamId: parsedInput.data.context.teamId }),
+          ...(parsedInput.data.context.projectId === undefined
+            ? {}
+            : { projectId: parsedInput.data.context.projectId }),
+          ...(parsedInput.data.context.period === undefined
+            ? {}
+            : { period: parsedInput.data.context.period }),
         },
         rules,
         resourcePlan,
@@ -72,7 +98,11 @@ export function createEvaluationPlanNode(): EvaluationPlanNode {
         limitations,
       };
 
-      return { status: resolveStatus(resourcePlan, expectedEvidence), plan, errors: [] };
+      return {
+        status: resolveStatus(resourcePlan, expectedEvidence),
+        plan,
+        errors: [],
+      };
     },
   };
 }
@@ -92,8 +122,14 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
 } {
   const resourcePlan: PlannedResourceUsageAccumulator[] = [];
   const expectedEvidence: ExpectedEvidenceAccumulator[] = [];
-  const usagesByResource = new Map<string, Map<string, PlannedResourceUsageAccumulator>>();
-  const expectationsByRule = new Map<string, Map<string, Map<string, PlannedExpectedEvidenceAccumulator>>>();
+  const usagesByResource = new Map<
+    string,
+    Map<string, PlannedResourceUsageAccumulator>
+  >();
+  const expectationsByRule = new Map<
+    string,
+    Map<string, Map<string, PlannedExpectedEvidenceAccumulator>>
+  >();
 
   for (const rule of rules) {
     for (const resource of rule.selectedResources) {
@@ -106,7 +142,12 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
           operation.name,
           operation.expectedSignals,
         );
-        const usage = getOrCreateUsage(usagesByResource, resourcePlan, resource.resourceId, operation.name);
+        const usage = getOrCreateUsage(
+          usagesByResource,
+          resourcePlan,
+          resource.resourceId,
+          operation.name,
+        );
         addExactValue(usage.ruleIds, rule.id);
         addExactValue(usage.expectedEvidenceIds, expectation.id);
       }
@@ -132,7 +173,10 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
 }
 
 function getOrCreatePlannedExpectation(
-  expectationsByRule: Map<string, Map<string, Map<string, PlannedExpectedEvidenceAccumulator>>>,
+  expectationsByRule: Map<
+    string,
+    Map<string, Map<string, PlannedExpectedEvidenceAccumulator>>
+  >,
   expectedEvidence: ExpectedEvidenceAccumulator[],
   ruleId: string,
   resourceId: string,
@@ -151,7 +195,8 @@ function getOrCreatePlannedExpectation(
   }
   const existing = byOperation.get(operationName);
   if (existing) {
-    for (const signal of signals) addHumanText(existing.expectedSignals, signal);
+    for (const signal of signals)
+      addHumanText(existing.expectedSignals, signal);
     return existing;
   }
 
@@ -200,7 +245,11 @@ function collectLimitations(
   warnings: readonly { message: string; resourceId?: string | undefined }[],
 ): string[] {
   const limitations = new Map<string, string>();
-  const selectedResourceIds = new Set(rules.flatMap((rule) => rule.selectedResources.map((resource) => resource.resourceId)));
+  const selectedResourceIds = new Set(
+    rules.flatMap((rule) =>
+      rule.selectedResources.map((resource) => resource.resourceId),
+    ),
+  );
 
   for (const rule of rules) {
     for (const missing of rule.missingEvidence) {
@@ -209,10 +258,14 @@ function collectLimitations(
   }
   for (const resource of resources) {
     if (!selectedResourceIds.has(resource.id)) continue;
-    for (const limitation of resource.limitations) addHumanText(limitations, limitation);
+    for (const limitation of resource.limitations)
+      addHumanText(limitations, limitation);
   }
   for (const warning of warnings) {
-    if (warning.resourceId === undefined || selectedResourceIds.has(warning.resourceId)) {
+    if (
+      warning.resourceId === undefined ||
+      selectedResourceIds.has(warning.resourceId)
+    ) {
       addHumanText(limitations, warning.message);
     }
   }
@@ -224,7 +277,8 @@ function resolveStatus(
   expectedEvidence: readonly ExpectedEvidence[],
 ): Exclude<EvaluationPlanNodeStatus, "invalid"> {
   if (resourcePlan.length === 0) return "not_plannable";
-  if (expectedEvidence.some((evidence) => evidence.status === "missing")) return "constrained";
+  if (expectedEvidence.some((evidence) => evidence.status === "missing"))
+    return "constrained";
   return "ready";
 }
 
@@ -244,14 +298,12 @@ function addExactValue(values: Map<string, string>, value: string): void {
 }
 
 function canonicalizeHumanText(value: string): string {
-  return value
-    .normalize("NFKC")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+  return value.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function finalizeResourceUsage(usage: PlannedResourceUsageAccumulator): PlannedResourceUsage {
+function finalizeResourceUsage(
+  usage: PlannedResourceUsageAccumulator,
+): PlannedResourceUsage {
   return {
     ...usage,
     ruleIds: [...usage.ruleIds.values()],
@@ -259,14 +311,19 @@ function finalizeResourceUsage(usage: PlannedResourceUsageAccumulator): PlannedR
   };
 }
 
-function finalizeExpectedEvidence(evidence: ExpectedEvidenceAccumulator): ExpectedEvidence {
+function finalizeExpectedEvidence(
+  evidence: ExpectedEvidenceAccumulator,
+): ExpectedEvidence {
   return {
     ...evidence,
     expectedSignals: [...evidence.expectedSignals.values()],
   };
 }
 
-function mapZodErrors(error: z.ZodError, pathPrefix?: string): EvaluationPlanInputError[] {
+function mapZodErrors(
+  error: z.ZodError,
+  pathPrefix?: string,
+): EvaluationPlanInputError[] {
   return error.issues.map((issue) => ({
     path: [pathPrefix, ...issue.path.map(String)].filter(Boolean).join("."),
     code: issue.code,

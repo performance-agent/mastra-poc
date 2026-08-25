@@ -12,12 +12,35 @@ describe('evaluation catalog resources', () => {
     const findAllByWorkspace = jest.fn().mockResolvedValue(resources);
     const adapter = createEvaluationCatalogResourcesService({
       findAllByWorkspace,
-    } as never);
+      findAllByGroupInWorkspace: jest.fn(),
+    });
 
     await expect(adapter.findAllByWorkspace('workspace-1')).resolves.toEqual([
       resources[0],
     ]);
     expect(findAllByWorkspace).toHaveBeenCalledWith('workspace-1');
+  });
+
+  it('loads group resources without requiring workspace assignments', async () => {
+    const resources = [
+      resource('group-resource', true, 'ACTIVE'),
+      resource('workspace-only-resource', true, 'ACTIVE'),
+    ];
+    const findAllByWorkspace = jest.fn();
+    const findAllByGroupInWorkspace = jest.fn().mockResolvedValue(resources);
+    const adapter = createEvaluationCatalogResourcesService(
+      { findAllByWorkspace, findAllByGroupInWorkspace },
+      'group-1',
+    );
+
+    await expect(adapter.findAllByWorkspace('workspace-1')).resolves.toEqual(
+      resources,
+    );
+    expect(findAllByGroupInWorkspace).toHaveBeenCalledWith(
+      'group-1',
+      'workspace-1',
+    );
+    expect(findAllByWorkspace).not.toHaveBeenCalled();
   });
 });
 

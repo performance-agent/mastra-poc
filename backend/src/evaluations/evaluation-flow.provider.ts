@@ -4,14 +4,16 @@ import { ResourcesService } from '../resources/resources.service';
 
 export const EVALUATION_FLOW_FACTORY = Symbol('EVALUATION_FLOW_FACTORY');
 
-export type EvaluationFlowFactory = () => Promise<CompiledEvaluationFlow>;
+export type EvaluationFlowFactory = (
+  groupId?: string,
+) => Promise<CompiledEvaluationFlow>;
 
 export function createEvaluationFlowFactory(
   resourcesService: ResourcesService,
   pluginRegistry: PluginRegistryService,
   resourceExecutionNode: ResourceExecutionNode,
 ): EvaluationFlowFactory {
-  return async () => {
+  return async (groupId) => {
     const agent = await import('@pa/agent');
     const [interpreter, selector, assessor] = await Promise.all([
       agent.createLangChainRuleInterpreterFromEnv(),
@@ -19,8 +21,10 @@ export function createEvaluationFlowFactory(
       agent.createLangChainRuleAssessorFromEnv(),
     ]);
     const resourceCatalogAdapter = agent.createBackendResourceCatalogAdapter({
-      resourcesService:
-        createEvaluationCatalogResourcesService(resourcesService),
+      resourcesService: createEvaluationCatalogResourcesService(
+        resourcesService,
+        groupId,
+      ),
       pluginRegistry,
     });
 
@@ -36,11 +40,17 @@ export function createEvaluationFlowFactory(
 }
 
 export function createEvaluationCatalogResourcesService(
-  resourcesService: Pick<ResourcesService, 'findAllByWorkspace'>,
+  resourcesService: Pick<
+    ResourcesService,
+    'findAllByWorkspace' | 'findAllByGroupInWorkspace'
+  >,
+  groupId?: string,
 ) {
   return {
     async findAllByWorkspace(workspaceId: string) {
-      const resources = await resourcesService.findAllByWorkspace(workspaceId);
+      const resources = groupId
+        ? await resourcesService.findAllByGroupInWorkspace(groupId, workspaceId)
+        : await resourcesService.findAllByWorkspace(workspaceId);
       return resources.filter(
         (resource) =>
           resource.active && resource.pluginInstallation.status === 'ACTIVE',

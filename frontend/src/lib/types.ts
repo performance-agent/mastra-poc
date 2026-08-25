@@ -146,6 +146,7 @@ export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB
 export interface EvaluationRequest {
   rules: Array<{ name: string; description?: string; valuation: number }>;
   period?: { from: string; to: string };
+  groupId?: string;
 }
 
 export interface EvaluationReport {

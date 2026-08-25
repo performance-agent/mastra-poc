@@ -27,7 +27,16 @@ export class PluginResourceExecutor implements ResourceExecutor {
         id: resourceId,
         active: true,
         pluginInstallation: { is: { status: 'ACTIVE' } },
-        assignments: { some: { workspaceId: context.workspaceId } },
+        assignments: {
+          some: context.groupId
+            ? {
+                group: {
+                  id: context.groupId,
+                  workspaceId: context.workspaceId,
+                },
+              }
+            : { workspaceId: context.workspaceId },
+        },
       },
       include: { pluginInstallation: true },
     });

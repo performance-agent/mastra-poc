@@ -47,6 +47,11 @@ export class CreateEvaluationDto {
   rules!: EvaluationRuleDto[];
 
   @IsOptional()
+  @IsString()
+  @Matches(/\S/, { message: 'groupId must contain non-whitespace text' })
+  groupId?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => EvaluationPeriodDto)
   period?: EvaluationPeriodDto;

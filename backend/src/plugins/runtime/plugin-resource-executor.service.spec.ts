@@ -72,6 +72,28 @@ describe('PluginResourceExecutor', () => {
     );
   });
 
+  it('executes a group resource without requiring a workspace assignment', async () => {
+    const { executor, findFirst } = setup();
+
+    await executor.execute({
+      context: { workspaceId: 'workspace-1', groupId: 'group-1' },
+      resourceId: 'resource-1',
+      operationName: 'github.commit',
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'resource-1',
+        active: true,
+        pluginInstallation: { is: { status: 'ACTIVE' } },
+        assignments: {
+          some: { group: { id: 'group-1', workspaceId: 'workspace-1' } },
+        },
+      },
+      include: { pluginInstallation: true },
+    });
+  });
+
   it('does not invoke plugins when the executable resource is unavailable', async () => {
     const { executor, runtime } = setup(null);
 

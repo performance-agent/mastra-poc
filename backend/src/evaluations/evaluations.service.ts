@@ -14,7 +14,10 @@ import {
 
 @Injectable()
 export class EvaluationsService {
-  private flowPromise?: ReturnType<EvaluationFlowFactory>;
+  private readonly flowPromises = new Map<
+    string,
+    ReturnType<EvaluationFlowFactory>
+  >();
 
   constructor(
     @Inject(EVALUATION_FLOW_FACTORY)
@@ -29,10 +32,15 @@ export class EvaluationsService {
     const period = validatePeriod(dto.period);
     let flow: Awaited<ReturnType<EvaluationFlowFactory>>;
     try {
-      this.flowPromise ??= this.flowFactory();
-      flow = await this.flowPromise;
+      const flowKey = dto.groupId ?? '*';
+      let flowPromise = this.flowPromises.get(flowKey);
+      if (!flowPromise) {
+        flowPromise = this.flowFactory(dto.groupId);
+        this.flowPromises.set(flowKey, flowPromise);
+      }
+      flow = await flowPromise;
     } catch (error) {
-      this.flowPromise = undefined;
+      this.flowPromises.clear();
       throw new ServiceUnavailableException(
         `Agent models are unavailable: ${errorMessage(error)}`,
       );
@@ -40,13 +48,21 @@ export class EvaluationsService {
 
     const result = (await flow.invoke(
       {
-        context: { workspaceId, ...(period ? { period } : {}) },
+        context: {
+          workspaceId,
+          ...(dto.groupId ? { groupId: dto.groupId } : {}),
+          ...(period ? { period } : {}),
+        },
         rules: dto.rules,
       },
       {
         runName: 'workspace-evaluation-flow',
         tags: ['backend', 'evaluation-flow'],
-        metadata: { workspaceId, view },
+        metadata: {
+          workspaceId,
+          ...(dto.groupId ? { groupId: dto.groupId } : {}),
+          view,
+        },
       },
     )) as EvaluationFlowResult;
 
