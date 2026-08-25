@@ -31,10 +31,7 @@ const confidenceLabels: Record<GroupReportConfidence, string> = {
   INSUFFICIENT: "Confianza insuficiente",
 };
 
-const consistencyLabels: Record<
-  GroupReport["people"][number]["consistency"]["level"],
-  string
-> = {
+const consistencyLabels: Record<GroupReport["people"][number]["consistency"]["level"], string> = {
   CONSISTENT: "Constante",
   VARIABLE: "Variable",
   SPORADIC: "Esporádica",
@@ -86,9 +83,7 @@ function Badge({ children, className }: { children: ReactNode; className: string
 function AssessmentBadges({ assessment }: { assessment: GroupReportAssessment }) {
   return (
     <div className="flex flex-wrap gap-2">
-      <Badge className={statusClasses(assessment.status)}>
-        {statusLabels[assessment.status]}
-      </Badge>
+      <Badge className={statusClasses(assessment.status)}>{statusLabels[assessment.status]}</Badge>
       <Badge className={confidenceClasses(assessment.confidence)}>
         {confidenceLabels[assessment.confidence]}
       </Badge>
@@ -124,9 +119,7 @@ function EvidenceContent({ evidence }: { evidence: GroupReportEvidence }) {
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className="border-border bg-muted text-muted-foreground">
-            {evidence.type}
-          </Badge>
+          <Badge className="border-border bg-muted text-muted-foreground">{evidence.type}</Badge>
           <span className="break-all text-[11px] text-muted-foreground">
             {evidence.resource}
             {evidence.reference ? ` · ${evidence.reference}` : ""}
@@ -134,9 +127,7 @@ function EvidenceContent({ evidence }: { evidence: GroupReportEvidence }) {
           </span>
         </div>
         <h5 className="mt-2 break-words text-sm font-semibold">{evidence.title}</h5>
-        <p className="mt-1 break-words text-xs text-muted-foreground">
-          {evidence.observation}
-        </p>
+        <p className="mt-1 break-words text-xs text-muted-foreground">{evidence.observation}</p>
         <p className="mt-2 break-words text-xs">
           <span className="font-medium">Interpretación:</span> {evidence.interpretation}
         </p>
@@ -166,7 +157,13 @@ function EvidenceItem({ evidence }: { evidence: GroupReportEvidence }) {
   );
 }
 
-function EvidenceList({ items, title = "Evidencia" }: { items: GroupReportEvidence[]; title?: string }) {
+function EvidenceList({
+  items,
+  title = "Evidencia",
+}: {
+  items: GroupReportEvidence[];
+  title?: string;
+}) {
   if (!items.length) return null;
   return (
     <div>
@@ -213,9 +210,7 @@ function DimensionCard({
           {statusLabels[assessment.status]}
         </Badge>
       </div>
-      <p className="mt-3 break-words text-sm text-muted-foreground">
-        {assessment.summary}
-      </p>
+      <p className="mt-3 break-words text-sm text-muted-foreground">{assessment.summary}</p>
     </Card>
   );
 }
@@ -303,17 +298,14 @@ export function GroupReportRenderer({ report }: Props) {
     data.evidence.filter((evidence) => evidence.section === section);
   const evidenceForPerson = (displayName: string) =>
     data.evidence.filter(
-      (evidence) =>
-        evidence.section === "PEOPLE" && evidence.subject === displayName,
+      (evidence) => evidence.section === "PEOPLE" && evidence.subject === displayName,
     );
   const unassignedPeopleEvidence = data.evidence.filter(
     (evidence) =>
       evidence.section === "PEOPLE" &&
       !data.people.some((person) => person.displayName === evidence.subject),
   );
-  const generatedAt = report.createdAt
-    ? new Date(report.createdAt).toLocaleString("es-AR")
-    : "";
+  const generatedAt = report.createdAt ? new Date(report.createdAt).toLocaleString("es-AR") : "";
 
   return (
     <div className="min-w-0 space-y-8 overflow-hidden">
@@ -363,18 +355,12 @@ export function GroupReportRenderer({ report }: Props) {
           assessment={data.productAssessment.assessment}
         />
         <div className="grid min-w-0 gap-3 xl:grid-cols-3">
-          <DimensionCard
-            title="Ideación"
-            assessment={data.productAssessment.ideation}
-          />
+          <DimensionCard title="Ideación" assessment={data.productAssessment.ideation} />
           <DimensionCard
             title="Prioridades y alcance"
             assessment={data.productAssessment.prioritiesAndScope}
           />
-          <DimensionCard
-            title="Flujo de tickets"
-            assessment={data.productAssessment.ticketFlow}
-          />
+          <DimensionCard title="Flujo de tickets" assessment={data.productAssessment.ticketFlow} />
         </div>
         {data.productAssessment.themes.length ? (
           <div className="space-y-3">
@@ -412,10 +398,7 @@ export function GroupReportRenderer({ report }: Props) {
             title="Flujo de entrega"
             assessment={data.projectAssessment.deliveryFlow}
           />
-          <DimensionCard
-            title="Continuidad"
-            assessment={data.projectAssessment.continuity}
-          />
+          <DimensionCard title="Continuidad" assessment={data.projectAssessment.continuity} />
           <DimensionCard
             title="Previsibilidad"
             assessment={data.projectAssessment.predictability}
@@ -439,9 +422,7 @@ export function GroupReportRenderer({ report }: Props) {
                       {statusLabels[stage.status]}
                     </Badge>
                   </div>
-                  <p className="mt-2 break-words text-sm text-muted-foreground">
-                    {stage.summary}
-                  </p>
+                  <p className="mt-2 break-words text-sm text-muted-foreground">{stage.summary}</p>
                 </Card>
               ))}
             </div>
@@ -588,9 +569,7 @@ export function GroupReportRenderer({ report }: Props) {
               <Badge className={priorityClasses(recommendation.priority)}>
                 Prioridad {priorityLabel(recommendation.priority)}
               </Badge>
-              <h4 className="mt-3 break-words text-sm font-semibold">
-                {recommendation.title}
-              </h4>
+              <h4 className="mt-3 break-words text-sm font-semibold">{recommendation.title}</h4>
               <p className="mt-1 break-words text-sm text-muted-foreground">
                 {recommendation.description}
               </p>

@@ -900,20 +900,35 @@ function ConnectJiraDialog({
     >
       <div className="space-y-1.5">
         <Label htmlFor="jira-name">Connection name</Label>
-        <Input id="jira-name" required value={values.name ?? ""} onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))} />
+        <Input
+          id="jira-name"
+          required
+          value={values.name ?? ""}
+          onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
+        />
       </div>
-      {(plugin?.configurationFields ?? []).filter((field) => field.configurable).map((field) => (
-        <div key={field.key} className="space-y-1.5">
-          <Label htmlFor={`jira-${field.key}`}>{field.label}</Label>
-          <Input
-            id={`jira-${field.key}`}
-            required={field.required}
-            type={field.sensitive ? "password" : field.key === "email" ? "email" : field.key === "siteUrl" ? "url" : "text"}
-            value={values[field.key] ?? ""}
-            onChange={(event) => setValues((v) => ({ ...v, [field.key]: event.target.value }))}
-          />
-        </div>
-      ))}
+      {(plugin?.configurationFields ?? [])
+        .filter((field) => field.configurable)
+        .map((field) => (
+          <div key={field.key} className="space-y-1.5">
+            <Label htmlFor={`jira-${field.key}`}>{field.label}</Label>
+            <Input
+              id={`jira-${field.key}`}
+              required={field.required}
+              type={
+                field.sensitive
+                  ? "password"
+                  : field.key === "email"
+                    ? "email"
+                    : field.key === "siteUrl"
+                      ? "url"
+                      : "text"
+              }
+              value={values[field.key] ?? ""}
+              onChange={(event) => setValues((v) => ({ ...v, [field.key]: event.target.value }))}
+            />
+          </div>
+        ))}
     </FormModal>
   );
 }
@@ -1226,7 +1241,9 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
             toast.success("Jira connected and synced");
             await Promise.all([
               qc.invalidateQueries({ queryKey: ["plugins"] }),
-              qc.invalidateQueries({ queryKey: ["organization", organizationId, "plugin-installations"] }),
+              qc.invalidateQueries({
+                queryKey: ["organization", organizationId, "plugin-installations"],
+              }),
               qc.invalidateQueries({ queryKey: ["organization", organizationId, "resources"] }),
             ]);
           } catch (error) {

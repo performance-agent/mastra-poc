@@ -72,12 +72,14 @@ function InvitePage() {
             <>
               {invitation && (
                 <p className="text-sm text-muted-foreground">
-                  This invitation was sent to <span className="font-medium text-foreground">{invitation.email}</span>.
+                  This invitation was sent to{" "}
+                  <span className="font-medium text-foreground">{invitation.email}</span>.
                 </p>
               )}
               {emailMismatch && (
                 <p className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                  You are signed in as {firebaseUser?.email}. Sign in with {invitation?.email} to accept.
+                  You are signed in as {firebaseUser?.email}. Sign in with {invitation?.email} to
+                  accept.
                 </p>
               )}
               <Button
