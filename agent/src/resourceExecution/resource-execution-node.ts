@@ -50,6 +50,9 @@ async function executeUsage(
       context,
       resourceId: usage.resourceId,
       operationName: usage.operationName,
+      ...(usage.parameters === undefined
+        ? {}
+        : { parameters: usage.parameters }),
     });
     const result: SuccessfulResourceCall = {
       ...trace,

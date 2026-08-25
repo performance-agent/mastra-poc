@@ -5,6 +5,7 @@ import type {
   FailedResourceSelection,
   ResourceSelectionDecision,
   ResourceSelectionFailureCode,
+  ResourceSelectionInput,
   ResourceSelectionNode,
   ResourceSelectionNodeResult,
   ResourceSelector,
@@ -17,7 +18,7 @@ export function createResourceSelectionNode(
     async run(input) {
       const outcomes = await Promise.all(
         input.understoodRules.map((rule) =>
-          selectResources(rule, input.resourceCatalog, selector),
+          selectResources(rule, input.resourceCatalog, input.context, selector),
         ),
       );
       const selectedRules = outcomes.flatMap((outcome) =>
@@ -50,6 +51,7 @@ type SelectionOutcome = {
 async function selectResources(
   rule: UnderstoodRule,
   catalog: ResourceCatalogNodeResult,
+  context: ResourceSelectionInput['context'],
   selector: ResourceSelector,
 ): Promise<SelectionOutcome> {
   let rawDecision: unknown;
@@ -57,6 +59,7 @@ async function selectResources(
     rawDecision = await selector.select({
       understoodRule: rule,
       resourceCatalog: catalog,
+      context,
     });
   } catch {
     return failed(
@@ -80,7 +83,32 @@ async function selectResources(
     parsed.data,
     catalog,
   );
-  return catalogFailure ?? { rule, decision: parsed.data };
+  return (
+    catalogFailure ?? {
+      rule,
+      decision: applyOperationParameters(parsed.data, context),
+    }
+  );
+}
+
+function applyOperationParameters(
+  decision: ResourceSelectionDecision,
+  context: ResourceSelectionInput['context'],
+): ResourceSelectionDecision {
+  return {
+    ...decision,
+    selectedResources: decision.selectedResources.map((resource) => ({
+      ...resource,
+      requiredOperations: resource.requiredOperations.map((operation) => ({
+        name: operation.name,
+        reason: operation.reason,
+        expectedSignals: operation.expectedSignals,
+        ...(context.period === undefined
+          ? {}
+          : { parameters: { period: context.period } }),
+      })),
+    })),
+  };
 }
 
 function validateSelectionReferences(

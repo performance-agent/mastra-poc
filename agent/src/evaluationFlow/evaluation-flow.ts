@@ -58,6 +58,7 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
       const result = await deps.ruleUnderstandingNode.run({
         runnableRules: state.ruleInputResult?.runnableRules ?? [],
         resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
+        context: state.context,
       });
       return {
         ruleUnderstandingResult: result,
@@ -75,6 +76,7 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
       const result = await deps.resourceSelectionNode.run({
         understoodRules: state.ruleUnderstandingResult?.understoodRules ?? [],
         resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
+        context: state.context,
       });
       return {
         resourceSelectionResult: result,

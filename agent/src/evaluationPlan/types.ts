@@ -6,6 +6,10 @@ export type EvaluationPeriod = {
   to: string;
 };
 
+export type SelectedOperationParameters = {
+  period: EvaluationPeriod;
+};
+
 export type EvaluationContext = {
   workspaceId: string;
   groupId?: string;
@@ -18,6 +22,7 @@ export type SelectedOperation = {
   name: string;
   reason: string;
   expectedSignals: string[];
+  parameters?: SelectedOperationParameters | undefined;
 };
 
 export type SelectedResource = {
@@ -49,6 +54,7 @@ export type PlannedResourceUsage = {
   id: string;
   resourceId: string;
   operationName: string;
+  parameters?: SelectedOperationParameters | undefined;
   ruleIds: string[];
   expectedEvidenceIds: string[];
 };

@@ -146,6 +146,7 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
           resourcePlan,
           resource.resourceId,
           operation.name,
+          operation.parameters,
         );
         addExactValue(usage.ruleIds, rule.id);
         addExactValue(usage.expectedEvidenceIds, expectation.id);
@@ -217,6 +218,7 @@ function getOrCreateUsage(
   resourcePlan: PlannedResourceUsageAccumulator[],
   resourceId: string,
   operationName: string,
+  parameters: PlannedResourceUsage['parameters'],
 ): PlannedResourceUsageAccumulator {
   let byOperation = usagesByResource.get(resourceId);
   if (!byOperation) {
@@ -230,6 +232,7 @@ function getOrCreateUsage(
     id: `resource_usage_${resourcePlan.length + 1}`,
     resourceId,
     operationName,
+    ...(parameters === undefined ? {} : { parameters }),
     ruleIds: new Map(),
     expectedEvidenceIds: new Map(),
   };

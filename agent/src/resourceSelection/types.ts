@@ -1,4 +1,5 @@
 import type {
+  EvaluationContext,
   MissingEvidenceRequirement,
   ResourceSelectedRule,
   SelectedResource,
@@ -9,6 +10,7 @@ import type { UnderstoodRule } from '../ruleUnderstanding/types.js';
 export type ResourceSelectionInput = {
   understoodRule: UnderstoodRule;
   resourceCatalog: ResourceCatalogNodeResult;
+  context: EvaluationContext;
 };
 
 export type ResourceSelectionDecision = {
@@ -46,5 +48,6 @@ export type ResourceSelectionNode = {
   run(input: {
     understoodRules: readonly UnderstoodRule[];
     resourceCatalog: ResourceCatalogNodeResult;
+    context: EvaluationContext;
   }): Promise<ResourceSelectionNodeResult>;
 };

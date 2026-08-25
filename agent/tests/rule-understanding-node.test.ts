@@ -51,6 +51,12 @@ const catalog: ResourceCatalogNodeResult = {
   ],
 };
 
+const context = {
+  workspaceId: 'workspace-1',
+  groupId: 'group-1',
+  period: { from: '2026-08-01', to: '2026-08-10' },
+};
+
 function preparedRule(
   index: number,
   name = `Rule ${index + 1}`,
@@ -86,6 +92,7 @@ test('understands a clear rule and preserves deterministic source fields', async
   const result = await node.run({
     runnableRules: [rule],
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(result.status, 'ready');
@@ -113,6 +120,7 @@ test('returns one focused clarification for an ambiguous rule', async () => {
   const result = await node.run({
     runnableRules: [rule],
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(result.status, 'needs_clarification');
@@ -147,6 +155,7 @@ test('keeps understood results when another rule needs clarification', async () 
   const result = await node.run({
     runnableRules: rules,
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(result.status, 'needs_clarification');
@@ -171,6 +180,7 @@ test('isolates AI failures and reports partial and failed batches', async () => 
   const partial = await partlyFailingNode.run({
     runnableRules: rules,
     resourceCatalog: catalog,
+    context,
   });
   assert.equal(partial.status, 'partial');
   assert.equal(partial.failedRules[0]?.code, 'ai_generation_failed');
@@ -184,6 +194,7 @@ test('isolates AI failures and reports partial and failed batches', async () => 
   const failed = await failingNode.run({
     runnableRules: rules,
     resourceCatalog: catalog,
+    context,
   });
   assert.equal(failed.status, 'failed');
   assert.equal(failed.failedRules.length, 2);
@@ -200,6 +211,7 @@ test('rejects malformed AI output as a controlled rule failure', async () => {
   const result = await node.run({
     runnableRules: [preparedRule(0)],
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(result.status, 'failed');
@@ -232,6 +244,7 @@ test('reports the exact active-branch field returned as null by the provider', a
   const result = await node.run({
     runnableRules: [preparedRule(0)],
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(result.status, 'failed');
@@ -266,6 +279,7 @@ test('limits concurrency while preserving source order', async () => {
   const result = await node.run({
     runnableRules: rules,
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(maximumActive, 2);
@@ -299,6 +313,7 @@ test('LangChain interpreter sends the complete rule and catalog as data', async 
   const result = await langChainInterpreter.interpret({
     preparedRule: preparedRule(0),
     resourceCatalog: catalog,
+    context,
   });
 
   const serializedMessages = JSON.stringify(receivedMessages);
@@ -307,6 +322,8 @@ test('LangChain interpreter sends the complete rule and catalog as data', async 
   assert.match(serializedMessages, /Attribution can be delayed/);
   assert.match(serializedMessages, /Example warning/);
   assert.match(serializedMessages, /properties/);
+  assert.match(serializedMessages, /2026-08-01/);
+  assert.match(serializedMessages, /2026-08-10/);
   assert.match(
     serializedMessages,
     /Prefer a reasonable, conventional interpretation/,
@@ -349,6 +366,7 @@ test('normalizes an ambiguous provider response before strict validation', async
   const result = await createLangChainRuleInterpreter(fakeModel).interpret({
     preparedRule: preparedRule(0),
     resourceCatalog: catalog,
+    context,
   });
 
   assert.deepEqual(result, {

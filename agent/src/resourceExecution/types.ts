@@ -1,12 +1,14 @@
 import type {
   EvaluationContext,
   EvaluationPlan,
+  SelectedOperationParameters,
 } from '../evaluationPlan/types.js';
 
 export type ResourceExecutionRequest = {
   context: EvaluationContext;
   resourceId: string;
   operationName: string;
+  parameters?: SelectedOperationParameters | undefined;
 };
 
 export type ResourceExecutor = {

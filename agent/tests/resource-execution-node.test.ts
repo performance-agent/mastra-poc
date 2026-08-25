@@ -63,6 +63,28 @@ test('executes each planned usage once and retains raw data and traceability', a
   });
 });
 
+test('sends planned operation parameters to the backend executor', async () => {
+  const requests: Parameters<ResourceExecutor['execute']>[0][] = [];
+  const plannedUsage = usage(0);
+  plannedUsage.parameters = {
+    period: { from: '2026-06-01', to: '2026-06-30' },
+  };
+  const node = createResourceExecutionNode({
+    executor: {
+      async execute(input) {
+        requests.push(input);
+        return [];
+      },
+    },
+  });
+
+  await node.run({ plan: plan([plannedUsage]) });
+
+  assert.deepEqual(requests[0]?.parameters, {
+    period: { from: '2026-06-01', to: '2026-06-30' },
+  });
+});
+
 test('keeps successful calls when another resource fails', async () => {
   const result = await createResourceExecutionNode({
     executor: {

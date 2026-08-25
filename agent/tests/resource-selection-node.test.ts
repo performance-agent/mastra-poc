@@ -51,6 +51,12 @@ const catalog: ResourceCatalogNodeResult = {
   warnings: [],
 };
 
+const context = {
+  workspaceId: 'workspace-1',
+  groupId: 'group-1',
+  period: { from: '2026-08-01', to: '2026-08-10' },
+};
+
 test('LangChain selector sends the complete understood rule and catalog as data', async () => {
   let receivedMessages: unknown;
   const fakeModel = {
@@ -82,12 +88,15 @@ test('LangChain selector sends the complete understood rule and catalog as data'
   const output = await createLangChainResourceSelector(fakeModel).select({
     understoodRule: rule,
     resourceCatalog: catalog,
+    context,
   });
 
   const serialized = JSON.stringify(receivedMessages);
   assert.match(serialized, /Delivery traceability/);
   assert.match(serialized, /repository-1/);
   assert.match(serialized, /github\.commit/);
+  assert.match(serialized, /2026-08-01/);
+  assert.match(serialized, /2026-08-10/);
   assert.match(serialized, /untrusted data/);
   assert.deepEqual(output, {
     selectedResources: [
@@ -131,6 +140,7 @@ test('selection node rejects resources and operations invented by the model', as
   const resourceResult = await unknownResource.run({
     understoodRules: [rule],
     resourceCatalog: catalog,
+    context,
   });
   assert.equal(resourceResult.failedRules[0]?.code, 'unknown_resource');
 
@@ -157,8 +167,44 @@ test('selection node rejects resources and operations invented by the model', as
   const operationResult = await unknownOperation.run({
     understoodRules: [rule],
     resourceCatalog: catalog,
+    context,
   });
   assert.equal(operationResult.failedRules[0]?.code, 'unknown_operation');
+});
+
+test('attaches the exact evaluation period to selected operation parameters', async () => {
+  const node = createResourceSelectionNode({
+    async select() {
+      return {
+        selectedResources: [
+          {
+            resourceId: 'repository-1',
+            reason: 'Repository evidence.',
+            requiredOperations: [
+              {
+                name: 'github.commit',
+                reason: 'Commits demonstrate delivered work.',
+                expectedSignals: ['commits'],
+              },
+            ],
+          },
+        ],
+        missingEvidence: [],
+      };
+    },
+  });
+
+  const result = await node.run({
+    understoodRules: [rule],
+    resourceCatalog: catalog,
+    context,
+  });
+
+  assert.deepEqual(
+    result.selectedRules[0]?.selectedResources[0]?.requiredOperations[0]
+      ?.parameters,
+    { period: { from: '2026-08-01', to: '2026-08-10' } },
+  );
 });
 
 test('accepts explicit missing evidence when no catalog operation is relevant', async () => {
@@ -180,6 +226,7 @@ test('accepts explicit missing evidence when no catalog operation is relevant', 
   const result = await node.run({
     understoodRules: [rule],
     resourceCatalog: catalog,
+    context,
   });
 
   assert.equal(result.status, 'ready');

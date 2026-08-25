@@ -150,22 +150,34 @@ test('runs the complete graph and produces a ready plan', async () => {
   );
 });
 
-test('propagates group scope through the plan to resource execution', async () => {
-  let executionContext: unknown;
+test('propagates group and period scope through the plan to resource execution', async () => {
+  let executionRequest: unknown;
   const result = await makeFlow({
-    execute: async ({ context }) => {
-      executionContext = context;
+    execute: async (request) => {
+      executionRequest = request;
       return [];
     },
   }).invoke({
-    context: { workspaceId: 'workspace-1', groupId: 'group-1' },
+    context: {
+      workspaceId: 'workspace-1',
+      groupId: 'group-1',
+      period: { from: '2026-08-01', to: '2026-08-10' },
+    },
     rules: input.rules,
   });
 
   assert.equal(result.resourceExecutionResult?.status, 'completed');
-  assert.deepEqual(executionContext, {
-    workspaceId: 'workspace-1',
-    groupId: 'group-1',
+  assert.deepEqual(executionRequest, {
+    context: {
+      workspaceId: 'workspace-1',
+      groupId: 'group-1',
+      period: { from: '2026-08-01', to: '2026-08-10' },
+    },
+    resourceId: 'activity',
+    operationName: 'activity.by_period',
+    parameters: {
+      period: { from: '2026-08-01', to: '2026-08-10' },
+    },
   });
 });
 

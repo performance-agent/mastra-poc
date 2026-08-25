@@ -7,23 +7,24 @@ const calendarDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a date in YYYY-MM-DD format.')
   .refine(isRealCalendarDate, 'Expected a real calendar date.');
 
+export const evaluationPeriodSchema = z
+  .object({
+    from: calendarDate,
+    to: calendarDate,
+  })
+  .strict()
+  .refine(({ from, to }) => from <= to, {
+    path: ['to'],
+    message: 'Period end must be on or after period start.',
+  });
+
 export const evaluationContextSchema = z
   .object({
     workspaceId: nonEmptyText,
     groupId: nonEmptyText.optional(),
     teamId: nonEmptyText.optional(),
     projectId: nonEmptyText.optional(),
-    period: z
-      .object({
-        from: calendarDate,
-        to: calendarDate,
-      })
-      .strict()
-      .refine(({ from, to }) => from <= to, {
-        path: ['to'],
-        message: 'Period end must be on or after period start.',
-      })
-      .optional(),
+    period: evaluationPeriodSchema.optional(),
   })
   .strict();
 
@@ -32,6 +33,10 @@ export const selectedOperationSchema = z
     name: nonEmptyText,
     reason: nonEmptyText,
     expectedSignals: z.array(nonEmptyText).min(1),
+    parameters: z
+      .object({ period: evaluationPeriodSchema })
+      .strict()
+      .optional(),
   })
   .strict();
 

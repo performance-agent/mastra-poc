@@ -1,14 +1,17 @@
 import type { PreparedRuleInput } from '../ruleInput/types.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
+import type { EvaluationContext } from '../evaluationPlan/types.js';
 
 export type RuleUnderstandingNodeInput = {
   runnableRules: readonly PreparedRuleInput[];
   resourceCatalog: ResourceCatalogNodeResult;
+  context: EvaluationContext;
 };
 
 export type RuleInterpretationInput = {
   preparedRule: PreparedRuleInput;
   resourceCatalog: ResourceCatalogNodeResult;
+  context: EvaluationContext;
 };
 
 export type RuleInterpreter = {

@@ -1,6 +1,7 @@
 export { createEvaluationPlanNode } from './evaluation-plan-node.js';
 export {
   evaluationContextSchema,
+  evaluationPeriodSchema,
   evaluationPlanNodeInputSchema,
   missingEvidenceRequirementSchema,
   resourceSelectedRuleSchema,
@@ -26,6 +27,7 @@ export type {
   PlannedResourceUsage,
   ResourceSelectedRule,
   SelectedOperation,
+  SelectedOperationParameters,
   SelectedResource,
   SuccessfulEvaluationPlanNodeResult,
 } from './types.js';

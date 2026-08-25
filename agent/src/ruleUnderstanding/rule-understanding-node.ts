@@ -9,6 +9,7 @@ import type {
   FailedRuleUnderstanding,
   FailedRuleUnderstandingCode,
   RuleClarificationRequest,
+  RuleInterpretationInput,
   RuleInterpreter,
   RuleUnderstandingNode,
   RuleUnderstandingNodeOptions,
@@ -35,7 +36,12 @@ export function createRuleUnderstandingNode(
         input.runnableRules,
         maxConcurrency,
         (rule) =>
-          interpretRule(rule, input.resourceCatalog, options.interpreter),
+          interpretRule(
+            rule,
+            input.resourceCatalog,
+            input.context,
+            options.interpreter,
+          ),
       );
 
       return toResult(outcomes);
@@ -46,11 +52,16 @@ export function createRuleUnderstandingNode(
 async function interpretRule(
   preparedRule: PreparedRuleInput,
   resourceCatalog: ResourceCatalogNodeResult,
+  context: RuleInterpretationInput['context'],
   interpreter: RuleInterpreter,
 ): Promise<RuleOutcome> {
   let rawOutput: unknown;
   try {
-    rawOutput = await interpreter.interpret({ preparedRule, resourceCatalog });
+    rawOutput = await interpreter.interpret({
+      preparedRule,
+      resourceCatalog,
+      context,
+    });
   } catch (error) {
     if (error instanceof ZodError) {
       return failedOutcome(
