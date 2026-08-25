@@ -12,6 +12,7 @@ import {
   GROUP_REPORT_GENERATION_PROMPT,
   GROUP_REPORT_INSTRUCTIONS,
 } from '../mastra/group-report-instructions';
+import { buildEvaluationGuidelinesPrompt } from '../mastra/evaluation-guidelines';
 import { groupReportContentSchema } from '../mastra/schemas/group-report.schema';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
@@ -116,10 +117,15 @@ export class PerformanceMcpService {
         ]);
         const prepared = await this.reports.prepareGroupReport(groupId);
 
+        const guidelinesPrefix = buildEvaluationGuidelinesPrompt(
+          prepared.evaluationGuidelines,
+        );
         return {
           groupId,
           instructions: GROUP_REPORT_INSTRUCTIONS,
-          generationPrompt: GROUP_REPORT_GENERATION_PROMPT,
+          generationPrompt: guidelinesPrefix
+            ? `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}`
+            : GROUP_REPORT_GENERATION_PROMPT,
           schema: z.toJSONSchema(groupReportContentSchema),
           input: prepared.reportInput,
           nextStep:

@@ -7,6 +7,10 @@ import {
 import { mastra } from '../mastra';
 import { GROUP_REPORT_GENERATION_PROMPT } from '../mastra/group-report-instructions';
 import {
+  buildEvaluationGuidelinesPrompt,
+  type EvaluationGuidelines,
+} from '../mastra/evaluation-guidelines';
+import {
   groupReportContentSchema,
   groupReportSchema,
 } from '../mastra/schemas/group-report.schema';
@@ -48,7 +52,7 @@ export class ReportsService {
 
   private async createSoftwareReport(groupId: string) {
     const prepared = await this.prepareGroupReport(groupId);
-    const { group, providerData, reportInput } = prepared;
+    const { group, providerData, reportInput, evaluationGuidelines } = prepared;
 
     const configuredModel = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
     if (typeof configuredModel !== 'string') {
@@ -79,10 +83,12 @@ export class ReportsService {
           })),
         })),
         limitations: providerData.limitations.length,
+        hasEvaluationGuidelines: evaluationGuidelines !== null,
       })}`,
     );
 
-    const prompt = `${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(reportInput)}`;
+    const guidelinesPrefix = buildEvaluationGuidelinesPrompt(evaluationGuidelines);
+    const prompt = `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(reportInput)}`;
     const generatedReport = (
       await this.groupReportAgent.generate(
         [{ role: 'user', content: prompt }],
@@ -90,7 +96,7 @@ export class ReportsService {
       )
     ).object;
 
-    return this.persistGroupReport(groupId, generatedReport, prepared.coverage);
+    return this.persistGroupReport(groupId, generatedReport, prepared.coverage, evaluationGuidelines);
   }
 
   async prepareGroupReport(groupId: string) {
@@ -135,6 +141,14 @@ export class ReportsService {
       });
     }
 
+    const evaluationGuidelines: EvaluationGuidelines | null =
+      group.evaluationEmphasis.length > 0 || group.evaluationNotes
+        ? {
+            emphasis: group.evaluationEmphasis as EvaluationGuidelines['emphasis'],
+            notes: group.evaluationNotes ?? null,
+          }
+        : null;
+
     const coverage = buildCoverage(providerData);
     const reportInput = {
       group: { id: group.id, name: group.name },
@@ -146,23 +160,25 @@ export class ReportsService {
       coverage,
     };
 
-    return { group, providerData, reportInput, coverage };
+    return { group, providerData, reportInput, coverage, evaluationGuidelines };
   }
 
   async createGroupReportFromContent(groupId: string, content: unknown) {
     const prepared = await this.prepareGroupReport(groupId);
-    return this.persistGroupReport(groupId, content, prepared.coverage);
+    return this.persistGroupReport(groupId, content, prepared.coverage, prepared.evaluationGuidelines);
   }
 
   private persistGroupReport(
     groupId: string,
     content: unknown,
     coverage: ReturnType<typeof buildCoverage>,
+    evaluationGuidelines: EvaluationGuidelines | null,
   ) {
     const generatedReport = groupReportContentSchema.parse(content);
     const reportData = groupReportSchema.parse({
       ...generatedReport,
       coverage,
+      evaluationGuidelines: evaluationGuidelines ?? null,
     });
 
     return this.prisma.performanceReport.create({

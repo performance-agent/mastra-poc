@@ -22,6 +22,7 @@ import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
+import { EvaluationGuidelinesCard } from "@/components/app/EvaluationGuidelinesCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -279,6 +280,14 @@ function GroupPage() {
                   value={groupResourcesQ.data?.length ?? 0}
                 />
               </div>
+
+              <EvaluationGuidelinesCard
+                group={group}
+                canEdit={canManageRoles}
+                onSaved={(updated) => {
+                  qc.setQueryData(["group", groupId], updated);
+                }}
+              />
 
               {(groupResourcesQ.data ?? []).length > 0 && (
                 <section className="space-y-3">
@@ -558,7 +567,7 @@ function ReportsTab({
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
-          <p className="mt-1 max-w-2xl break-words text-xs text-muted-foreground">
+          <p className="mt-1 max-w-2xl wrap-break-word text-xs text-muted-foreground">
             Generate a full historical report from all plugin resources assigned to this group.
           </p>
         </div>
@@ -577,7 +586,7 @@ function ReportsTab({
         <Card className="rounded-xl p-4 shadow-card">
           <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            <span className="min-w-0 break-words">
+            <span className="min-w-0 wrap-break-word">
               Report generation started. Refreshing until the new report is available.
             </span>
           </div>
