@@ -9,6 +9,7 @@ import type {
   GroupReportStatus,
   PerformanceReport,
 } from "@/lib/types";
+import { EMPHASIS_LABELS, type EvaluationEmphasis } from "@/lib/evaluation-guidelines";
 import type { ReactNode } from "react";
 
 type Props = {
@@ -339,6 +340,33 @@ export function GroupReportRenderer({ report }: Props) {
           <EvidenceList items={evidenceForSection("OVERALL")} />
         </div>
       </Card>
+
+      {data.evaluationGuidelines &&
+        (data.evaluationGuidelines.emphasis.length > 0 ||
+          data.evaluationGuidelines.notes) && (
+          <Card className="min-w-0 overflow-hidden rounded-xl border-border/60 p-4 shadow-card">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Criterios de evaluación usados
+            </p>
+            {data.evaluationGuidelines.emphasis.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {data.evaluationGuidelines.emphasis.map((e) => (
+                  <span
+                    key={e}
+                    className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {EMPHASIS_LABELS[e as EvaluationEmphasis] ?? e}
+                  </span>
+                ))}
+              </div>
+            )}
+            {data.evaluationGuidelines.notes && (
+              <p className="mt-2 break-words text-xs text-muted-foreground">
+                {data.evaluationGuidelines.notes}
+              </p>
+            )}
+          </Card>
+        )}
 
       <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
         <Metric label="Recursos" value={data.coverage.resourcesAnalyzed} />

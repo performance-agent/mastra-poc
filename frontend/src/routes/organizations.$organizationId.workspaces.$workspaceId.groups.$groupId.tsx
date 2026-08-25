@@ -22,6 +22,7 @@ import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
+import { EvaluationGuidelinesCard } from "@/components/app/EvaluationGuidelinesCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -279,6 +280,14 @@ function GroupPage() {
                   value={groupResourcesQ.data?.length ?? 0}
                 />
               </div>
+
+              <EvaluationGuidelinesCard
+                group={group}
+                canEdit={canManageRoles}
+                onSaved={(updated) => {
+                  qc.setQueryData(["group", groupId], updated);
+                }}
+              />
 
               {(groupResourcesQ.data ?? []).length > 0 && (
                 <section className="space-y-3">

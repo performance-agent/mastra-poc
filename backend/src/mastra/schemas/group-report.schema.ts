@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EVALUATION_EMPHASIS_VALUES } from '../evaluation-guidelines';
 
 const reportStatusSchema = z
   .enum(['GOOD', 'WATCH', 'RISK', 'INSUFFICIENT_DATA'])
@@ -217,8 +218,14 @@ const coverageSchema = z.object({
   limitations: z.array(z.string()),
 });
 
+const evaluationGuidelinesSnapshotSchema = z.object({
+  emphasis: z.array(z.enum(EVALUATION_EMPHASIS_VALUES)),
+  notes: z.string().nullable(),
+});
+
 export const groupReportSchema = groupReportContentSchema.extend({
   coverage: coverageSchema,
+  evaluationGuidelines: evaluationGuidelinesSnapshotSchema.nullable(),
 });
 
 export type GroupReportContent = z.infer<typeof groupReportContentSchema>;
