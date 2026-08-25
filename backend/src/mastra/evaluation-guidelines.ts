@@ -13,10 +13,10 @@ export const MAX_EMPHASIS_COUNT = 3;
 export const MAX_NOTES_LENGTH = 2000;
 
 /** GITHUB_EVIDENCE and TICKET_EVIDENCE cannot coexist. */
-export const CONFLICTING_EVIDENCE_PAIR: [EvaluationEmphasis, EvaluationEmphasis] = [
-  'GITHUB_EVIDENCE',
-  'TICKET_EVIDENCE',
-];
+export const CONFLICTING_EVIDENCE_PAIR: [
+  EvaluationEmphasis,
+  EvaluationEmphasis,
+] = ['GITHUB_EVIDENCE', 'TICKET_EVIDENCE'];
 
 const EMPHASIS_INSTRUCTIONS: Record<EvaluationEmphasis, string> = {
   PRODUCT:
@@ -80,7 +80,8 @@ export function validateEvaluationGuidelines(input: {
   if (hasConflict) {
     errors.push({
       field: 'evaluationEmphasis',
-      message: 'GITHUB_EVIDENCE and TICKET_EVIDENCE cannot be selected together',
+      message:
+        'GITHUB_EVIDENCE and TICKET_EVIDENCE cannot be selected together',
     });
   }
 
@@ -119,14 +120,14 @@ export function buildEvaluationGuidelinesPrompt(
   if (hasEmphasis) {
     lines.push('Énfasis de evaluación:');
     for (const e of emphasis) {
-      lines.push(`- ${EMPHASIS_INSTRUCTIONS[e as EvaluationEmphasis]}`);
+      lines.push(`- ${EMPHASIS_INSTRUCTIONS[e]}`);
     }
   }
 
   if (hasNotes) {
     if (hasEmphasis) lines.push('');
     lines.push('Notas adicionales del equipo:');
-    lines.push(notes!.trim());
+    lines.push(notes.trim());
   }
 
   lines.push('');

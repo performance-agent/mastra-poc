@@ -12,7 +12,9 @@ export class GroupsService {
     private readonly accessControlService: AccessControlService,
   ) {}
 
-  private assertGuidelinesValid(dto: Pick<CreateGroupDto, 'evaluationEmphasis' | 'evaluationNotes'>) {
+  private assertGuidelinesValid(
+    dto: Pick<CreateGroupDto, 'evaluationEmphasis' | 'evaluationNotes'>,
+  ) {
     const errors = validateEvaluationGuidelines({
       emphasis: dto.evaluationEmphasis ?? [],
       notes: dto.evaluationNotes,

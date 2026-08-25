@@ -65,8 +65,7 @@ export function EvaluationGuidelinesCard({ group, canEdit, onSaved }: Props) {
 
   const isDirty =
     JSON.stringify([...(group.evaluationEmphasis ?? [])].sort()) !==
-      JSON.stringify([...emphasis].sort()) ||
-    (group.evaluationNotes ?? "") !== notes;
+      JSON.stringify([...emphasis].sort()) || (group.evaluationNotes ?? "") !== notes;
 
   const handleSave = async () => {
     setSaving(true);
@@ -98,8 +97,8 @@ export function EvaluationGuidelinesCard({ group, canEdit, onSaved }: Props) {
             <h2 className="text-sm font-semibold">Evaluation guidelines</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Steer the next Group Report by telling the AI what matters most for this project.
-              These guidelines do not add sections or change the score scale — they influence
-              how evidence is interpreted and which metrics are highlighted.
+              These guidelines do not add sections or change the score scale — they influence how
+              evidence is interpreted and which metrics are highlighted.
             </p>
           </div>
 
@@ -153,7 +152,7 @@ export function EvaluationGuidelinesCard({ group, canEdit, onSaved }: Props) {
                 className="resize-none text-sm"
               />
             ) : (
-              <p className="min-h-[60px] rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              <p className="min-h-15 rounded-md border border-input bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 {notes || <span className="italic opacity-60">No notes configured</span>}
               </p>
             )}
@@ -171,12 +170,7 @@ export function EvaluationGuidelinesCard({ group, canEdit, onSaved }: Props) {
                   Discard
                 </Button>
               )}
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleSave}
-                disabled={saving || !isDirty}
-              >
+              <Button type="button" size="sm" onClick={handleSave} disabled={saving || !isDirty}>
                 {saving ? "Saving…" : "Save guidelines"}
               </Button>
             </div>

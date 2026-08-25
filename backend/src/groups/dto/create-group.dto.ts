@@ -8,7 +8,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { GroupEvaluationEmphasis } from '../../../generated/prisma/enums';
-import { MAX_EMPHASIS_COUNT, MAX_NOTES_LENGTH } from '../../mastra/evaluation-guidelines';
+import {
+  MAX_EMPHASIS_COUNT,
+  MAX_NOTES_LENGTH,
+} from '../../mastra/evaluation-guidelines';
 
 export class CreateGroupDto {
   @IsNotEmpty()
