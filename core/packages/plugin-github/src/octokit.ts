@@ -7,8 +7,6 @@ import type {
   GitHubIssue,
   GitHubParticipation,
   GitHubPullRequest,
-  GitHubPullRequestCommit,
-  GitHubPullRequestFile,
   GitHubRepository,
   GitHubSecrets,
 } from "./types.js";
@@ -119,37 +117,6 @@ class OctokitGitHubClient implements GitHubClient {
     const commits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, { owner, repo, per_page: 100 });
     return commits.map((commit) => ({
       sha: commit.sha, repository, message: commit.commit.message,
-      ...(commit.author?.login ? { author: commit.author.login } : commit.commit.author?.name ? { author: commit.commit.author.name } : {}),
-      ...(isoDate(commit.commit.author?.date) ? { authoredAt: isoDate(commit.commit.author?.date) } : {}),
-      ...(isoDate(commit.commit.committer?.date) ? { committedAt: isoDate(commit.commit.committer?.date) } : {}),
-      ...(commit.html_url ? { url: commit.html_url } : {}),
-    }));
-  }
-
-  async listPullRequestFiles(repository: string, pullNumber: number): Promise<readonly GitHubPullRequestFile[]> {
-    const { owner, repo } = repositoryName(repository);
-    const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
-      owner, repo, pull_number: pullNumber, per_page: 100,
-    });
-    return files.map((file) => ({
-      repository, pullRequestNumber: pullNumber, filename: file.filename,
-      status: file.status, additions: file.additions, deletions: file.deletions, changes: file.changes,
-      ...(file.sha ? { sha: file.sha } : {}),
-      ...(file.blob_url ? { blobUrl: file.blob_url } : {}),
-      ...(file.raw_url ? { rawUrl: file.raw_url } : {}),
-      ...(file.contents_url ? { contentsUrl: file.contents_url } : {}),
-      ...(file.previous_filename ? { previousFilename: file.previous_filename } : {}),
-      ...(file.patch ? { patch: file.patch } : {}),
-    }));
-  }
-
-  async listPullRequestCommits(repository: string, pullNumber: number): Promise<readonly GitHubPullRequestCommit[]> {
-    const { owner, repo } = repositoryName(repository);
-    const commits = await this.octokit.paginate(this.octokit.rest.pulls.listCommits, {
-      owner, repo, pull_number: pullNumber, per_page: 100,
-    });
-    return commits.map((commit) => ({
-      sha: commit.sha, repository, pullRequestNumber: pullNumber, message: commit.commit.message,
       ...(commit.author?.login ? { author: commit.author.login } : commit.commit.author?.name ? { author: commit.commit.author.name } : {}),
       ...(isoDate(commit.commit.author?.date) ? { authoredAt: isoDate(commit.commit.author?.date) } : {}),
       ...(isoDate(commit.commit.committer?.date) ? { committedAt: isoDate(commit.commit.committer?.date) } : {}),

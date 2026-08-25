@@ -58,12 +58,6 @@ function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory
         async listCommits(name) {
           return [{ sha: "abc", repository: name, message: "fix: bug", committedAt: "2026-01-03T00:00:00.000Z" }];
         },
-        async listPullRequestFiles(name, pullNumber) {
-          return [{ sha: "def", repository: name, pullRequestNumber: pullNumber, filename: "src/index.ts", status: "modified", additions: 4, deletions: 1, changes: 5 }];
-        },
-        async listPullRequestCommits(name, pullNumber) {
-          return [{ sha: "abc", repository: name, pullRequestNumber: pullNumber, message: "fix: bug", committedAt: "2026-01-03T00:00:00.000Z" }];
-        },
         async getParticipation(name) {
           return {
             repository: name, metric: "commits", bucketUnit: "week", timezone: "UTC", order: "oldest_to_newest",
@@ -81,7 +75,7 @@ test("manifest exposes secret declarations and data JSON Schema without secret v
   const plugin = createGitHubPlugin({ clientFactory: fakeFactory() });
   assert.equal(plugin.manifest.id, "github");
   assert.deepEqual(plugin.manifest.dataTypes.map((type) => type.key), [
-    "github.issue", "github.pullRequest", "github.commit", "github.pullRequestFile", "github.pullRequestCommit", "github.participation",
+    "github.issue", "github.pullRequest", "github.commit", "github.participation",
   ]);
   assert.equal(plugin.manifest.resourceTypes[0]?.key, "github.repository");
   assert.equal(plugin.manifest.dataTypes[0]?.schema.type, "object");
@@ -135,17 +129,13 @@ test("all GitHub providers return schema-valid native data", async () => {
   const issues = await plugin.dataProviders[0]!.provide(context(), repository);
   const pullRequests = await plugin.dataProviders[1]!.provide(context(), repository);
   const commits = await plugin.dataProviders[2]!.provide(context(), repository);
-  const files = await plugin.dataProviders[3]!.provide(context(), repository);
-  const pullRequestCommits = await plugin.dataProviders[4]!.provide(context(), repository);
-  const participation = await plugin.dataProviders[5]!.provide(context(), repository);
-  const results = [issues, pullRequests, commits, files, pullRequestCommits, participation];
-  assert.deepEqual(results.map((records) => records.length), [1, 1, 1, 1, 1, 1]);
+  const participation = await plugin.dataProviders[3]!.provide(context(), repository);
+  const results = [issues, pullRequests, commits, participation];
+  assert.deepEqual(results.map((records) => records.length), [1, 1, 1, 1]);
   assert.equal(issues[0]?.author, "octocat");
   assert.equal(issues[0]?.comments, 3);
   assert.equal(pullRequests[0]?.reviewComments, 4);
   assert.equal(pullRequests[0]?.changedFiles, 3);
-  assert.equal(files[0]?.pullRequestNumber, 2);
-  assert.equal(pullRequestCommits[0]?.pullRequestNumber, 2);
   assert.equal(participation[0]?.all.length, 52);
   assert.equal(participation[0]?.metric, "commits");
   assert.equal(pullRequests[0]?.body, "## Context\nRaw PR description");

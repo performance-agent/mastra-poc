@@ -65,23 +65,6 @@ export const githubCommitSchema = schema.object({
   url: schema.optional(schema.string({ format: "uri" })),
 });
 
-export const githubPullRequestFileSchema = schema.object({
-  sha: schema.optional(schema.string()), repository: schema.string(), pullRequestNumber: schema.integer({ minimum: 1 }),
-  filename: schema.string(), status: schema.string(), additions: schema.integer({ minimum: 0 }),
-  deletions: schema.integer({ minimum: 0 }), changes: schema.integer({ minimum: 0 }),
-  blobUrl: schema.optional(schema.string({ format: "uri" })), rawUrl: schema.optional(schema.string({ format: "uri" })),
-  contentsUrl: schema.optional(schema.string({ format: "uri" })), previousFilename: schema.optional(schema.string()),
-  patch: schema.optional(schema.string()),
-});
-
-export const githubPullRequestCommitSchema = schema.object({
-  sha: schema.string(), repository: schema.string(), pullRequestNumber: schema.integer({ minimum: 1 }),
-  message: schema.string(), author: schema.optional(schema.string()),
-  authoredAt: schema.optional(schema.string({ format: "date-time" })),
-  committedAt: schema.optional(schema.string({ format: "date-time" })),
-  url: schema.optional(schema.string({ format: "uri" })),
-});
-
 export const githubParticipationSchema = schema.object({
   repository: schema.string(),
   metric: schema.enum(["commits"]),
@@ -103,8 +86,6 @@ export const githubPullRequest = dataType({
   limitations: ["Pull request activity is not equivalent to commit activity."],
 });
 export const githubCommit = dataType({ key: "github.commit", schema: githubCommitSchema });
-export const githubPullRequestFile = dataType({ key: "github.pullRequestFile", schema: githubPullRequestFileSchema });
-export const githubPullRequestCommit = dataType({ key: "github.pullRequestCommit", schema: githubPullRequestCommitSchema });
 export const githubParticipation = dataType({
   key: "github.participation",
   schema: githubParticipationSchema,
@@ -150,22 +131,6 @@ export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
         async provide(context, resource) {
           const client = await clients.create(await readSecrets(context));
           return client.listCommits(resource.externalId);
-        },
-      }),
-      providesData(githubPullRequestFile, {
-        secrets: githubSecrets,
-        async provide(context, resource) {
-          const client = await clients.create(await readSecrets(context));
-          const pulls = await client.listPullRequests(resource.externalId);
-          return (await Promise.all(pulls.map((pull) => client.listPullRequestFiles(resource.externalId, pull.number)))).flat();
-        },
-      }),
-      providesData(githubPullRequestCommit, {
-        secrets: githubSecrets,
-        async provide(context, resource) {
-          const client = await clients.create(await readSecrets(context));
-          const pulls = await client.listPullRequests(resource.externalId);
-          return (await Promise.all(pulls.map((pull) => client.listPullRequestCommits(resource.externalId, pull.number)))).flat();
         },
       }),
       providesData(githubParticipation, {
