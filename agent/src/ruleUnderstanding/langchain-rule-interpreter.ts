@@ -1,13 +1,13 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { initChatModel } from "langchain/chat_models/universal";
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { initChatModel } from 'langchain/chat_models/universal';
 import {
   ruleUnderstandingAiOutputSchema,
   ruleUnderstandingProviderOutputSchema,
   type RuleUnderstandingProviderOutput,
-} from "./schemas.js";
-import type { RuleInterpretationInput, RuleInterpreter } from "./types.js";
+} from './schemas.js';
+import type { RuleInterpretationInput, RuleInterpreter } from './types.js';
 
-const MODEL_ENVIRONMENT_VARIABLE = "RULE_UNDERSTANDING_MODEL";
+const MODEL_ENVIRONMENT_VARIABLE = 'RULE_UNDERSTANDING_MODEL';
 
 const SYSTEM_PROMPT = `You interpret user-defined performance evaluation rules for a domain-neutral platform.
 
@@ -37,16 +37,22 @@ Always return all six fields in the response. Use exactly one of these two forms
 - If ambiguityDetected is true, ambiguityReason and clarificationQuestion must be non-null; interpretedGoal, evaluationQuestions, and expectedSignals must be null.
 Never omit a field. Use null only for fields that do not apply to the selected form.`;
 
-export type RuleUnderstandingEnvironment = Readonly<Record<string, string | undefined>>;
+export type RuleUnderstandingEnvironment = Readonly<
+  Record<string, string | undefined>
+>;
 
-export function createLangChainRuleInterpreter(model: BaseChatModel): RuleInterpreter {
-  const structuredModel = model.withStructuredOutput(ruleUnderstandingProviderOutputSchema);
+export function createLangChainRuleInterpreter(
+  model: BaseChatModel,
+): RuleInterpreter {
+  const structuredModel = model.withStructuredOutput(
+    ruleUnderstandingProviderOutputSchema,
+  );
 
   return {
     async interpret(input) {
       const output = await structuredModel.invoke([
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: createUserPrompt(input) },
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: createUserPrompt(input) },
       ]);
       return normalizeProviderOutput(output);
     },
@@ -58,26 +64,30 @@ export async function createLangChainRuleInterpreterFromEnv(
 ): Promise<RuleInterpreter> {
   const modelId = environment[MODEL_ENVIRONMENT_VARIABLE]?.trim();
   if (!modelId) {
-    throw new Error(`${MODEL_ENVIRONMENT_VARIABLE} must contain a LangChain provider:model identifier.`);
+    throw new Error(
+      `${MODEL_ENVIRONMENT_VARIABLE} must contain a LangChain provider:model identifier.`,
+    );
   }
 
   const model = await initChatModel(modelId);
   return createLangChainRuleInterpreter(model);
 }
 
-function normalizeProviderOutput(output: RuleUnderstandingProviderOutput): unknown {
+function normalizeProviderOutput(
+  output: RuleUnderstandingProviderOutput,
+): unknown {
   const normalized = output.ambiguityDetected
-    ? {
-      ambiguityDetected: true,
-      ambiguityReason: output.ambiguityReason,
-      clarificationQuestion: output.clarificationQuestion,
-    } as const
-    : {
-      ambiguityDetected: false,
-      interpretedGoal: output.interpretedGoal,
-      evaluationQuestions: output.evaluationQuestions,
-      expectedSignals: output.expectedSignals,
-    } as const;
+    ? ({
+        ambiguityDetected: true,
+        ambiguityReason: output.ambiguityReason,
+        clarificationQuestion: output.clarificationQuestion,
+      } as const)
+    : ({
+        ambiguityDetected: false,
+        interpretedGoal: output.interpretedGoal,
+        evaluationQuestions: output.evaluationQuestions,
+        expectedSignals: output.expectedSignals,
+      } as const);
 
   return ruleUnderstandingAiOutputSchema.parse(normalized);
 }

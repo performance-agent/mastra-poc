@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 const nonEmptyTrimmedString = z.string().trim().min(1);
 

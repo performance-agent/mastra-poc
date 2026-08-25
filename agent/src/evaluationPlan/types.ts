@@ -1,5 +1,5 @@
-import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
-import type { UnderstoodRule } from "../ruleUnderstanding/types.js";
+import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
+import type { UnderstoodRule } from '../ruleUnderstanding/types.js';
 
 export type EvaluationPeriod = {
   from: string;
@@ -37,7 +37,7 @@ export type ResourceSelectedRule = UnderstoodRule & {
   missingEvidence: MissingEvidenceRequirement[];
 };
 
-export type MissingEvidencePolicy = "partial" | "not_evaluable" | "ask_user";
+export type MissingEvidencePolicy = 'partial' | 'not_evaluable' | 'ask_user';
 
 export type NormalizedRule = ResourceSelectedRule & {
   id: string;
@@ -55,7 +55,7 @@ export type PlannedResourceUsage = {
 
 export type PlannedExpectedEvidence = {
   id: string;
-  status: "planned";
+  status: 'planned';
   ruleId: string;
   resourceId: string;
   operationName: string;
@@ -64,17 +64,18 @@ export type PlannedExpectedEvidence = {
 
 export type MissingExpectedEvidence = {
   id: string;
-  status: "missing";
+  status: 'missing';
   ruleId: string;
   description: string;
   impact: string;
   expectedSignals: string[];
 };
 
-export type ExpectedEvidence = PlannedExpectedEvidence | MissingExpectedEvidence;
+export type ExpectedEvidence =
+  PlannedExpectedEvidence | MissingExpectedEvidence;
 
 export type EvaluationPlan = {
-  reportType: "standard_performance_report";
+  reportType: 'standard_performance_report';
   context: EvaluationContext;
   rules: NormalizedRule[];
   resourcePlan: PlannedResourceUsage[];
@@ -94,20 +95,22 @@ export type EvaluationPlanInputError = {
   message: string;
 };
 
-export type EvaluationPlanNodeStatus = "ready" | "constrained" | "not_plannable" | "invalid";
+export type EvaluationPlanNodeStatus =
+  'ready' | 'constrained' | 'not_plannable' | 'invalid';
 
 export type SuccessfulEvaluationPlanNodeResult = {
-  status: Exclude<EvaluationPlanNodeStatus, "invalid">;
+  status: Exclude<EvaluationPlanNodeStatus, 'invalid'>;
   plan: EvaluationPlan;
   errors: [];
 };
 
 export type InvalidEvaluationPlanNodeResult = {
-  status: "invalid";
+  status: 'invalid';
   errors: EvaluationPlanInputError[];
 };
 
-export type EvaluationPlanNodeResult = SuccessfulEvaluationPlanNodeResult | InvalidEvaluationPlanNodeResult;
+export type EvaluationPlanNodeResult =
+  SuccessfulEvaluationPlanNodeResult | InvalidEvaluationPlanNodeResult;
 
 export type EvaluationPlanNode = {
   run(input: EvaluationPlanNodeInput): EvaluationPlanNodeResult;

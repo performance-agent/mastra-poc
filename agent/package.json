@@ -12,14 +12,17 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "demo:flow": "tsx --env-file=.env examples/evaluation-flow-demo.ts",
     "demo:flow:llm": "tsx --env-file=.env examples/evaluation-flow-llm-demo.ts",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\""
   },
   "keywords": [],
   "author": "",
@@ -31,6 +34,7 @@
     "@langchain/langgraph": "^1.4.8",
     "@langchain/openai": "^1.5.5",
     "langchain": "^1.5.3",
+    "prettier": "^3.9.6",
     "zod": "^4.4.3"
   },
   "devDependencies": {

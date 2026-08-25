@@ -1,9 +1,9 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { initChatModel } from "langchain/chat_models/universal";
-import { resourceSelectionAiOutputSchema } from "./schemas.js";
-import type { ResourceSelectionInput, ResourceSelector } from "./types.js";
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { initChatModel } from 'langchain/chat_models/universal';
+import { resourceSelectionAiOutputSchema } from './schemas.js';
+import type { ResourceSelectionInput, ResourceSelector } from './types.js';
 
-const MODEL_ENVIRONMENT_VARIABLE = "RULE_UNDERSTANDING_MODEL";
+const MODEL_ENVIRONMENT_VARIABLE = 'RULE_UNDERSTANDING_MODEL';
 
 const SYSTEM_PROMPT = `You select the minimum available resource operations needed to evaluate one performance rule.
 
@@ -29,8 +29,8 @@ export function createLangChainResourceSelector(
   return {
     async select(input) {
       return structuredModel.invoke([
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: createUserPrompt(input) },
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: createUserPrompt(input) },
       ]);
     },
   };

@@ -2,30 +2,42 @@ import type {
   EvaluationContext,
   EvaluationPlanNode,
   EvaluationPlanNodeResult,
-} from "../evaluationPlan/types.js";
-import type { BackendResourceCatalogAdapter, ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
-import type { ResourceSelectionNode, ResourceSelectionNodeResult } from "../resourceSelection/types.js";
-import type { ResourceExecutionNode, ResourceExecutionNodeResult } from "../resourceExecution/types.js";
-import type { RuleInputNodeResult } from "../ruleInput/types.js";
+} from '../evaluationPlan/types.js';
+import type {
+  BackendResourceCatalogAdapter,
+  ResourceCatalogNodeResult,
+} from '../resourceCatalog/types.js';
+import type {
+  ResourceSelectionNode,
+  ResourceSelectionNodeResult,
+} from '../resourceSelection/types.js';
+import type {
+  ResourceExecutionNode,
+  ResourceExecutionNodeResult,
+} from '../resourceExecution/types.js';
+import type { RuleInputNodeResult } from '../ruleInput/types.js';
 import type {
   RuleAssessmentNode,
   RuleAssessmentNodeResult,
-} from "../ruleAssessment/types.js";
-import type { RuleUnderstandingNode, RuleUnderstandingNodeResult } from "../ruleUnderstanding/types.js";
+} from '../ruleAssessment/types.js';
+import type {
+  RuleUnderstandingNode,
+  RuleUnderstandingNodeResult,
+} from '../ruleUnderstanding/types.js';
 
 export type EvaluationFlowStatus =
-  | "ready"
-  | "constrained"
-  | "not_plannable"
-  | "partial"
-  | "needs_clarification"
-  | "invalid"
-  | "invalid_plan"
-  | "failed";
+  | 'ready'
+  | 'constrained'
+  | 'not_plannable'
+  | 'partial'
+  | 'needs_clarification'
+  | 'invalid'
+  | 'invalid_plan'
+  | 'failed';
 
 export type EvaluationFlowError = {
-  stage: "resource_catalog";
-  code: "resource_catalog_failed";
+  stage: 'resource_catalog';
+  code: 'resource_catalog_failed';
   message: string;
 };
 

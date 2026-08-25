@@ -1,7 +1,10 @@
-import type { PreparedRuleInput } from "../ruleInput/types.js";
-import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
-import { ZodError } from "zod";
-import { ruleUnderstandingAiOutputSchema, type RuleUnderstandingAiOutput } from "./schemas.js";
+import type { PreparedRuleInput } from '../ruleInput/types.js';
+import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
+import { ZodError } from 'zod';
+import {
+  ruleUnderstandingAiOutputSchema,
+  type RuleUnderstandingAiOutput,
+} from './schemas.js';
 import type {
   FailedRuleUnderstanding,
   FailedRuleUnderstandingCode,
@@ -12,16 +15,18 @@ import type {
   RuleUnderstandingNodeResult,
   RuleUnderstandingNodeStatus,
   UnderstoodRule,
-} from "./types.js";
+} from './types.js';
 
 const DEFAULT_MAX_CONCURRENCY = 3;
 
 type RuleOutcome =
-  | { kind: "understood"; value: UnderstoodRule }
-  | { kind: "clarification"; value: RuleClarificationRequest }
-  | { kind: "failed"; value: FailedRuleUnderstanding };
+  | { kind: 'understood'; value: UnderstoodRule }
+  | { kind: 'clarification'; value: RuleClarificationRequest }
+  | { kind: 'failed'; value: FailedRuleUnderstanding };
 
-export function createRuleUnderstandingNode(options: RuleUnderstandingNodeOptions): RuleUnderstandingNode {
+export function createRuleUnderstandingNode(
+  options: RuleUnderstandingNodeOptions,
+): RuleUnderstandingNode {
   const maxConcurrency = normalizeConcurrency(options.maxConcurrency);
 
   return {
@@ -29,7 +34,8 @@ export function createRuleUnderstandingNode(options: RuleUnderstandingNodeOption
       const outcomes = await mapWithConcurrency(
         input.runnableRules,
         maxConcurrency,
-        (rule) => interpretRule(rule, input.resourceCatalog, options.interpreter),
+        (rule) =>
+          interpretRule(rule, input.resourceCatalog, options.interpreter),
       );
 
       return toResult(outcomes);
@@ -49,18 +55,22 @@ async function interpretRule(
     if (error instanceof ZodError) {
       return failedOutcome(
         preparedRule,
-        "invalid_ai_output",
+        'invalid_ai_output',
         `The AI model returned an invalid rule interpretation: ${formatZodIssues(error)}`,
       );
     }
-    return failedOutcome(preparedRule, "ai_generation_failed", "The AI model could not interpret this rule.");
+    return failedOutcome(
+      preparedRule,
+      'ai_generation_failed',
+      'The AI model could not interpret this rule.',
+    );
   }
 
   const parsedOutput = ruleUnderstandingAiOutputSchema.safeParse(rawOutput);
   if (!parsedOutput.success) {
     return failedOutcome(
       preparedRule,
-      "invalid_ai_output",
+      'invalid_ai_output',
       `The AI model returned an invalid rule interpretation: ${formatZodIssues(parsedOutput.error)}`,
     );
   }
@@ -70,14 +80,20 @@ async function interpretRule(
 
 function formatZodIssues(error: ZodError): string {
   return error.issues
-    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "output"}: ${issue.message}`)
-    .join("; ");
+    .map(
+      (issue) =>
+        `${issue.path.length > 0 ? issue.path.join('.') : 'output'}: ${issue.message}`,
+    )
+    .join('; ');
 }
 
-function successfulOutcome(preparedRule: PreparedRuleInput, output: RuleUnderstandingAiOutput): RuleOutcome {
+function successfulOutcome(
+  preparedRule: PreparedRuleInput,
+  output: RuleUnderstandingAiOutput,
+): RuleOutcome {
   if (output.ambiguityDetected) {
     return {
-      kind: "clarification",
+      kind: 'clarification',
       value: {
         ...preparedRule,
         ambiguityReason: output.ambiguityReason,
@@ -87,7 +103,7 @@ function successfulOutcome(preparedRule: PreparedRuleInput, output: RuleUndersta
   }
 
   return {
-    kind: "understood",
+    kind: 'understood',
     value: {
       ...preparedRule,
       interpretedGoal: output.interpretedGoal,
@@ -102,13 +118,13 @@ function failedOutcome(
   code: FailedRuleUnderstandingCode,
   message: string,
 ): RuleOutcome {
-  return { kind: "failed", value: { ...preparedRule, code, message } };
+  return { kind: 'failed', value: { ...preparedRule, code, message } };
 }
 
 function normalizeConcurrency(value: number | undefined): number {
   if (value === undefined) return DEFAULT_MAX_CONCURRENCY;
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("maxConcurrency must be a positive safe integer.");
+    throw new RangeError('maxConcurrency must be a positive safe integer.');
   }
   return value;
 }
@@ -134,28 +150,39 @@ async function mapWithConcurrency<TInput, TOutput>(
   return outputs;
 }
 
-function toResult(outcomes: readonly RuleOutcome[]): RuleUnderstandingNodeResult {
+function toResult(
+  outcomes: readonly RuleOutcome[],
+): RuleUnderstandingNodeResult {
   const understoodRules: UnderstoodRule[] = [];
   const clarificationRequests: RuleClarificationRequest[] = [];
   const failedRules: FailedRuleUnderstanding[] = [];
 
   for (const outcome of outcomes) {
-    if (outcome.kind === "understood") understoodRules.push(outcome.value);
-    else if (outcome.kind === "clarification") clarificationRequests.push(outcome.value);
+    if (outcome.kind === 'understood') understoodRules.push(outcome.value);
+    else if (outcome.kind === 'clarification')
+      clarificationRequests.push(outcome.value);
     else failedRules.push(outcome.value);
   }
 
   return {
-    status: resolveStatus(outcomes.length, clarificationRequests.length, failedRules.length),
+    status: resolveStatus(
+      outcomes.length,
+      clarificationRequests.length,
+      failedRules.length,
+    ),
     understoodRules,
     clarificationRequests,
     failedRules,
   };
 }
 
-function resolveStatus(total: number, clarificationCount: number, failureCount: number): RuleUnderstandingNodeStatus {
-  if (total === 0 || failureCount === total) return "failed";
-  if (failureCount > 0) return "partial";
-  if (clarificationCount > 0) return "needs_clarification";
-  return "ready";
+function resolveStatus(
+  total: number,
+  clarificationCount: number,
+  failureCount: number,
+): RuleUnderstandingNodeStatus {
+  if (total === 0 || failureCount === total) return 'failed';
+  if (failureCount > 0) return 'partial';
+  if (clarificationCount > 0) return 'needs_clarification';
+  return 'ready';
 }

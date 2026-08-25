@@ -1,5 +1,5 @@
-import type { z } from "zod";
-import { evaluationPlanNodeInputSchema } from "./schemas.js";
+import type { z } from 'zod';
+import { evaluationPlanNodeInputSchema } from './schemas.js';
 import type {
   EvaluationPlan,
   EvaluationPlanInputError,
@@ -11,33 +11,32 @@ import type {
   PlannedExpectedEvidence,
   PlannedResourceUsage,
   ResourceSelectedRule,
-} from "./types.js";
+} from './types.js';
 
-const REPORT_TYPE = "standard_performance_report";
+const REPORT_TYPE = 'standard_performance_report';
 const DEFAULT_RULE_VERSION = 1;
-const DEFAULT_MISSING_EVIDENCE_POLICY = "partial";
+const DEFAULT_MISSING_EVIDENCE_POLICY = 'partial';
 
 type PlannedExpectedEvidenceAccumulator = Omit<
   PlannedExpectedEvidence,
-  "expectedSignals"
+  'expectedSignals'
 > & {
   expectedSignals: Map<string, string>;
 };
 
 type MissingExpectedEvidenceAccumulator = Omit<
   MissingExpectedEvidence,
-  "expectedSignals"
+  'expectedSignals'
 > & {
   expectedSignals: Map<string, string>;
 };
 
 type ExpectedEvidenceAccumulator =
-  | PlannedExpectedEvidenceAccumulator
-  | MissingExpectedEvidenceAccumulator;
+  PlannedExpectedEvidenceAccumulator | MissingExpectedEvidenceAccumulator;
 
 type PlannedResourceUsageAccumulator = Omit<
   PlannedResourceUsage,
-  "ruleIds" | "expectedEvidenceIds"
+  'ruleIds' | 'expectedEvidenceIds'
 > & {
   ruleIds: Map<string, string>;
   expectedEvidenceIds: Map<string, string>;
@@ -48,7 +47,7 @@ export function createEvaluationPlanNode(): EvaluationPlanNode {
     run(input) {
       const parsedInput = evaluationPlanNodeInputSchema.safeParse(input);
       if (!parsedInput.success) {
-        return { status: "invalid", errors: mapZodErrors(parsedInput.error) };
+        return { status: 'invalid', errors: mapZodErrors(parsedInput.error) };
       }
 
       if (
@@ -56,13 +55,13 @@ export function createEvaluationPlanNode(): EvaluationPlanNode {
         input.resourceCatalog.workspaceId
       ) {
         return {
-          status: "invalid",
+          status: 'invalid',
           errors: [
             {
-              path: "resourceCatalog.workspaceId",
-              code: "workspace_mismatch",
+              path: 'resourceCatalog.workspaceId',
+              code: 'workspace_mismatch',
               message:
-                "Resource catalog workspace must match the evaluation context workspace.",
+                'Resource catalog workspace must match the evaluation context workspace.',
             },
           ],
         };
@@ -156,7 +155,7 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
     for (const missing of rule.missingEvidence) {
       const expectation: MissingExpectedEvidenceAccumulator = {
         id: `expected_evidence_${expectedEvidence.length + 1}`,
-        status: "missing",
+        status: 'missing',
         ruleId: rule.id,
         description: missing.description,
         impact: missing.impact,
@@ -202,7 +201,7 @@ function getOrCreatePlannedExpectation(
 
   const expectation: PlannedExpectedEvidenceAccumulator = {
     id: `expected_evidence_${expectedEvidence.length + 1}`,
-    status: "planned",
+    status: 'planned',
     ruleId,
     resourceId,
     operationName,
@@ -275,11 +274,11 @@ function collectLimitations(
 function resolveStatus(
   resourcePlan: readonly PlannedResourceUsage[],
   expectedEvidence: readonly ExpectedEvidence[],
-): Exclude<EvaluationPlanNodeStatus, "invalid"> {
-  if (resourcePlan.length === 0) return "not_plannable";
-  if (expectedEvidence.some((evidence) => evidence.status === "missing"))
-    return "constrained";
-  return "ready";
+): Exclude<EvaluationPlanNodeStatus, 'invalid'> {
+  if (resourcePlan.length === 0) return 'not_plannable';
+  if (expectedEvidence.some((evidence) => evidence.status === 'missing'))
+    return 'constrained';
+  return 'ready';
 }
 
 function collectHumanText(values: readonly string[]): Map<string, string> {
@@ -298,7 +297,7 @@ function addExactValue(values: Map<string, string>, value: string): void {
 }
 
 function canonicalizeHumanText(value: string): string {
-  return value.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+  return value.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function finalizeResourceUsage(
@@ -325,7 +324,7 @@ function mapZodErrors(
   pathPrefix?: string,
 ): EvaluationPlanInputError[] {
   return error.issues.map((issue) => ({
-    path: [pathPrefix, ...issue.path.map(String)].filter(Boolean).join("."),
+    path: [pathPrefix, ...issue.path.map(String)].filter(Boolean).join('.'),
     code: issue.code,
     message: issue.message,
   }));

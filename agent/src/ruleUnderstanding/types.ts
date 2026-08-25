@@ -1,5 +1,5 @@
-import type { PreparedRuleInput } from "../ruleInput/types.js";
-import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
+import type { PreparedRuleInput } from '../ruleInput/types.js';
+import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 
 export type RuleUnderstandingNodeInput = {
   runnableRules: readonly PreparedRuleInput[];
@@ -26,14 +26,16 @@ export type RuleClarificationRequest = PreparedRuleInput & {
   clarificationQuestion: string;
 };
 
-export type FailedRuleUnderstandingCode = "ai_generation_failed" | "invalid_ai_output";
+export type FailedRuleUnderstandingCode =
+  'ai_generation_failed' | 'invalid_ai_output';
 
 export type FailedRuleUnderstanding = PreparedRuleInput & {
   code: FailedRuleUnderstandingCode;
   message: string;
 };
 
-export type RuleUnderstandingNodeStatus = "ready" | "needs_clarification" | "partial" | "failed";
+export type RuleUnderstandingNodeStatus =
+  'ready' | 'needs_clarification' | 'partial' | 'failed';
 
 export type RuleUnderstandingNodeResult = {
   status: RuleUnderstandingNodeStatus;

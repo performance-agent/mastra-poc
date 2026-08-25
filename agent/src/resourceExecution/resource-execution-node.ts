@@ -1,4 +1,7 @@
-import type { EvaluationContext, PlannedResourceUsage } from "../evaluationPlan/types.js";
+import type {
+  EvaluationContext,
+  PlannedResourceUsage,
+} from '../evaluationPlan/types.js';
 import type {
   FailedResourceCall,
   ResourceCallResult,
@@ -8,11 +11,13 @@ import type {
   ResourceExecutionNodeStatus,
   ResourceExecutor,
   SuccessfulResourceCall,
-} from "./types.js";
+} from './types.js';
 
 const DEFAULT_MAX_CONCURRENCY = 3;
 
-export function createResourceExecutionNode(options: ResourceExecutionNodeOptions): ResourceExecutionNode {
+export function createResourceExecutionNode(
+  options: ResourceExecutionNodeOptions,
+): ResourceExecutionNode {
   const maxConcurrency = normalizeConcurrency(options.maxConcurrency);
 
   return {
@@ -46,14 +51,18 @@ async function executeUsage(
       resourceId: usage.resourceId,
       operationName: usage.operationName,
     });
-    const result: SuccessfulResourceCall = { ...trace, status: "succeeded", rawData };
+    const result: SuccessfulResourceCall = {
+      ...trace,
+      status: 'succeeded',
+      rawData,
+    };
     return result;
   } catch (error) {
     const result: FailedResourceCall = {
       ...trace,
-      status: "failed",
+      status: 'failed',
       error: {
-        code: "resource_execution_failed",
+        code: 'resource_execution_failed',
         message: error instanceof Error ? error.message : String(error),
       },
     };
@@ -62,7 +71,7 @@ async function executeUsage(
 }
 
 function toResult(calls: ResourceCallResult[]): ResourceExecutionNodeResult {
-  const successful = calls.filter((call) => call.status === "succeeded").length;
+  const successful = calls.filter((call) => call.status === 'succeeded').length;
   const failed = calls.length - successful;
   return {
     status: resolveStatus(calls.length, successful, failed),
@@ -71,16 +80,20 @@ function toResult(calls: ResourceCallResult[]): ResourceExecutionNodeResult {
   };
 }
 
-function resolveStatus(total: number, successful: number, failed: number): ResourceExecutionNodeStatus {
-  if (total > 0 && failed === total) return "failed";
-  if (successful > 0 && failed > 0) return "partial";
-  return "completed";
+function resolveStatus(
+  total: number,
+  successful: number,
+  failed: number,
+): ResourceExecutionNodeStatus {
+  if (total > 0 && failed === total) return 'failed';
+  if (successful > 0 && failed > 0) return 'partial';
+  return 'completed';
 }
 
 function normalizeConcurrency(value: number | undefined): number {
   if (value === undefined) return DEFAULT_MAX_CONCURRENCY;
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("maxConcurrency must be a positive safe integer.");
+    throw new RangeError('maxConcurrency must be a positive safe integer.');
   }
   return value;
 }

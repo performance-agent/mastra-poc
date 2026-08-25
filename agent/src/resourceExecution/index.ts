@@ -1,4 +1,4 @@
-export { createResourceExecutionNode } from "./resource-execution-node.js";
+export { createResourceExecutionNode } from './resource-execution-node.js';
 export type {
   FailedResourceCall,
   ResourceCallResult,
@@ -10,4 +10,4 @@ export type {
   ResourceExecutionDataset,
   ResourceExecutor,
   SuccessfulResourceCall,
-} from "./types.js";
+} from './types.js';

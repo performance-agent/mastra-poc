@@ -1,9 +1,9 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { initChatModel } from "langchain/chat_models/universal";
-import { ruleAssessmentAiOutputSchema } from "./schemas.js";
-import type { RuleAssessmentRequest, RuleAssessor } from "./types.js";
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { initChatModel } from 'langchain/chat_models/universal';
+import { ruleAssessmentAiOutputSchema } from './schemas.js';
+import type { RuleAssessmentRequest, RuleAssessor } from './types.js';
 
-const MODEL_ENVIRONMENT_VARIABLE = "RULE_SUMMARY_MODEL";
+const MODEL_ENVIRONMENT_VARIABLE = 'RULE_SUMMARY_MODEL';
 
 const SYSTEM_PROMPT = `You assess one performance rule using only the supplied execution evidence.
 
@@ -82,13 +82,17 @@ export type RuleAssessmentEnvironment = Readonly<
   Record<string, string | undefined>
 >;
 
-export function createLangChainRuleAssessor(model: BaseChatModel): RuleAssessor {
-  const structuredModel = model.withStructuredOutput(ruleAssessmentAiOutputSchema);
+export function createLangChainRuleAssessor(
+  model: BaseChatModel,
+): RuleAssessor {
+  const structuredModel = model.withStructuredOutput(
+    ruleAssessmentAiOutputSchema,
+  );
   return {
     async assess(input) {
       return structuredModel.invoke([
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: createUserPrompt(input) },
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: createUserPrompt(input) },
       ]);
     },
   };

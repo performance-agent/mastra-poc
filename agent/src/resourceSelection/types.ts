@@ -2,9 +2,9 @@ import type {
   MissingEvidenceRequirement,
   ResourceSelectedRule,
   SelectedResource,
-} from "../evaluationPlan/types.js";
-import type { ResourceCatalogNodeResult } from "../resourceCatalog/types.js";
-import type { UnderstoodRule } from "../ruleUnderstanding/types.js";
+} from '../evaluationPlan/types.js';
+import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
+import type { UnderstoodRule } from '../ruleUnderstanding/types.js';
 
 export type ResourceSelectionInput = {
   understoodRule: UnderstoodRule;
@@ -21,10 +21,10 @@ export type ResourceSelector = {
 };
 
 export type ResourceSelectionFailureCode =
-  | "selection_failed"
-  | "invalid_selection"
-  | "unknown_resource"
-  | "unknown_operation";
+  | 'selection_failed'
+  | 'invalid_selection'
+  | 'unknown_resource'
+  | 'unknown_operation';
 
 export type FailedResourceSelection = {
   understoodRule: UnderstoodRule;
@@ -34,7 +34,7 @@ export type FailedResourceSelection = {
   operationName?: string;
 };
 
-export type ResourceSelectionNodeStatus = "ready" | "partial" | "failed";
+export type ResourceSelectionNodeStatus = 'ready' | 'partial' | 'failed';
 
 export type ResourceSelectionNodeResult = {
   status: ResourceSelectionNodeStatus;
@@ -48,4 +48,3 @@ export type ResourceSelectionNode = {
     resourceCatalog: ResourceCatalogNodeResult;
   }): Promise<ResourceSelectionNodeResult>;
 };
-

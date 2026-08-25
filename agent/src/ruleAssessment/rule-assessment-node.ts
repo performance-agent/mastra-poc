@@ -1,4 +1,4 @@
-import { ruleAssessmentAiOutputSchema } from "./schemas.js";
+import { ruleAssessmentAiOutputSchema } from './schemas.js';
 import type {
   RuleAssessment,
   RuleAssessmentError,
@@ -7,13 +7,13 @@ import type {
   RuleAssessmentNodeResult,
   RuleAssessmentNodeStatus,
   RuleAssessmentRequest,
-} from "./types.js";
+} from './types.js';
 
 const DEFAULT_MAX_CONCURRENCY = 3;
 
 type AssessmentOutcome =
-  | { kind: "assessed"; ruleId: string; value: RuleAssessment }
-  | { kind: "failed"; value: RuleAssessmentError };
+  | { kind: 'assessed'; ruleId: string; value: RuleAssessment }
+  | { kind: 'failed'; value: RuleAssessmentError };
 
 export function createRuleAssessmentNode(
   options: RuleAssessmentNodeOptions,
@@ -25,17 +25,21 @@ export function createRuleAssessmentNode(
       const outcomes = await mapWithConcurrency(
         plan.rules,
         maxConcurrency,
-        (rule) => assessRule({
-          rule,
-          context: plan.context,
-          expectedEvidence: plan.expectedEvidence.filter(
-            (evidence) => evidence.ruleId === rule.id,
+        (rule) =>
+          assessRule(
+            {
+              rule,
+              context: plan.context,
+              expectedEvidence: plan.expectedEvidence.filter(
+                (evidence) => evidence.ruleId === rule.id,
+              ),
+              resourceCalls: executionResult.calls.filter((call) =>
+                call.ruleIds.includes(rule.id),
+              ),
+              planLimitations: [...plan.limitations],
+            },
+            options.assessor,
           ),
-          resourceCalls: executionResult.calls.filter(
-            (call) => call.ruleIds.includes(rule.id),
-          ),
-          planLimitations: [...plan.limitations],
-        }, options.assessor),
       );
       return toResult(outcomes);
     },
@@ -44,7 +48,7 @@ export function createRuleAssessmentNode(
 
 async function assessRule(
   request: RuleAssessmentRequest,
-  assessor: RuleAssessmentNodeOptions["assessor"],
+  assessor: RuleAssessmentNodeOptions['assessor'],
 ): Promise<AssessmentOutcome> {
   let rawOutput: unknown;
   try {
@@ -52,8 +56,8 @@ async function assessRule(
   } catch {
     return failed(
       request.rule.id,
-      "ai_generation_failed",
-      "The AI model could not assess this rule.",
+      'ai_generation_failed',
+      'The AI model could not assess this rule.',
     );
   }
 
@@ -61,13 +65,13 @@ async function assessRule(
   if (!parsed.success) {
     return failed(
       request.rule.id,
-      "invalid_ai_output",
-      "The AI model returned an invalid rule assessment.",
+      'invalid_ai_output',
+      'The AI model returned an invalid rule assessment.',
     );
   }
 
   return {
-    kind: "assessed",
+    kind: 'assessed',
     ruleId: request.rule.id,
     value: {
       ruleName: request.rule.rule.name,
@@ -78,17 +82,20 @@ async function assessRule(
 
 function failed(
   ruleId: string,
-  code: RuleAssessmentError["code"],
+  code: RuleAssessmentError['code'],
   message: string,
 ): AssessmentOutcome {
-  return { kind: "failed", value: { ruleId, code, message } };
+  return { kind: 'failed', value: { ruleId, code, message } };
 }
 
-function toResult(outcomes: readonly AssessmentOutcome[]): RuleAssessmentNodeResult {
+function toResult(
+  outcomes: readonly AssessmentOutcome[],
+): RuleAssessmentNodeResult {
   const assessments: Record<string, RuleAssessment> = {};
   const errors: RuleAssessmentError[] = [];
   for (const outcome of outcomes) {
-    if (outcome.kind === "assessed") assessments[outcome.ruleId] = outcome.value;
+    if (outcome.kind === 'assessed')
+      assessments[outcome.ruleId] = outcome.value;
     else errors.push(outcome.value);
   }
   const successful = Object.keys(assessments).length;
@@ -104,15 +111,15 @@ function resolveStatus(
   successful: number,
   failedCount: number,
 ): RuleAssessmentNodeStatus {
-  if (total === 0 || failedCount === total) return "failed";
-  if (successful > 0 && failedCount > 0) return "partial";
-  return "completed";
+  if (total === 0 || failedCount === total) return 'failed';
+  if (successful > 0 && failedCount > 0) return 'partial';
+  return 'completed';
 }
 
 function normalizeConcurrency(value: number | undefined): number {
   if (value === undefined) return DEFAULT_MAX_CONCURRENCY;
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("maxConcurrency must be a positive safe integer.");
+    throw new RangeError('maxConcurrency must be a positive safe integer.');
   }
   return value;
 }

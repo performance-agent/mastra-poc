@@ -1,4 +1,7 @@
-import type { EvaluationContext, EvaluationPlan } from "../evaluationPlan/types.js";
+import type {
+  EvaluationContext,
+  EvaluationPlan,
+} from '../evaluationPlan/types.js';
 
 export type ResourceExecutionRequest = {
   context: EvaluationContext;
@@ -32,21 +35,21 @@ type ResourceCallTrace = {
 };
 
 export type SuccessfulResourceCall = ResourceCallTrace & {
-  status: "succeeded";
+  status: 'succeeded';
   rawData: unknown;
 };
 
 export type FailedResourceCall = ResourceCallTrace & {
-  status: "failed";
+  status: 'failed';
   error: {
-    code: "resource_execution_failed";
+    code: 'resource_execution_failed';
     message: string;
   };
 };
 
 export type ResourceCallResult = SuccessfulResourceCall | FailedResourceCall;
 
-export type ResourceExecutionNodeStatus = "completed" | "partial" | "failed";
+export type ResourceExecutionNodeStatus = 'completed' | 'partial' | 'failed';
 
 export type ResourceExecutionNodeResult = {
   status: ResourceExecutionNodeStatus;

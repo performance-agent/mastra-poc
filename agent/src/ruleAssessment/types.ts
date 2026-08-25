@@ -2,17 +2,14 @@ import type {
   EvaluationPlan,
   ExpectedEvidence,
   NormalizedRule,
-} from "../evaluationPlan/types.js";
+} from '../evaluationPlan/types.js';
 import type {
   ResourceCallResult,
   ResourceExecutionNodeResult,
-} from "../resourceExecution/types.js";
+} from '../resourceExecution/types.js';
 
 export type RuleAssessmentVerdict =
-  | "supported"
-  | "partially_supported"
-  | "not_supported"
-  | "not_evaluable";
+  'supported' | 'partially_supported' | 'not_supported' | 'not_evaluable';
 
 export type RuleAssessmentEvidence = {
   source: string;
@@ -21,10 +18,7 @@ export type RuleAssessmentEvidence = {
 };
 
 export type RuleAssessmentCriterionStatus =
-  | "met"
-  | "partially_met"
-  | "not_met"
-  | "unknown";
+  'met' | 'partially_met' | 'not_met' | 'unknown';
 
 export type RuleAssessmentCriterion = {
   criterion: string;
@@ -33,7 +27,7 @@ export type RuleAssessmentCriterion = {
   status: RuleAssessmentCriterionStatus;
 };
 
-export type RuleAssessmentConfidence = "high" | "medium" | "low";
+export type RuleAssessmentConfidence = 'high' | 'medium' | 'low';
 
 export type MemberRuleAssessment = {
   memberIdentifier: string;
@@ -60,7 +54,7 @@ export type RuleAssessment = {
 
 export type RuleAssessmentRequest = {
   rule: NormalizedRule;
-  context: EvaluationPlan["context"];
+  context: EvaluationPlan['context'];
   expectedEvidence: ExpectedEvidence[];
   resourceCalls: ResourceCallResult[];
   planLimitations: string[];
@@ -71,8 +65,7 @@ export type RuleAssessor = {
 };
 
 export type RuleAssessmentErrorCode =
-  | "ai_generation_failed"
-  | "invalid_ai_output";
+  'ai_generation_failed' | 'invalid_ai_output';
 
 export type RuleAssessmentError = {
   ruleId: string;
@@ -80,7 +73,7 @@ export type RuleAssessmentError = {
   message: string;
 };
 
-export type RuleAssessmentNodeStatus = "completed" | "partial" | "failed";
+export type RuleAssessmentNodeStatus = 'completed' | 'partial' | 'failed';
 
 export type RuleAssessmentNodeResult = {
   status: RuleAssessmentNodeStatus;

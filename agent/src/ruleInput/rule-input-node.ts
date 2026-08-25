@@ -1,18 +1,21 @@
-import type { z } from "zod";
-import { ruleInputNodeInputSchema, userRuleSchema } from "../schemas/user-rule.schema.js";
+import type { z } from 'zod';
+import {
+  ruleInputNodeInputSchema,
+  userRuleSchema,
+} from '../schemas/user-rule.schema.js';
 import type {
   PreparedRuleInput,
   RuleInputError,
   RuleInputNodeResult,
   SkippedRuleInput,
-} from "./types.js";
+} from './types.js';
 
 export function runRuleInputNode(input: unknown): RuleInputNodeResult {
   const parsedInput = ruleInputNodeInputSchema.safeParse(input);
 
   if (!parsedInput.success) {
     return {
-      status: "invalid",
+      status: 'invalid',
       runnableRules: [],
       skippedRules: [],
       errors: mapZodErrors(parsedInput.error),
@@ -42,14 +45,17 @@ export function runRuleInputNode(input: unknown): RuleInputNodeResult {
   });
 
   return {
-    status: runnableRules.length > 0 ? "ready" : "invalid",
+    status: runnableRules.length > 0 ? 'ready' : 'invalid',
     runnableRules,
     skippedRules,
     errors: skippedRules.flatMap((rule) => rule.errors),
   };
 }
 
-function mapZodErrors(error: z.ZodError, pathPrefix?: string): RuleInputError[] {
+function mapZodErrors(
+  error: z.ZodError,
+  pathPrefix?: string,
+): RuleInputError[] {
   return error.issues.map((issue) => ({
     path: joinPath(pathPrefix, issue.path),
     code: issue.code,
@@ -58,7 +64,7 @@ function mapZodErrors(error: z.ZodError, pathPrefix?: string): RuleInputError[] 
 }
 
 function joinPath(prefix: string | undefined, path: PropertyKey[]): string {
-  const localPath = path.map(String).join(".");
+  const localPath = path.map(String).join('.');
   if (!prefix) return localPath;
   if (!localPath) return prefix;
   return `${prefix}.${localPath}`;
@@ -66,15 +72,15 @@ function joinPath(prefix: string | undefined, path: PropertyKey[]): string {
 
 function createRuleInputId(name: string, index: number): string {
   const slug = normalizeText(name)
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return `rule_input_${index + 1}_${slug || "unnamed"}`;
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `rule_input_${index + 1}_${slug || 'unnamed'}`;
 }
 
 function normalizeText(value: string): string {
   return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
 }

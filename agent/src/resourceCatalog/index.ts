@@ -1,5 +1,5 @@
-export { createBackendResourceCatalogAdapter } from "../backend-resource-catalog-adapter.js";
-export { runResourceCatalogNode } from "./resource-catalog-node.js";
+export { createBackendResourceCatalogAdapter } from '../backend-resource-catalog-adapter.js';
+export { runResourceCatalogNode } from './resource-catalog-node.js';
 
 export type {
   BackendPluginRegistry,
@@ -19,4 +19,4 @@ export type {
   ResourceFreshness,
   ResourceOperation,
   ResourceReliability,
-} from "./types.js";
+} from './types.js';
