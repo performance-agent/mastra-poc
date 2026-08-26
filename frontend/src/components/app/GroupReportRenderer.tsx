@@ -9,6 +9,7 @@ import type {
   GroupReportStatus,
   PerformanceReport,
 } from "@/lib/types";
+import { EMPHASIS_LABELS, type EvaluationEmphasis } from "@/lib/evaluation-guidelines";
 import type { ReactNode } from "react";
 
 type Props = {
@@ -94,8 +95,8 @@ function AssessmentBadges({ assessment }: { assessment: GroupReportAssessment })
 function Metric({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
-      <div className="break-words text-lg font-semibold">{value}</div>
-      <div className="break-words text-[11px] text-muted-foreground">{label}</div>
+      <div className="wrap-break-word text-lg font-semibold">{value}</div>
+      <div className="wrap-break-word text-[11px] text-muted-foreground">{label}</div>
     </div>
   );
 }
@@ -105,7 +106,7 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
       <h4 className="text-xs font-semibold text-muted-foreground">{title}</h4>
-      <ul className="mt-2 space-y-1 break-words text-sm text-muted-foreground">
+      <ul className="mt-2 space-y-1 wrap-break-word text-sm text-muted-foreground">
         {items.map((item, index) => (
           <li key={`${title}-${index}`}>- {item}</li>
         ))}
@@ -126,9 +127,9 @@ function EvidenceContent({ evidence }: { evidence: GroupReportEvidence }) {
             {evidence.subject ? ` · ${evidence.subject}` : ""}
           </span>
         </div>
-        <h5 className="mt-2 break-words text-sm font-semibold">{evidence.title}</h5>
-        <p className="mt-1 break-words text-xs text-muted-foreground">{evidence.observation}</p>
-        <p className="mt-2 break-words text-xs">
+        <h5 className="mt-2 wrap-break-word text-sm font-semibold">{evidence.title}</h5>
+        <p className="mt-1 wrap-break-word text-xs text-muted-foreground">{evidence.observation}</p>
+        <p className="mt-2 wrap-break-word text-xs">
           <span className="font-medium">Interpretación:</span> {evidence.interpretation}
         </p>
       </div>
@@ -183,7 +184,7 @@ function EvidenceList({
 function AssessmentDetails({ assessment }: { assessment: GroupReportAssessment }) {
   return (
     <div className="min-w-0">
-      <p className="break-words text-sm text-muted-foreground">{assessment.summary}</p>
+      <p className="wrap-break-word text-sm text-muted-foreground">{assessment.summary}</p>
       <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
         <ListBlock title="Señales positivas" items={assessment.positiveSignals} />
         <ListBlock title="Preocupaciones" items={assessment.concerns} />
@@ -205,12 +206,12 @@ function DimensionCard({
   return (
     <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <h3 className="break-words text-sm font-semibold">{title}</h3>
+        <h3 className="wrap-break-word text-sm font-semibold">{title}</h3>
         <Badge className={statusClasses(assessment.status)}>
           {statusLabels[assessment.status]}
         </Badge>
       </div>
-      <p className="mt-3 break-words text-sm text-muted-foreground">{assessment.summary}</p>
+      <p className="mt-3 wrap-break-word text-sm text-muted-foreground">{assessment.summary}</p>
     </Card>
   );
 }
@@ -225,7 +226,7 @@ function AssessmentCard({
   return (
     <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <h3 className="break-words text-sm font-semibold">{title}</h3>
+        <h3 className="wrap-break-wordword text-sm font-semibold">{title}</h3>
         <AssessmentBadges assessment={assessment} />
       </div>
       <div className="mt-3">
@@ -256,17 +257,17 @@ function CommitContent({ commit }: { commit: CommitReview }) {
         </div>
         {commit.url ? <ExternalLink className="h-4 w-4 text-muted-foreground" /> : null}
       </div>
-      <h4 className="mt-3 break-words text-sm font-semibold">{commit.message}</h4>
+      <h4 className="mt-3 wrap-break-word text-sm font-semibold">{commit.message}</h4>
       <p className="mt-1 break-all text-xs text-muted-foreground">
         {commit.resource}
         {commit.reference ? ` · ${commit.reference}` : ""}
         {commit.author ? ` · ${commit.author}` : ""}
       </p>
-      <p className="mt-3 break-words text-sm text-muted-foreground">{commit.explanation}</p>
+      <p className="mt-3 wrap-break-word text-sm text-muted-foreground">{commit.explanation}</p>
       <div className="mt-3">
         <ListBlock title="Señales observadas" items={commit.signals} />
       </div>
-      <p className="mt-3 break-words text-xs font-medium">
+      <p className="mt-3 wrap-break-word text-xs font-medium">
         Acción recomendada: {commit.recommendedAction}
       </p>
     </div>
@@ -313,8 +314,8 @@ export function GroupReportRenderer({ report }: Props) {
         <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 max-w-3xl">
             <div className="text-xs text-muted-foreground">Generado {generatedAt}</div>
-            <h2 className="mt-2 break-words text-xl font-semibold">Group report</h2>
-            <p className="mt-2 break-words text-sm text-muted-foreground">{data.summary}</p>
+            <h2 className="mt-2 wrap-break-word text-xl font-semibold">Group report</h2>
+            <p className="mt-2 wrap-break-word text-sm text-muted-foreground">{data.summary}</p>
             <div className="mt-3">
               <AssessmentBadges assessment={overall} />
             </div>
@@ -331,6 +332,32 @@ export function GroupReportRenderer({ report }: Props) {
           <EvidenceList items={evidenceForSection("OVERALL")} />
         </div>
       </Card>
+
+      {data.evaluationGuidelines &&
+        (data.evaluationGuidelines.emphasis.length > 0 || data.evaluationGuidelines.notes) && (
+          <Card className="min-w-0 overflow-hidden rounded-xl border-border/60 p-4 shadow-card">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Criterios de evaluación usados
+            </p>
+            {data.evaluationGuidelines.emphasis.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {data.evaluationGuidelines.emphasis.map((e) => (
+                  <span
+                    key={e}
+                    className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {EMPHASIS_LABELS[e as EvaluationEmphasis] ?? e}
+                  </span>
+                ))}
+              </div>
+            )}
+            {data.evaluationGuidelines.notes && (
+              <p className="mt-2 wrap-break-word text-xs text-muted-foreground">
+                {data.evaluationGuidelines.notes}
+              </p>
+            )}
+          </Card>
+        )}
 
       <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
         <Metric label="Recursos" value={data.coverage.resourcesAnalyzed} />
@@ -371,8 +398,8 @@ export function GroupReportRenderer({ report }: Props) {
                   key={`${theme.name}-${index}`}
                   className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
                 >
-                  <h4 className="break-words text-sm font-semibold">{theme.name}</h4>
-                  <p className="mt-2 break-words text-sm text-muted-foreground">
+                  <h4 className="wrap-break-word text-sm font-semibold">{theme.name}</h4>
+                  <p className="mt-2 wrap-break-word text-sm text-muted-foreground">
                     {theme.evolution}
                   </p>
                 </Card>
@@ -414,7 +441,7 @@ export function GroupReportRenderer({ report }: Props) {
                   className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
                 >
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <h4 className="break-words text-sm font-semibold">{stage.label}</h4>
+                    <h4 className="wrap-break-words text-sm font-semibold">{stage.label}</h4>
                     <Badge className="border-border bg-muted text-muted-foreground">
                       {stage.period}
                     </Badge>
@@ -422,7 +449,9 @@ export function GroupReportRenderer({ report }: Props) {
                       {statusLabels[stage.status]}
                     </Badge>
                   </div>
-                  <p className="mt-2 break-words text-sm text-muted-foreground">{stage.summary}</p>
+                  <p className="mt-2 wrap-break-words text-sm text-muted-foreground">
+                    {stage.summary}
+                  </p>
                 </Card>
               ))}
             </div>
@@ -495,8 +524,8 @@ export function GroupReportRenderer({ report }: Props) {
             >
               <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="break-words text-base font-semibold">{person.displayName}</h3>
-                  <p className="mt-2 break-words text-sm text-muted-foreground">
+                  <h3 className="wrap-break-words text-base font-semibold">{person.displayName}</h3>
+                  <p className="mt-2 wrap-break-words text-sm text-muted-foreground">
                     {person.contributionSummary}
                   </p>
                 </div>
@@ -525,7 +554,7 @@ export function GroupReportRenderer({ report }: Props) {
                     {confidenceLabels[person.consistency.confidence]}
                   </Badge>
                 </div>
-                <p className="mt-2 break-words text-sm text-muted-foreground">
+                <p className="mt-2 wrap-break-words text-sm text-muted-foreground">
                   {person.consistency.summary}
                 </p>
                 <div className="mt-4">
@@ -569,11 +598,13 @@ export function GroupReportRenderer({ report }: Props) {
               <Badge className={priorityClasses(recommendation.priority)}>
                 Prioridad {priorityLabel(recommendation.priority)}
               </Badge>
-              <h4 className="mt-3 break-words text-sm font-semibold">{recommendation.title}</h4>
-              <p className="mt-1 break-words text-sm text-muted-foreground">
+              <h4 className="mt-3 wrap-break-words text-sm font-semibold">
+                {recommendation.title}
+              </h4>
+              <p className="mt-1 wrap-break-words text-sm text-muted-foreground">
                 {recommendation.description}
               </p>
-              <p className="mt-2 break-words text-xs font-medium">{recommendation.action}</p>
+              <p className="mt-2 wrap-break-words text-xs font-medium">{recommendation.action}</p>
             </Card>
           ))}
         </div>

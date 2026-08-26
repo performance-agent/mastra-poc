@@ -25,6 +25,8 @@ export interface Group {
   name: string;
   description?: string | null;
   photoUrl?: string | null;
+  evaluationEmphasis?: string[];
+  evaluationNotes?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -316,6 +318,10 @@ export interface GroupReport {
     lastActivityAt: string | null;
     limitations: string[];
   };
+  evaluationGuidelines?: {
+    emphasis: string[];
+    notes: string | null;
+  } | null;
 }
 
 export interface GroupGithubActivityReport {

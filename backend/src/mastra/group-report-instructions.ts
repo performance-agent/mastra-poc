@@ -8,6 +8,8 @@ Aplica esta reconciliación con prudencia. No unas identidades por una coinciden
 Para cada identidad consolidada, elige como displayName el nombre más completo y legible respaldado por la evidencia. Agrupa bajo esa persona las contribuciones y métricas de todos sus alias. Toda evidence de sección PEOPLE asociada debe usar en subject exactamente el mismo displayName canónico de la entrada correspondiente en people.
 
 Sé neutral: no infles resultados, no rankees personas, muestra señales favorables y desfavorables, analiza constancia y proporciona sugerencias concretas. Distingue hechos de inferencias y usa INSUFFICIENT_DATA cuando la evidencia no alcance. Un commit para revisar no implica mala intención. Todo el contenido visible debe estar en español.
+
+Si el input incluye una sección "CRITERIOS DE EVALUACIÓN DEL PROYECTO", úsala para orientar la elección de métricas, el énfasis de cada sección y la interpretación de la evidencia. Estos criterios son complementarios: no anulan las reglas de neutralidad, no permiten inventar evidencia, no permiten omitir INSUFFICIENT_DATA cuando corresponde, no modifican el schema de salida ni permiten rankear personas.
 `.trim();
 
 export const GROUP_REPORT_GENERATION_PROMPT =

@@ -11,6 +11,53 @@ jest.mock('../mastra', () => ({
   },
 }));
 
+const originalGroupReportModel = process.env.GROUP_REPORT_MODEL;
+
+const minimalAssessment = {
+  status: 'GOOD' as const,
+  confidence: 'HIGH' as const,
+  summary: 'ok',
+  positiveSignals: [],
+  concerns: [],
+  limitations: [],
+};
+
+const minimalDimension = { status: 'GOOD' as const, summary: 'ok' };
+
+const minimalReportContent = {
+  summary: 'group',
+  overallAssessment: { ...minimalAssessment, score: 80 },
+  productAssessment: {
+    ticketEvidenceAvailable: false,
+    assessment: minimalAssessment,
+    ideation: minimalDimension,
+    prioritiesAndScope: minimalDimension,
+    ticketFlow: minimalDimension,
+    themes: [],
+    gaps: [],
+  },
+  projectAssessment: {
+    assessment: minimalAssessment,
+    deliveryFlow: minimalDimension,
+    continuity: minimalDimension,
+    predictability: minimalDimension,
+    projectStages: [],
+    risks: [],
+    lessons: [],
+  },
+  engineeringAssessment: {
+    assessment: minimalAssessment,
+    traceability: minimalDimension,
+    changeDiscipline: minimalDimension,
+    reviewability: minimalDimension,
+    maintenanceSignals: minimalDimension,
+    commitsToReview: [],
+  },
+  people: [],
+  evidence: [],
+  recommendations: [],
+};
+
 describe('ReportsService', () => {
   const resource = {
     id: 'resource-1',
@@ -29,6 +76,7 @@ describe('ReportsService', () => {
   };
   const prisma = {
     group: { findUnique: jest.fn() },
+    pluginInstallationResource: { findMany: jest.fn() },
     performanceReport: {
       create: jest.fn(),
       findUnique: jest.fn(),
@@ -38,17 +86,28 @@ describe('ReportsService', () => {
   const runtime = { provide: jest.fn() };
   let service: ReportsService;
 
+  const baseGroup = {
+    id: 'group-1',
+    name: 'Core team',
+    evaluationEmphasis: [],
+    evaluationNotes: null,
+    resourceAssignments: [{ resource }],
+    workspace: {
+      id: 'workspace-1',
+      name: 'Main workspace',
+      organization: { id: 'org-1', name: 'Acme' },
+    },
+  };
+
   beforeEach(() => {
+    process.env.GROUP_REPORT_MODEL = 'custom-provider/report-model';
     jest.clearAllMocks();
     service = new ReportsService(
       prisma as unknown as PrismaService,
       runtime as unknown as PluginRuntimeService,
     );
-    prisma.group.findUnique.mockResolvedValue({
-      id: 'group-1',
-      name: 'Core team',
-      resourceAssignments: [{ resource }],
-    });
+    prisma.group.findUnique.mockResolvedValue(baseGroup);
+    prisma.pluginInstallationResource.findMany.mockResolvedValue([resource]);
     runtime.provide.mockResolvedValue({
       resources: [
         {
@@ -70,7 +129,15 @@ describe('ReportsService', () => {
       ],
       limitations: [],
     });
-    groupGenerate.mockResolvedValue({ object: { summary: 'group' } });
+    groupGenerate.mockResolvedValue({ object: minimalReportContent });
+  });
+
+  afterEach(() => {
+    if (originalGroupReportModel === undefined) {
+      delete process.env.GROUP_REPORT_MODEL;
+    } else {
+      process.env.GROUP_REPORT_MODEL = originalGroupReportModel;
+    }
   });
 
   it('passes all plugin-native history to the group report agent', async () => {
@@ -85,19 +152,58 @@ describe('ReportsService', () => {
       data: {
         groupId: 'group-1',
         type: 'GROUP_REPORT',
-        data: {
+        data: expect.objectContaining({
           summary: 'group',
-          coverage: {
+          evaluationGuidelines: null,
+          coverage: expect.objectContaining({
             resourcesAnalyzed: 1,
             datasetsAnalyzed: 1,
             recordsAnalyzed: 0,
-            firstActivityAt: null,
-            lastActivityAt: null,
-            limitations: [],
-          },
-        },
+          }),
+        }),
       },
     });
+  });
+
+  it('snapshots evaluation guidelines when the group has them configured', async () => {
+    prisma.group.findUnique.mockResolvedValue({
+      ...baseGroup,
+      evaluationEmphasis: ['DELIVERY', 'ENGINEERING'],
+      evaluationNotes: 'PRs pequeños pesan más que volumen.',
+    });
+    await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
+    const call = prisma.performanceReport.create.mock.calls[0][0] as {
+      data: { data: { evaluationGuidelines: unknown } };
+    };
+    expect(call.data.data.evaluationGuidelines).toEqual({
+      emphasis: ['DELIVERY', 'ENGINEERING'],
+      notes: 'PRs pequeños pesan más que volumen.',
+    });
+  });
+
+  it('prepends the guidelines prompt to the agent call when guidelines are set', async () => {
+    prisma.group.findUnique.mockResolvedValue({
+      ...baseGroup,
+      evaluationEmphasis: ['PRODUCT'],
+      evaluationNotes: null,
+    });
+    await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
+    const [messages] = groupGenerate.mock.calls[0] as [
+      Array<{ role: string; content: string }>,
+    ];
+    expect(messages[0].content).toContain(
+      'CRITERIOS DE EVALUACIÓN DEL PROYECTO',
+    );
+  });
+
+  it('does not prepend guidelines prompt when guidelines are empty', async () => {
+    await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
+    const [messages] = groupGenerate.mock.calls[0] as [
+      Array<{ role: string; content: string }>,
+    ];
+    expect(messages[0].content).not.toContain(
+      'CRITERIOS DE EVALUACIÓN DEL PROYECTO',
+    );
   });
 
   it.each(['GITHUB_ACTIVITY', 'GITHUB_HISTORY'] as const)(
@@ -119,11 +225,7 @@ describe('ReportsService', () => {
   });
 
   it('fails when the group has no active resources', async () => {
-    prisma.group.findUnique.mockResolvedValue({
-      id: 'group-1',
-      name: 'Core team',
-      resourceAssignments: [],
-    });
+    prisma.pluginInstallationResource.findMany.mockResolvedValue([]);
     await expect(
       service.createGroupReport('group-1', { type: 'GROUP_REPORT' }),
     ).rejects.toBeInstanceOf(BadRequestException);
