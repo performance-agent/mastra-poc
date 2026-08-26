@@ -4,6 +4,7 @@ import {
   createResourceExecutionNode,
   createLangChainRuleInterpreterFromEnv,
   createLangChainRuleAssessorFromEnv,
+  createResourceOperationDeduplicationNode,
   createResourceSelectionNode,
   createRuleAssessmentNode,
   createRuleUnderstandingNode,
@@ -56,6 +57,7 @@ const demoGraph = createEvaluationFlow({
       };
     },
   }),
+  resourceOperationDeduplicationNode: createResourceOperationDeduplicationNode(),
   evaluationPlanNode: createEvaluationPlanNode(),
   resourceExecutionNode: createResourceExecutionNode({
     executor: {

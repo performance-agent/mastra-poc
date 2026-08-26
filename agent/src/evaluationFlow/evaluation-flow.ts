@@ -16,6 +16,8 @@ const FlowState = Annotation.Root({
     Annotation<EvaluationFlowState['ruleUnderstandingResult']>(),
   resourceSelectionResult:
     Annotation<EvaluationFlowState['resourceSelectionResult']>(),
+  resourceOperationDeduplicationResult:
+    Annotation<EvaluationFlowState['resourceOperationDeduplicationResult']>(),
   evaluationPlanResult:
     Annotation<EvaluationFlowState['evaluationPlanResult']>(),
   resourceExecutionResult:
@@ -83,10 +85,20 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
           : {}),
       };
     })
+    .addNode('resource_operation_deduplication', (state) => {
+      const result = deps.resourceOperationDeduplicationNode.run({
+        selectedRules: state.resourceSelectionResult?.selectedRules ?? [],
+      });
+      return { resourceOperationDeduplicationResult: result };
+    })
     .addNode('evaluation_plan', (state) => {
       const result = deps.evaluationPlanNode.run({
         context: state.context,
         selectedRules: state.resourceSelectionResult?.selectedRules ?? [],
+        deduplicatedOperations: required(
+          state.resourceOperationDeduplicationResult,
+          'resource operation deduplication result',
+        ).operations,
         resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
       });
       if (result.status === 'invalid')
@@ -155,9 +167,10 @@ export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
     )
     .addConditionalEdges('resource_selection', (state) =>
       (state.resourceSelectionResult?.selectedRules.length ?? 0) > 0
-        ? 'evaluation_plan'
+        ? 'resource_operation_deduplication'
         : END,
     )
+    .addEdge('resource_operation_deduplication', 'evaluation_plan')
     .addConditionalEdges('evaluation_plan', (state) =>
       state.evaluationPlanResult?.status === 'ready' ||
       state.evaluationPlanResult?.status === 'constrained'

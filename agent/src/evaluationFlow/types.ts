@@ -12,6 +12,10 @@ import type {
   ResourceSelectionNodeResult,
 } from '../resourceSelection/types.js';
 import type {
+  ResourceOperationDeduplicationNode,
+  ResourceOperationDeduplicationNodeResult,
+} from '../resourceOperationDeduplication/types.js';
+import type {
   ResourceExecutionNode,
   ResourceExecutionNodeResult,
 } from '../resourceExecution/types.js';
@@ -52,6 +56,8 @@ export type EvaluationFlowState = EvaluationFlowInput & {
   resourceCatalog?: ResourceCatalogNodeResult | undefined;
   ruleUnderstandingResult?: RuleUnderstandingNodeResult | undefined;
   resourceSelectionResult?: ResourceSelectionNodeResult | undefined;
+  resourceOperationDeduplicationResult?:
+    ResourceOperationDeduplicationNodeResult | undefined;
   evaluationPlanResult?: EvaluationPlanNodeResult | undefined;
   resourceExecutionResult?: ResourceExecutionNodeResult | undefined;
   ruleAssessmentResult?: RuleAssessmentNodeResult | undefined;
@@ -66,6 +72,7 @@ export type EvaluationFlowDependencies = {
   resourceCatalogAdapter: BackendResourceCatalogAdapter;
   ruleUnderstandingNode: RuleUnderstandingNode;
   resourceSelectionNode: ResourceSelectionNode;
+  resourceOperationDeduplicationNode: ResourceOperationDeduplicationNode;
   evaluationPlanNode: EvaluationPlanNode;
   resourceExecutionNode: ResourceExecutionNode;
   ruleAssessmentNode: RuleAssessmentNode;

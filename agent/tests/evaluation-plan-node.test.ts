@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createEvaluationPlanNode,
+  createResourceOperationDeduplicationNode,
+  type EvaluationPlanNodeInput,
   type ResourceCatalogNodeResult,
   type ResourceSelectedRule,
 } from '../src/index.js';
@@ -31,6 +33,15 @@ const context = {
   teamId: 'team-1',
   period: { from: '2026-06-01', to: '2026-06-30' },
 };
+
+function runEvaluationPlan(
+  input: Omit<EvaluationPlanNodeInput, 'deduplicatedOperations'>,
+) {
+  const deduplicatedOperations = createResourceOperationDeduplicationNode().run(
+    { selectedRules: input.selectedRules },
+  ).operations;
+  return createEvaluationPlanNode().run({ ...input, deduplicatedOperations });
+}
 
 function selectedRule(
   index: number,
@@ -67,7 +78,7 @@ test('builds a ready deterministic evaluation plan', () => {
     selectedRules: [selectedRule(0)],
     resourceCatalog: catalog,
   };
-  const result = createEvaluationPlanNode().run(input);
+  const result = runEvaluationPlan(input);
 
   assert.ok('plan' in result);
   if (!('plan' in result)) return;
@@ -92,7 +103,7 @@ test('builds a ready deterministic evaluation plan', () => {
 });
 
 test('preserves group scope in the executable plan context', () => {
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context: { workspaceId: 'workspace-1', groupId: 'group-1' },
     selectedRules: [selectedRule(0)],
     resourceCatalog: catalog,
@@ -107,7 +118,7 @@ test('preserves group scope in the executable plan context', () => {
 });
 
 test('deduplicates the same operation across rules without losing traceability', () => {
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [selectedRule(0), selectedRule(1)],
     resourceCatalog: catalog,
@@ -133,7 +144,7 @@ test('keeps different operations on the same resource as separate calls', () => 
     expectedSignals: ['issues'],
   });
 
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [rule],
     resourceCatalog: catalog,
@@ -159,7 +170,7 @@ test('returns a constrained plan when some evidence is missing', () => {
     ],
   });
 
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [rule],
     resourceCatalog: catalog,
@@ -188,7 +199,7 @@ test('retains an unexecutable rule in a not-plannable plan', () => {
     ],
   });
 
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [rule],
     resourceCatalog: catalog,
@@ -216,7 +227,7 @@ test('merges duplicate rule-operation expectations and their signals', () => {
     ],
   });
 
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [rule],
     resourceCatalog: catalog,
@@ -258,7 +269,7 @@ test('deduplicates safely canonicalized human-authored signals while preserving 
     'availability',
   );
 
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [rule],
     resourceCatalog: catalog,
@@ -277,7 +288,7 @@ test('deduplicates safely canonicalized human-authored signals while preserving 
 });
 
 test('deduplicates limitations and ignores warnings for unselected resources', () => {
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [selectedRule(0), selectedRule(1)],
     resourceCatalog: {
@@ -312,7 +323,7 @@ test('deduplicates limitations and ignores warnings for unselected resources', (
 });
 
 test('deduplicates canonical limitation variants while retaining first-seen text and order', () => {
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [selectedRule(0)],
     resourceCatalog: {
@@ -348,7 +359,7 @@ test('deduplicates canonical limitation variants while retaining first-seen text
 });
 
 test('keeps equivalent user-authored rule names independently traceable', () => {
-  const result = createEvaluationPlanNode().run({
+  const result = runEvaluationPlan({
     context,
     selectedRules: [
       selectedRule(0, { rule: { name: 'Delivery Quality', valuation: 8 } }),
@@ -371,21 +382,25 @@ test('returns controlled validation errors for invalid context and input', () =>
   const reversed = node.run({
     context: { ...context, period: { from: '2026-06-30', to: '2026-06-01' } },
     selectedRules: [selectedRule(0)],
+    deduplicatedOperations: [],
     resourceCatalog: catalog,
   });
   const impossibleDate = node.run({
     context: { ...context, period: { from: '2026-02-30', to: '2026-03-01' } },
     selectedRules: [selectedRule(0)],
+    deduplicatedOperations: [],
     resourceCatalog: catalog,
   });
   const empty = node.run({
     context,
     selectedRules: [],
+    deduplicatedOperations: [],
     resourceCatalog: catalog,
   });
   const mismatched = node.run({
     context,
     selectedRules: [selectedRule(0)],
+    deduplicatedOperations: [],
     resourceCatalog: { ...catalog, workspaceId: 'workspace-2' },
   });
 

@@ -4,6 +4,7 @@ import {
   createEvaluationFlow,
   createEvaluationPlanNode,
   createResourceExecutionNode,
+  createResourceOperationDeduplicationNode,
   createResourceSelectionNode,
   createRuleAssessmentNode,
   createRuleUnderstandingNode,
@@ -83,6 +84,8 @@ function makeFlow(
           missingEvidence: [],
         })),
     }),
+    resourceOperationDeduplicationNode:
+      createResourceOperationDeduplicationNode(),
     evaluationPlanNode: createEvaluationPlanNode(),
     resourceExecutionNode: createResourceExecutionNode({
       executor: {
@@ -148,6 +151,40 @@ test('runs the complete graph and produces a ready plan', async () => {
     result.ruleAssessmentResult?.assessments.rule_input_1_delivery?.ruleName,
     'Delivery',
   );
+});
+
+test('executes a shared resource operation once for multiple rules', async () => {
+  let executionCalls = 0;
+  const result = await makeFlow({
+    execute: async () => {
+      executionCalls += 1;
+      return [];
+    },
+  }).invoke({
+    ...input,
+    rules: [
+      { name: 'Delivery', valuation: 8 },
+      { name: 'Quality', valuation: 7 },
+    ],
+  });
+
+  assert.equal(executionCalls, 1);
+  assert.deepEqual(result.resourceOperationDeduplicationResult?.operations, [
+    {
+      resourceId: 'activity',
+      operationName: 'activity.by_period',
+      ruleIds: ['rule_input_1_delivery', 'rule_input_2_quality'],
+    },
+  ]);
+  assert.equal(result.evaluationPlanResult?.status, 'ready');
+  if (result.evaluationPlanResult?.status === 'ready') {
+    assert.equal(result.evaluationPlanResult.plan.resourcePlan.length, 1);
+    assert.equal(
+      result.evaluationPlanResult.plan.resourcePlan[0]?.expectedEvidenceIds
+        .length,
+      2,
+    );
+  }
 });
 
 test('propagates group scope through the plan to resource execution', async () => {

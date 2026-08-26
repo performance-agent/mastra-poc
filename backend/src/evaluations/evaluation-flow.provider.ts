@@ -32,6 +32,8 @@ export function createEvaluationFlowFactory(
       resourceCatalogAdapter,
       ruleUnderstandingNode: agent.createRuleUnderstandingNode({ interpreter }),
       resourceSelectionNode: agent.createResourceSelectionNode(selector),
+      resourceOperationDeduplicationNode:
+        agent.createResourceOperationDeduplicationNode(),
       evaluationPlanNode: agent.createEvaluationPlanNode(),
       resourceExecutionNode,
       ruleAssessmentNode: agent.createRuleAssessmentNode({ assessor }),

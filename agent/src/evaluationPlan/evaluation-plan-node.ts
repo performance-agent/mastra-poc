@@ -4,6 +4,7 @@ import type {
   EvaluationPlan,
   EvaluationPlanInputError,
   EvaluationPlanNode,
+  EvaluationPlanNodeInput,
   EvaluationPlanNodeStatus,
   ExpectedEvidence,
   MissingExpectedEvidence,
@@ -34,14 +35,6 @@ type MissingExpectedEvidenceAccumulator = Omit<
 type ExpectedEvidenceAccumulator =
   PlannedExpectedEvidenceAccumulator | MissingExpectedEvidenceAccumulator;
 
-type PlannedResourceUsageAccumulator = Omit<
-  PlannedResourceUsage,
-  'ruleIds' | 'expectedEvidenceIds'
-> & {
-  ruleIds: Map<string, string>;
-  expectedEvidenceIds: Map<string, string>;
-};
-
 export function createEvaluationPlanNode(): EvaluationPlanNode {
   return {
     run(input) {
@@ -68,7 +61,10 @@ export function createEvaluationPlanNode(): EvaluationPlanNode {
       }
 
       const rules = input.selectedRules.map(normalizeRule);
-      const { resourcePlan, expectedEvidence } = buildExecutionPlan(rules);
+      const { resourcePlan, expectedEvidence } = buildExecutionPlan(
+        rules,
+        input.deduplicatedOperations,
+      );
       const limitations = collectLimitations(
         rules,
         input.resourceCatalog.resources,
@@ -115,16 +111,14 @@ function normalizeRule(rule: ResourceSelectedRule): NormalizedRule {
   };
 }
 
-function buildExecutionPlan(rules: readonly NormalizedRule[]): {
+function buildExecutionPlan(
+  rules: readonly NormalizedRule[],
+  deduplicatedOperations: EvaluationPlanNodeInput['deduplicatedOperations'],
+): {
   resourcePlan: PlannedResourceUsage[];
   expectedEvidence: ExpectedEvidence[];
 } {
-  const resourcePlan: PlannedResourceUsageAccumulator[] = [];
   const expectedEvidence: ExpectedEvidenceAccumulator[] = [];
-  const usagesByResource = new Map<
-    string,
-    Map<string, PlannedResourceUsageAccumulator>
-  >();
   const expectationsByRule = new Map<
     string,
     Map<string, Map<string, PlannedExpectedEvidenceAccumulator>>
@@ -133,7 +127,7 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
   for (const rule of rules) {
     for (const resource of rule.selectedResources) {
       for (const operation of resource.requiredOperations) {
-        const expectation = getOrCreatePlannedExpectation(
+        getOrCreatePlannedExpectation(
           expectationsByRule,
           expectedEvidence,
           rule.id,
@@ -141,14 +135,6 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
           operation.name,
           operation.expectedSignals,
         );
-        const usage = getOrCreateUsage(
-          usagesByResource,
-          resourcePlan,
-          resource.resourceId,
-          operation.name,
-        );
-        addExactValue(usage.ruleIds, rule.id);
-        addExactValue(usage.expectedEvidenceIds, expectation.id);
       }
     }
 
@@ -166,7 +152,19 @@ function buildExecutionPlan(rules: readonly NormalizedRule[]): {
   }
 
   return {
-    resourcePlan: resourcePlan.map(finalizeResourceUsage),
+    resourcePlan: deduplicatedOperations.map((operation, index) => ({
+      id: `resource_usage_${index + 1}`,
+      resourceId: operation.resourceId,
+      operationName: operation.operationName,
+      ruleIds: [...operation.ruleIds],
+      expectedEvidenceIds: operation.ruleIds.flatMap((ruleId) => {
+        const expectation = expectationsByRule
+          .get(ruleId)
+          ?.get(operation.resourceId)
+          ?.get(operation.operationName);
+        return expectation ? [expectation.id] : [];
+      }),
+    })),
     expectedEvidence: expectedEvidence.map(finalizeExpectedEvidence),
   };
 }
@@ -210,32 +208,6 @@ function getOrCreatePlannedExpectation(
   byOperation.set(operationName, expectation);
   expectedEvidence.push(expectation);
   return expectation;
-}
-
-function getOrCreateUsage(
-  usagesByResource: Map<string, Map<string, PlannedResourceUsageAccumulator>>,
-  resourcePlan: PlannedResourceUsageAccumulator[],
-  resourceId: string,
-  operationName: string,
-): PlannedResourceUsageAccumulator {
-  let byOperation = usagesByResource.get(resourceId);
-  if (!byOperation) {
-    byOperation = new Map();
-    usagesByResource.set(resourceId, byOperation);
-  }
-  const existing = byOperation.get(operationName);
-  if (existing) return existing;
-
-  const usage: PlannedResourceUsageAccumulator = {
-    id: `resource_usage_${resourcePlan.length + 1}`,
-    resourceId,
-    operationName,
-    ruleIds: new Map(),
-    expectedEvidenceIds: new Map(),
-  };
-  byOperation.set(operationName, usage);
-  resourcePlan.push(usage);
-  return usage;
 }
 
 function collectLimitations(
@@ -292,22 +264,8 @@ function addHumanText(values: Map<string, string>, value: string): void {
   if (!values.has(key)) values.set(key, value);
 }
 
-function addExactValue(values: Map<string, string>, value: string): void {
-  if (!values.has(value)) values.set(value, value);
-}
-
 function canonicalizeHumanText(value: string): string {
   return value.normalize('NFKC').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function finalizeResourceUsage(
-  usage: PlannedResourceUsageAccumulator,
-): PlannedResourceUsage {
-  return {
-    ...usage,
-    ruleIds: [...usage.ruleIds.values()],
-    expectedEvidenceIds: [...usage.expectedEvidenceIds.values()],
-  };
 }
 
 function finalizeExpectedEvidence(

@@ -1,5 +1,6 @@
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 import type { UnderstoodRule } from '../ruleUnderstanding/types.js';
+import type { DeduplicatedResourceOperation } from '../resourceOperationDeduplication/types.js';
 
 export type EvaluationPeriod = {
   from: string;
@@ -86,6 +87,7 @@ export type EvaluationPlan = {
 export type EvaluationPlanNodeInput = {
   context: EvaluationContext;
   selectedRules: readonly ResourceSelectedRule[];
+  deduplicatedOperations: readonly DeduplicatedResourceOperation[];
   resourceCatalog: ResourceCatalogNodeResult;
 };
 
