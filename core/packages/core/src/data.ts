@@ -6,6 +6,10 @@ import type { InferSecretValues, SecretDefinitions } from "./secret.js";
 export type DataTypeDefinition<TSchema extends Schema = Schema> = {
   readonly key: string;
   readonly schema: TSchema;
+  readonly description?: string;
+  readonly freshness?: "realtime" | "hourly" | "daily" | "manual" | "unknown";
+  readonly timeCoverage?: string;
+  readonly limitations?: readonly string[];
 };
 
 export type DataProvider<

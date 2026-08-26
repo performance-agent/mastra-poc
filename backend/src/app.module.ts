@@ -19,6 +19,7 @@ import { MembershipGuard } from './access-control/membership.guard';
 import { DataTypesModule } from './data-types/data-types.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { PluginInstallationsModule } from './plugin-installations/plugin-installations.module';
+import { EvaluationsModule } from './evaluations/evaluations.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
@@ -39,6 +40,7 @@ import { PerformanceMcpModule } from './mcp/performance-mcp.module';
     DataTypesModule,
     PluginsModule,
     PluginInstallationsModule,
+    EvaluationsModule,
     InvitationsModule,
     PerformanceMcpModule,
   ],

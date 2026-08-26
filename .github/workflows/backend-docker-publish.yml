@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - "agent/**"
       - "backend/**"
       - "core/**"
       - ".github/workflows/backend-docker-publish.yml"
@@ -36,6 +37,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
+            agent/package-lock.json
             core/package-lock.json
             backend/package-lock.json
 
@@ -45,6 +47,14 @@ jobs:
 
       - name: Build core packages
         working-directory: core
+        run: npm run build
+
+      - name: Install agent dependencies
+        working-directory: agent
+        run: npm ci
+
+      - name: Build agent package
+        working-directory: agent
         run: npm run build
 
       - name: Install backend dependencies

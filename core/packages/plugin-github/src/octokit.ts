@@ -5,6 +5,7 @@ import type {
   GitHubClientFactory,
   GitHubCommit,
   GitHubIssue,
+  GitHubParticipation,
   GitHubPullRequest,
   GitHubRepository,
   GitHubSecrets,
@@ -122,6 +123,28 @@ class OctokitGitHubClient implements GitHubClient {
       ...(commit.html_url ? { url: commit.html_url } : {}),
     }));
   }
+
+  async getParticipation(repository: string): Promise<GitHubParticipation> {
+    const { owner, repo } = repositoryName(repository);
+    const { data } = await this.octokit.rest.repos.getParticipationStats({ owner, repo });
+    const coverageTo = utcMidnight(new Date());
+    const coverageFrom = new Date(coverageTo.getTime() - data.all.length * 7 * 24 * 60 * 60 * 1000);
+    return {
+      repository,
+      metric: "commits",
+      bucketUnit: "week",
+      timezone: "UTC",
+      order: "oldest_to_newest",
+      coverageFrom: coverageFrom.toISOString(),
+      coverageTo: coverageTo.toISOString(),
+      all: data.all,
+      owner: data.owner,
+    };
+  }
+}
+
+function utcMidnight(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
 }
 
 function repositoryName(value: string): { owner: string; repo: string } {

@@ -49,10 +49,14 @@ describe('InvitationsService', () => {
       groupId: null,
     });
 
-    const result = await service.createOrganizationInvitation('owner-1', 'org-1', {
-      email: 'New@example.com',
-      role: 'VIEWER',
-    });
+    const result = await service.createOrganizationInvitation(
+      'owner-1',
+      'org-1',
+      {
+        email: 'New@example.com',
+        role: 'VIEWER',
+      },
+    );
 
     expect(prisma.invitation.create).toHaveBeenCalled();
     expect(result.email).toBe('new@example.com');

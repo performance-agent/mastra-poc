@@ -446,11 +446,7 @@ function WorkspaceMembersTab({
         setRole={setRole}
         allowedRoles={inviteRoles}
         onInvite={async (email, invitedRole) => {
-          const invitation = await api.createWorkspaceInvitation(
-            workspaceId,
-            email,
-            invitedRole,
-          );
+          const invitation = await api.createWorkspaceInvitation(workspaceId, email, invitedRole);
           refresh();
           return invitation;
         }}

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check, Users, FileText, RefreshCw } from "lucide-react";
+import { Plus, Boxes, Check, Users, FileText, RefreshCw, Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -21,6 +21,7 @@ import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
+import { EvaluationWorkbench } from "@/components/app/EvaluationWorkbench";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
 import { EvaluationGuidelinesCard } from "@/components/app/EvaluationGuidelinesCard";
 import { Button } from "@/components/ui/button";
@@ -44,9 +45,9 @@ import type {
 } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z.enum(["overview", "members", "resources", "reports"]).optional(),
+  tab: z.enum(["overview", "members", "resources", "reports", "evaluation"]).optional(),
 });
-type GroupTab = "overview" | "members" | "resources" | "reports";
+type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation";
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId",
@@ -262,12 +263,24 @@ function GroupPage() {
               { value: "overview", label: "Overview" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
+              { value: "evaluation", label: "Agent evaluation" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
             ]}
           />
 
           {tab === "overview" && (
             <div className="space-y-6">
+              <Card className="flex flex-col gap-3 rounded-xl border-primary/20 bg-primary/5 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-semibold">Evaluate this group</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Turn group evidence into an explainable, rule-by-rule report.
+                  </p>
+                </div>
+                <Button onClick={() => setTab("evaluation")}>
+                  <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Start evaluation
+                </Button>
+              </Card>
               <div className="grid gap-3 sm:grid-cols-2">
                 <StatCard
                   icon={<Users className="h-4 w-4" />}
@@ -302,6 +315,14 @@ function GroupPage() {
                 </section>
               )}
             </div>
+          )}
+
+          {tab === "evaluation" && (
+            <EvaluationWorkbench
+              workspaceId={workspaceId}
+              groupName={group.name}
+              groupId={groupId}
+            />
           )}
 
           {tab === "members" && (

@@ -188,14 +188,22 @@ describe('ReportsService', () => {
       evaluationNotes: null,
     });
     await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
-    const [messages] = groupGenerate.mock.calls[0] as [Array<{ role: string; content: string }>];
-    expect(messages[0].content).toContain('CRITERIOS DE EVALUACIÓN DEL PROYECTO');
+    const [messages] = groupGenerate.mock.calls[0] as [
+      Array<{ role: string; content: string }>,
+    ];
+    expect(messages[0].content).toContain(
+      'CRITERIOS DE EVALUACIÓN DEL PROYECTO',
+    );
   });
 
   it('does not prepend guidelines prompt when guidelines are empty', async () => {
     await service.createGroupReport('group-1', { type: 'GROUP_REPORT' });
-    const [messages] = groupGenerate.mock.calls[0] as [Array<{ role: string; content: string }>];
-    expect(messages[0].content).not.toContain('CRITERIOS DE EVALUACIÓN DEL PROYECTO');
+    const [messages] = groupGenerate.mock.calls[0] as [
+      Array<{ role: string; content: string }>,
+    ];
+    expect(messages[0].content).not.toContain(
+      'CRITERIOS DE EVALUACIÓN DEL PROYECTO',
+    );
   });
 
   it.each(['GITHUB_ACTIVITY', 'GITHUB_HISTORY'] as const)(

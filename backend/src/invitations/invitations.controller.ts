@@ -1,4 +1,10 @@
-import { Controller, Get, Param, Post, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InvitationsService } from './invitations.service';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';

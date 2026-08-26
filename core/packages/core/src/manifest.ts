@@ -16,5 +16,9 @@ export type PluginManifest = {
   readonly dataTypes: readonly {
     key: string;
     schema: JsonSchema;
+    description?: string;
+    freshness?: "realtime" | "hourly" | "daily" | "manual" | "unknown";
+    timeCoverage?: string;
+    limitations?: readonly string[];
   }[];
 };

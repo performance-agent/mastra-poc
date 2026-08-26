@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createOctokitGitHubClient } from "../packages/plugin-github/src/octokit.js";
 
-test("Octokit client loads paginated raw pull request context without listing PR commits", async () => {
+test("Octokit client loads paginated raw pull request context without embedding files or commits", async () => {
   const endpoints = {
     listPulls: async () => undefined,
     listFiles: async () => undefined,
@@ -76,10 +76,7 @@ test("Octokit client loads paginated raw pull request context without listing PR
   const [pull] = await client.listPullRequests("acme/api");
 
   assert.equal(pull?.body, "## Raw\n\n_Do not transform_");
-  assert.deepEqual(pull?.files, [
-    { filename: "src/a.ts", status: "modified", additions: 5, deletions: 1, changes: 6, patch: "@@ -1 +1 @@\n-old\n+new" },
-    { filename: "src/b.ts", status: "added", additions: 3, deletions: 2, changes: 5 },
-  ]);
+  assert.deepEqual(pull?.files, []);
   assert.deepEqual(pull?.issueComments[1], { body: "Deleted author", createdAt: "2026-01-02T00:30:00.000Z" });
   assert.deepEqual(pull?.reviewCommentsData[1], {
     body: "File-level note", path: "src/b.ts", createdAt: "2026-01-02T01:30:00.000Z",
@@ -88,8 +85,9 @@ test("Octokit client loads paginated raw pull request context without listing PR
   assert.deepEqual(pull?.reviews[3], { state: "PENDING", body: "Draft review" });
   assert.deepEqual(
     requests.map(({ endpoint }) => endpoint),
-    ["pulls.list", "pulls.get", "pulls.listFiles", "issues.listComments", "pulls.listReviewComments", "pulls.listReviews"],
+    ["pulls.list", "pulls.get", "issues.listComments", "pulls.listReviewComments", "pulls.listReviews"],
   );
+  assert.equal(requests.some(({ endpoint }) => endpoint === "pulls.listFiles"), false);
   assert.equal(requests.some(({ endpoint }) => endpoint === "pulls.listCommits"), false);
   for (const request of requests.filter(({ endpoint }) => endpoint !== "pulls.get")) {
     assert.equal(request.params.per_page, 100);

@@ -15,6 +15,8 @@ import type {
   GroupGithubHistoryReport,
   GroupReport,
   Role,
+  EvaluationRequest,
+  EvaluationReport,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
@@ -217,6 +219,11 @@ export const api = {
     request<unknown>(`/workspaces/${workspaceId}/resources/${resourceId}`, { method: "PUT" }),
   unassignWorkspaceResource: (workspaceId: string, resourceId: string) =>
     request<unknown>(`/workspaces/${workspaceId}/resources/${resourceId}`, { method: "DELETE" }),
+  evaluateWorkspace: (workspaceId: string, body: EvaluationRequest, view: "report" | "full") =>
+    request<EvaluationReport | Record<string, unknown>>(
+      `/workspaces/${workspaceId}/evaluations?view=${view}`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 
   // Groups
   getGroup: (id: string) => request<Group>(`/groups/${id}`),

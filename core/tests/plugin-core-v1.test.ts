@@ -58,6 +58,13 @@ function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory
         async listCommits(name) {
           return [{ sha: "abc", repository: name, message: "fix: bug", committedAt: "2026-01-03T00:00:00.000Z" }];
         },
+        async getParticipation(name) {
+          return {
+            repository: name, metric: "commits", bucketUnit: "week", timezone: "UTC", order: "oldest_to_newest",
+            coverageFrom: "2025-01-01T00:00:00.000Z", coverageTo: "2025-12-31T00:00:00.000Z",
+            all: Array(52).fill(2), owner: Array(52).fill(1),
+          };
+        },
         ...overrides,
       };
     },
@@ -67,7 +74,9 @@ function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory
 test("manifest exposes secret declarations and data JSON Schema without secret values", () => {
   const plugin = createGitHubPlugin({ clientFactory: fakeFactory() });
   assert.equal(plugin.manifest.id, "github");
-  assert.deepEqual(plugin.manifest.dataTypes.map((type) => type.key), ["github.issue", "github.pullRequest", "github.commit"]);
+  assert.deepEqual(plugin.manifest.dataTypes.map((type) => type.key), [
+    "github.issue", "github.pullRequest", "github.commit", "github.participation",
+  ]);
   assert.equal(plugin.manifest.resourceTypes[0]?.key, "github.repository");
   assert.equal(plugin.manifest.dataTypes[0]?.schema.type, "object");
   assert.deepEqual(plugin.manifest.secrets.map((secret) => secret.key), ["appId", "privateKey", "installationId", "baseUrl"]);
@@ -120,12 +129,15 @@ test("all GitHub providers return schema-valid native data", async () => {
   const issues = await plugin.dataProviders[0]!.provide(context(), repository);
   const pullRequests = await plugin.dataProviders[1]!.provide(context(), repository);
   const commits = await plugin.dataProviders[2]!.provide(context(), repository);
-  const results = [issues, pullRequests, commits];
-  assert.deepEqual(results.map((records) => records.length), [1, 1, 1]);
+  const participation = await plugin.dataProviders[3]!.provide(context(), repository);
+  const results = [issues, pullRequests, commits, participation];
+  assert.deepEqual(results.map((records) => records.length), [1, 1, 1, 1]);
   assert.equal(issues[0]?.author, "octocat");
   assert.equal(issues[0]?.comments, 3);
   assert.equal(pullRequests[0]?.reviewComments, 4);
   assert.equal(pullRequests[0]?.changedFiles, 3);
+  assert.equal(participation[0]?.all.length, 52);
+  assert.equal(participation[0]?.metric, "commits");
   assert.equal(pullRequests[0]?.body, "## Context\nRaw PR description");
   assert.equal(pullRequests[0]?.files[0]?.patch, "@@ raw patch @@");
   assert.equal(pullRequests[0]?.issueComments[0]?.body, "General **comment**");

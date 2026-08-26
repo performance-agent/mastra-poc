@@ -65,9 +65,35 @@ export const githubCommitSchema = schema.object({
   url: schema.optional(schema.string({ format: "uri" })),
 });
 
+export const githubParticipationSchema = schema.object({
+  repository: schema.string(),
+  metric: schema.enum(["commits"]),
+  bucketUnit: schema.enum(["week"]),
+  timezone: schema.enum(["UTC"]),
+  order: schema.enum(["oldest_to_newest"]),
+  coverageFrom: schema.string({ format: "date-time" }),
+  coverageTo: schema.string({ format: "date-time" }),
+  all: schema.array(schema.integer({ minimum: 0 })),
+  owner: schema.array(schema.integer({ minimum: 0 })),
+});
+
 export const githubIssue = dataType({ key: "github.issue", schema: githubIssueSchema });
-export const githubPullRequest = dataType({ key: "github.pullRequest", schema: githubPullRequestSchema });
+export const githubPullRequest = dataType({
+  key: "github.pullRequest",
+  schema: githubPullRequestSchema,
+  description: "Pull requests with lifecycle timestamps and guaranteed additions, deletions, and changedFiles totals.",
+  freshness: "realtime",
+  limitations: ["Pull request activity is not equivalent to commit activity."],
+});
 export const githubCommit = dataType({ key: "github.commit", schema: githubCommitSchema });
+export const githubParticipation = dataType({
+  key: "github.participation",
+  schema: githubParticipationSchema,
+  description: "Weekly commit counts for all contributors and the repository owner; arrays run from oldest to newest in UTC.",
+  freshness: "realtime",
+  timeCoverage: "Rolling last 52 weeks, including the latest seven-day UTC bucket.",
+  limitations: ["Counts commits, not pull requests.", "GitHub repository statistics exclude merge commits."],
+});
 
 const githubRepository = resourceType({
   key: "github.repository",
@@ -105,6 +131,13 @@ export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
         async provide(context, resource) {
           const client = await clients.create(await readSecrets(context));
           return client.listCommits(resource.externalId);
+        },
+      }),
+      providesData(githubParticipation, {
+        secrets: githubSecrets,
+        async provide(context, resource) {
+          const client = await clients.create(await readSecrets(context));
+          return [await client.getParticipation(resource.externalId)];
         },
       }),
     ] as const,

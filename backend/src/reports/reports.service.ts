@@ -87,7 +87,8 @@ export class ReportsService {
       })}`,
     );
 
-    const guidelinesPrefix = buildEvaluationGuidelinesPrompt(evaluationGuidelines);
+    const guidelinesPrefix =
+      buildEvaluationGuidelinesPrompt(evaluationGuidelines);
     const prompt = `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(reportInput)}`;
     const generatedReport = (
       await this.groupReportAgent.generate(
@@ -96,7 +97,12 @@ export class ReportsService {
       )
     ).object;
 
-    return this.persistGroupReport(groupId, generatedReport, prepared.coverage, evaluationGuidelines);
+    return this.persistGroupReport(
+      groupId,
+      generatedReport,
+      prepared.coverage,
+      evaluationGuidelines,
+    );
   }
 
   async prepareGroupReport(groupId: string) {
@@ -144,7 +150,8 @@ export class ReportsService {
     const evaluationGuidelines: EvaluationGuidelines | null =
       group.evaluationEmphasis.length > 0 || group.evaluationNotes
         ? {
-            emphasis: group.evaluationEmphasis as EvaluationGuidelines['emphasis'],
+            emphasis:
+              group.evaluationEmphasis as EvaluationGuidelines['emphasis'],
             notes: group.evaluationNotes ?? null,
           }
         : null;
@@ -165,7 +172,12 @@ export class ReportsService {
 
   async createGroupReportFromContent(groupId: string, content: unknown) {
     const prepared = await this.prepareGroupReport(groupId);
-    return this.persistGroupReport(groupId, content, prepared.coverage, prepared.evaluationGuidelines);
+    return this.persistGroupReport(
+      groupId,
+      content,
+      prepared.coverage,
+      prepared.evaluationGuidelines,
+    );
   }
 
   private persistGroupReport(

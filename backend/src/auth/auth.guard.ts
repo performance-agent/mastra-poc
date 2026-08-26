@@ -53,11 +53,12 @@ export class AuthGuard implements CanActivate {
       const email = decodedToken.email?.trim();
 
       if (!email) {
-        throw new UnauthorizedException('Authenticated user is missing an email');
+        throw new UnauthorizedException(
+          'Authenticated user is missing an email',
+        );
       }
 
-      const name =
-        decodedToken.name?.trim() || email.split('@')[0] || 'User';
+      const name = decodedToken.name?.trim() || email.split('@')[0] || 'User';
 
       let user = await this.usersService.findOneByFirebaseUid(decodedToken.uid);
 

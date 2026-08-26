@@ -92,9 +92,9 @@ describe('buildEvaluationGuidelinesPrompt', () => {
   });
 
   it('returns empty string for empty emphasis and no notes', () => {
-    expect(
-      buildEvaluationGuidelinesPrompt({ emphasis: [], notes: null }),
-    ).toBe('');
+    expect(buildEvaluationGuidelinesPrompt({ emphasis: [], notes: null })).toBe(
+      '',
+    );
   });
 
   it('returns empty string for empty emphasis and blank notes', () => {
