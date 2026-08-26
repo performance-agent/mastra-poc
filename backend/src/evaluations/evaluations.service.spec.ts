@@ -70,6 +70,17 @@ function setup(result = flowResult()) {
 }
 
 describe('EvaluationsService', () => {
+  const originalRunnerId = process.env.LANGSMITH_RUNNER_ID;
+
+  beforeEach(() => {
+    process.env.LANGSMITH_RUNNER_ID = 'local';
+  });
+
+  afterAll(() => {
+    if (originalRunnerId === undefined) delete process.env.LANGSMITH_RUNNER_ID;
+    else process.env.LANGSMITH_RUNNER_ID = originalRunnerId;
+  });
+
   it('returns the compact report view by default and invokes the complete graph', async () => {
     const { service, factory, invoke } = setup();
 
@@ -89,7 +100,7 @@ describe('EvaluationsService', () => {
       },
       {
         runName: 'workspace-evaluation-flow',
-        tags: ['backend', 'evaluation-flow'],
+        tags: ['backend', 'evaluation-flow', 'runner:local'],
         metadata: { workspaceId: 'workspace-1', view: EvaluationView.REPORT },
       },
     );

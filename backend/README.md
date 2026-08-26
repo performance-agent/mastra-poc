@@ -68,14 +68,18 @@ RULE_SUMMARY_MODEL=openai:gpt-5
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=your-langsmith-api-key
 LANGSMITH_PROJECT=mastra-poc-agent-flow
+LANGSMITH_RUNNER_ID=local
 LANGCHAIN_CALLBACKS_BACKGROUND=false
 ```
 
 `RULE_UNDERSTANDING_MODEL` is used for rule interpretation and resource
 selection. `RULE_SUMMARY_MODEL` produces the final structured assessment.
 With the `LANGSMITH_*` values enabled, evaluations started through the API are
-recorded as `workspace-evaluation-flow` runs, tagged with `backend` and
-`evaluation-flow`, and include the workspace and requested view as metadata.
+recorded as `workspace-evaluation-flow` runs, tagged with `backend`,
+`evaluation-flow`, and `runner:<LANGSMITH_RUNNER_ID>`, and include the workspace
+and requested view as metadata. `LANGSMITH_RUNNER_ID` is required at startup;
+use `local` for local development and a deployment-specific identifier in each
+deployed environment.
 
 The workspace must have at least one active resource assigned from an active
 plugin installation. An authenticated workspace owner or admin can then run:

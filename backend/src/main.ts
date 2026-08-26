@@ -4,10 +4,12 @@ import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { validateSecretsEncryptionKey } from './plugins/configuration-crypto';
 import { validateModelConfiguration } from './mastra/model-configuration';
+import { validateLangSmithRunnerConfiguration } from './evaluations/langsmith-runner';
 
 async function bootstrap() {
   validateSecretsEncryptionKey();
   validateModelConfiguration();
+  validateLangSmithRunnerConfiguration();
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin:

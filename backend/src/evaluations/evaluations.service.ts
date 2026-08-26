@@ -11,6 +11,7 @@ import {
   EVALUATION_FLOW_FACTORY,
   type EvaluationFlowFactory,
 } from './evaluation-flow.provider';
+import { langSmithRunnerTag } from './langsmith-runner';
 
 @Injectable()
 export class EvaluationsService {
@@ -56,8 +57,8 @@ export class EvaluationsService {
         rules: dto.rules,
       },
       {
-        runName: 'workspace-evaluation-flow',
-        tags: ['backend', 'evaluation-flow'],
+        runName: 'group-evaluation-flow',
+        tags: [langSmithRunnerTag()],
         metadata: {
           workspaceId,
           ...(dto.groupId ? { groupId: dto.groupId } : {}),
