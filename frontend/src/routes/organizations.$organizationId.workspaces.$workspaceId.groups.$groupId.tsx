@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check, Users, FileText, RefreshCw, Sparkles } from "lucide-react";
+import { Plus, Boxes, Check, Download, FileText, RefreshCw } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -24,6 +24,7 @@ import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHi
 import { EvaluationWorkbench } from "@/components/app/EvaluationWorkbench";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
 import { EvaluationGuidelinesCard } from "@/components/app/EvaluationGuidelinesCard";
+import { GroupOverviewDashboard } from "@/components/app/GroupOverviewDashboard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -45,9 +46,11 @@ import type {
 } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z.enum(["overview", "members", "resources", "reports", "evaluation"]).optional(),
+  tab: z
+    .enum(["overview", "members", "resources", "guidelines", "reports", "evaluation"])
+    .optional(),
 });
-type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation";
+type GroupTab = "overview" | "members" | "resources" | "guidelines" | "reports" | "evaluation";
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId",
@@ -263,58 +266,36 @@ function GroupPage() {
               { value: "overview", label: "Overview" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
+              { value: "guidelines", label: "Guidelines" },
               { value: "evaluation", label: "Agent evaluation" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
             ]}
           />
 
           {tab === "overview" && (
-            <div className="space-y-6">
-              <Card className="flex flex-col gap-3 rounded-xl border-primary/20 bg-primary/5 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-semibold">Evaluate this group</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Turn group evidence into an explainable, rule-by-rule report.
-                  </p>
-                </div>
-                <Button onClick={() => setTab("evaluation")}>
-                  <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Start evaluation
-                </Button>
-              </Card>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <StatCard
-                  icon={<Users className="h-4 w-4" />}
-                  label="Members"
-                  value={membersQ.data?.length ?? 0}
-                />
-                <StatCard
-                  icon={<Boxes className="h-4 w-4" />}
-                  label="Assigned resources"
-                  value={groupResourcesQ.data?.length ?? 0}
-                />
-              </div>
+            <GroupOverviewDashboard
+              reports={reportsQ.data ?? []}
+              isLoading={reportsQ.isLoading}
+              errorMessage={reportsQ.error ? errorMessage(reportsQ.error) : undefined}
+              isCreating={isCreatingReport}
+              isWaitingForReport={Boolean(reportStartedAt)}
+              onCreate={createReport}
+              onRefresh={() => reportsQ.refetch()}
+              onOpenReport={(reportId) => {
+                setSelectedReportId(reportId);
+                setTab("reports");
+              }}
+            />
+          )}
 
-              <EvaluationGuidelinesCard
-                group={group}
-                canEdit={canManageRoles}
-                onSaved={(updated) => {
-                  qc.setQueryData(["group", groupId], updated);
-                }}
-              />
-
-              {(groupResourcesQ.data ?? []).length > 0 && (
-                <section className="space-y-3">
-                  <h2 className="text-sm font-semibold text-muted-foreground">
-                    Assigned resources
-                  </h2>
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {(groupResourcesQ.data ?? []).slice(0, 4).map((resource) => (
-                      <ResourceCard key={resource.id} resource={resource} />
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
+          {tab === "guidelines" && (
+            <EvaluationGuidelinesCard
+              group={group}
+              canEdit={canManageRoles}
+              onSaved={(updated) => {
+                qc.setQueryData(["group", groupId], updated);
+              }}
+            />
           )}
 
           {tab === "evaluation" && (
@@ -488,6 +469,7 @@ function GroupPage() {
 
           {tab === "reports" && (
             <ReportsTab
+              groupName={group.name}
               reports={reportsQ.data ?? []}
               selectedReport={selectedReport}
               selectedReportId={selectedReportId}
@@ -557,6 +539,7 @@ function GroupPage() {
 }
 
 function ReportsTab({
+  groupName,
   reports,
   selectedReport,
   selectedReportId,
@@ -568,6 +551,7 @@ function ReportsTab({
   onRefresh,
   onSelect,
 }: {
+  groupName: string;
   reports: Array<
     PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>
   >;
@@ -583,6 +567,22 @@ function ReportsTab({
   onRefresh: () => void;
   onSelect: (id: string) => void;
 }) {
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+
+  const exportSelectedReport = async () => {
+    if (!selectedReport || exportingReportId) return;
+    setExportingReportId(selectedReport.id);
+    try {
+      const { exportPerformanceReportAsPdf } = await import("@/lib/export-performance-report-pdf");
+      await exportPerformanceReportAsPdf({ report: selectedReport, groupName });
+      toast.success("PDF downloaded");
+    } catch (exportError) {
+      toast.error(`Could not export PDF: ${errorMessage(exportError)}`);
+    } finally {
+      setExportingReportId(null);
+    }
+  };
+
   return (
     <div className="min-w-0 space-y-4">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -660,6 +660,21 @@ function ReportsTab({
 
           {selectedReport ? (
             <div className="min-w-0 overflow-hidden">
+              <div className="mb-3 flex justify-end">
+                <Button
+                  className="w-full sm:w-auto"
+                  variant="outline"
+                  onClick={exportSelectedReport}
+                  disabled={Boolean(exportingReportId)}
+                >
+                  {exportingReportId ? (
+                    <RefreshCw aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download aria-hidden="true" className="mr-1.5 h-4 w-4" />
+                  )}
+                  {exportingReportId ? "Exporting…" : "Export as PDF"}
+                </Button>
+              </div>
               {selectedReport.type === "GROUP_REPORT" ? (
                 <GroupReportRenderer report={selectedReport as PerformanceReport<GroupReport>} />
               ) : selectedReport.type === "GITHUB_HISTORY" ? (
@@ -676,27 +691,5 @@ function ReportsTab({
         </div>
       )}
     </div>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        {icon}
-      </div>
-      <div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="text-lg font-semibold">{value}</div>
-      </div>
-    </Card>
   );
 }
