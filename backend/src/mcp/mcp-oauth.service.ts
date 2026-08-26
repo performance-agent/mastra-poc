@@ -434,7 +434,11 @@ export class McpOAuthService {
         throw oauthError('invalid_client', 'Unknown OAuth client');
       }
       const redirectUris = jsonStringArray(client.redirectUris);
-      if (!redirectUris.includes(redirectUri)) {
+      if (
+        !redirectUris.some((registered) =>
+          redirectUriMatches(registered, redirectUri),
+        )
+      ) {
         throw oauthError(
           'invalid_request',
           'redirect_uri is not registered by the client',
@@ -475,7 +479,11 @@ export class McpOAuthService {
       redirectUri,
       isNativeRedirectUri(redirectUri) ? 'native' : 'web',
     );
-    if (!redirectUris.includes(redirectUri)) {
+    if (
+      !redirectUris.some((registered) =>
+        redirectUriMatches(registered, redirectUri),
+      )
+    ) {
       throw oauthError(
         'invalid_request',
         'redirect_uri is not registered by the client',
@@ -795,4 +803,26 @@ async function issueTokenPair(
     refresh_token: refreshToken,
     scope: identity.scope,
   };
+}
+
+function redirectUriMatches(registered: string, requested: string) {
+  if (registered === requested) return true;
+
+  try {
+    const a = new URL(registered);
+    const b = new URL(requested);
+
+    if (!isLoopbackHostname(a.hostname) || !isLoopbackHostname(b.hostname)) {
+      return false;
+    }
+
+    return (
+      a.protocol === b.protocol &&
+      a.hostname === b.hostname &&
+      a.pathname === b.pathname &&
+      a.search === b.search
+    );
+  } catch {
+    return false;
+  }
 }

@@ -4,6 +4,9 @@ model Group {
   description String?
   photoUrl    String?
 
+  evaluationEmphasis GroupEvaluationEmphasis[] @default([])
+  evaluationNotes    String?
+
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -15,4 +18,13 @@ model Group {
   invitations         Invitation[]
 
   @@index([workspaceId])
+}
+
+enum GroupEvaluationEmphasis {
+  PRODUCT
+  DELIVERY
+  ENGINEERING
+  PEOPLE
+  GITHUB_EVIDENCE
+  TICKET_EVIDENCE
 }
