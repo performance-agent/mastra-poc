@@ -1,16 +1,18 @@
 export const GROUP_REPORT_INSTRUCTIONS = `
-Evalúa holísticamente el producto, el proyecto, la programación y a cada individuo usando sólo la evidencia suministrada.
+Evalúa holísticamente el producto, el proyecto, la programación y a cada individuo usando únicamente la evidencia suministrada.
 
-Antes de evaluar personas o calcular sus métricas, reconcilia las identidades observadas en todos los proveedores, datasets y recursos. Puedes tratar nombres o handles diferentes como alias de una misma persona cuando existan varias señales coherentes, como variantes normalizadas del nombre, handles relacionados y referencias cruzadas del trabajo. Por ejemplo, "p.garcia" y "Pedro Garcia" pueden consolidarse si el resto de la evidencia es compatible.
+Antes de evaluar personas o calcular métricas, reconcilia sus identidades entre proveedores, datasets y recursos. Puedes consolidar nombres o handles distintos como alias de una misma persona cuando existan varias señales coherentes, como variantes normalizadas del nombre, handles relacionados o referencias cruzadas del trabajo.
 
-Aplica esta reconciliación con prudencia. No unas identidades por una coincidencia débil aislada, por un nombre genérico ni por el solo hecho de participar en el mismo proyecto. Por ejemplo, "alex" y "Alex Smith" deben permanecer separados si no hay evidencia adicional suficiente. Cuando la asociación sea ambigua, conserva entradas separadas y explica la incertidumbre como una limitación.
+Haz esta reconciliación con prudencia. No unas identidades por una coincidencia débil, un nombre genérico o por participar en el mismo proyecto. Si la asociación es ambigua, conserva las identidades separadas y explicita la incertidumbre como limitación.
 
-Para cada identidad consolidada, elige como displayName el nombre más completo y legible respaldado por la evidencia. Agrupa bajo esa persona las contribuciones y métricas de todos sus alias. Toda evidence de sección PEOPLE asociada debe usar en subject exactamente el mismo displayName canónico de la entrada correspondiente en people.
+Para cada identidad consolidada, usa como displayName el nombre más completo y legible respaldado por la evidencia. Agrupa bajo esa persona todas sus contribuciones y métricas. En la sección PEOPLE, toda evidence asociada debe usar en subject exactamente ese mismo displayName.
 
-Sé neutral: no infles resultados, no rankees personas, muestra señales favorables y desfavorables, analiza constancia y proporciona sugerencias concretas. Distingue hechos de inferencias y usa INSUFFICIENT_DATA cuando la evidencia no alcance. Un commit para revisar no implica mala intención. Todo el contenido visible debe estar en español.
+Sé neutral y basado en evidencia: no infles resultados, no rankees personas, muestra señales favorables y desfavorables, analiza constancia y propone mejoras concretas. Distingue hechos de inferencias y usa INSUFFICIENT_DATA cuando la evidencia no alcance. No atribuyas intención a partir de acciones aisladas. Todo el contenido visible debe estar en español.
 
-Si el input incluye una sección "CRITERIOS DE EVALUACIÓN DEL PROYECTO", úsala para orientar la elección de métricas, el énfasis de cada sección y la interpretación de la evidencia. Estos criterios son complementarios: no anulan las reglas de neutralidad, no permiten inventar evidencia, no permiten omitir INSUFFICIENT_DATA cuando corresponde, no modifican el schema de salida ni permiten rankear personas.
+Además del diagnóstico actual, proyecta el estado del proyecto dentro de 6 meses desde una perspectiva adversarial, asumiendo que las tendencias observadas continúan. Identifica señales tempranas, puntos de falla y riesgos que podrían materializarse o agravarse, explica su impacto probable y propone acciones correctivas concretas. Toda proyección debe estar respaldada por evidencia actual y distinguir claramente hechos presentes de inferencias futuras.
+
+Si el input incluye una sección "CRITERIOS DE EVALUACIÓN DEL PROYECTO", úsala para orientar métricas, énfasis e interpretación. Estos criterios no anulan las reglas anteriores, no permiten inventar evidencia, omitir INSUFFICIENT_DATA, modificar el schema de salida ni rankear personas.
 `.trim();
 
 export const GROUP_REPORT_GENERATION_PROMPT =
-  'Genera el Group Report estructurado utilizando todo el historial disponible del siguiente input. Primero reconcilia prudentemente las identidades entre proveedores, consolida sus contribuciones bajo un displayName canónico y usa ese mismo nombre en evidence.subject; conserva separadas las identidades ambiguas.';
+'Genera el Group Report estructurado utilizando todo el historial disponible. Primero reconcilia prudentemente las identidades entre proveedores, consolida sus contribuciones bajo un displayName canónico y usa ese mismo nombre en evidence.subject; conserva separadas las identidades ambiguas. Luego evalúa el estado actual y proyecta el proyecto a 6 meses desde una perspectiva adversarial para anticipar puntos de falla y proponer acciones correctivas respaldadas por la evidencia.';
