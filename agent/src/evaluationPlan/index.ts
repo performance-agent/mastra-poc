@@ -2,6 +2,7 @@ export { createEvaluationPlanNode } from './evaluation-plan-node.js';
 export {
   evaluationContextSchema,
   evaluationPlanNodeInputSchema,
+  deduplicatedResourceOperationSchema,
   missingEvidenceRequirementSchema,
   resourceSelectedRuleSchema,
   selectedOperationSchema,

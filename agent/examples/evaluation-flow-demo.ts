@@ -2,6 +2,7 @@ import {
   createEvaluationFlow,
   createEvaluationPlanNode,
   createResourceExecutionNode,
+  createResourceOperationDeduplicationNode,
   createResourceSelectionNode,
   createRuleAssessmentNode,
   createRuleUnderstandingNode,
@@ -70,6 +71,7 @@ const demoGraph = createEvaluationFlow({
       };
     },
   }),
+  resourceOperationDeduplicationNode: createResourceOperationDeduplicationNode(),
   evaluationPlanNode: createEvaluationPlanNode(),
   resourceExecutionNode: createResourceExecutionNode({
     executor: {

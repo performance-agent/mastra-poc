@@ -535,6 +535,8 @@ RuleUnderstandingNode
    ↓
 ResourceSelectionNode
    ↓
+ResourceOperationDeduplicationNode
+   ↓
 EvaluationPlanNode
    ↓
 ResourceExecutionNode

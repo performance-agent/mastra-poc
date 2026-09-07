@@ -62,6 +62,14 @@ export const resourceSelectedRuleSchema = z.object({
   missingEvidence: z.array(missingEvidenceRequirementSchema),
 });
 
+export const deduplicatedResourceOperationSchema = z
+  .object({
+    resourceId: nonEmptyText,
+    operationName: nonEmptyText,
+    ruleIds: z.array(nonEmptyText).min(1),
+  })
+  .strict();
+
 const catalogResourceSchema = z
   .object({
     id: nonEmptyText,
@@ -79,6 +87,7 @@ const catalogWarningSchema = z
 export const evaluationPlanNodeInputSchema = z.object({
   context: evaluationContextSchema,
   selectedRules: z.array(resourceSelectedRuleSchema).min(1),
+  deduplicatedOperations: z.array(deduplicatedResourceOperationSchema),
   resourceCatalog: z
     .object({
       workspaceId: nonEmptyText,
