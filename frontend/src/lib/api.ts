@@ -17,6 +17,8 @@ import type {
   Role,
   EvaluationRequest,
   EvaluationReport,
+  RulePackage,
+  RulePackageInput,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
@@ -224,6 +226,22 @@ export const api = {
       `/workspaces/${workspaceId}/evaluations?view=${view}`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+  listRulePackages: (workspaceId: string) =>
+    request<RulePackage[]>(`/workspaces/${workspaceId}/rule-packages`),
+  createRulePackage: (workspaceId: string, body: RulePackageInput) =>
+    request<RulePackage>(`/workspaces/${workspaceId}/rule-packages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateRulePackage: (workspaceId: string, packageId: string, body: Partial<RulePackageInput>) =>
+    request<RulePackage>(`/workspaces/${workspaceId}/rule-packages/${packageId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteRulePackage: (workspaceId: string, packageId: string) =>
+    request<void>(`/workspaces/${workspaceId}/rule-packages/${packageId}`, {
+      method: "DELETE",
+    }),
 
   // Groups
   getGroup: (id: string) => request<Group>(`/groups/${id}`),

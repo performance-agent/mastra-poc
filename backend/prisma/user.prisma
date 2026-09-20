@@ -8,6 +8,7 @@ model User {
   sentInvitations        Invitation[]            @relation("InvitedBy")
   mcpOAuthAuthorizations McpOAuthAuthorization[]
   mcpOAuthTokens         McpOAuthToken[]
+  rulePackages           RulePackage[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

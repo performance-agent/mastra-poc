@@ -151,6 +151,40 @@ export interface EvaluationRequest {
   groupId?: string;
 }
 
+export type RulePackageScope = "PUBLIC" | "WORKSPACE" | "ALL_WORKSPACES";
+
+export interface RulePackageRule {
+  id: string;
+  name: string;
+  description?: string | null;
+  valuation: number;
+  position: number;
+}
+
+export interface RulePackage {
+  id: string;
+  name: string;
+  evaluates: string;
+  scope: RulePackageScope;
+  ownerId?: string | null;
+  workspaceId?: string | null;
+  rules: RulePackageRule[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RulePackageInput {
+  name: string;
+  evaluates: string;
+  scope: Exclude<RulePackageScope, "PUBLIC">;
+  rules: Array<{
+    name: string;
+    description?: string;
+    valuation: number;
+    position: number;
+  }>;
+}
+
 export interface EvaluationReport {
   status: string;
   assessments: Record<string, RuleAssessment>;
