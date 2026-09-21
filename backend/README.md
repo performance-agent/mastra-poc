@@ -65,6 +65,7 @@ two LangChain `provider:model` identifiers:
 ```dotenv
 RULE_UNDERSTANDING_MODEL=openai:gpt-5-mini
 RULE_SUMMARY_MODEL=openai:gpt-5
+PROMPT_DATA_FORMAT=auto
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=your-langsmith-api-key
 LANGSMITH_PROJECT=mastra-poc-agent-flow
@@ -74,6 +75,11 @@ LANGCHAIN_CALLBACKS_BACKGROUND=false
 
 `RULE_UNDERSTANDING_MODEL` is used for rule interpretation and resource
 selection. `RULE_SUMMARY_MODEL` produces the final structured assessment.
+`PROMPT_DATA_FORMAT` controls serialization of the data sections sent to that
+model: `json` always uses compact JSON, `toon` forces TOON, and the default
+`auto` uses TOON only when its encoded representation is smaller, with an
+automatic JSON fallback if encoding fails. This setting does not change the
+HTTP response format.
 With the `LANGSMITH_*` values enabled, evaluations started through the API are
 recorded as `workspace-evaluation-flow` runs, tagged with `backend`,
 `evaluation-flow`, and `runner:<LANGSMITH_RUNNER_ID>`, and include the workspace

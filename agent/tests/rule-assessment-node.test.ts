@@ -6,6 +6,8 @@ import {
   createLangChainRuleAssessor,
   createLangChainRuleAssessorFromEnv,
   createRuleAssessmentNode,
+  parsePromptDataFormat,
+  serializePromptData,
   type EvaluationPlan,
   type ResourceExecutionNodeResult,
   type RuleAssessmentRequest,
@@ -126,16 +128,18 @@ function executionResult(recordCount = 3): ResourceExecutionNodeResult {
 function validAssessment(verdict = 'supported' as const) {
   const evidence = [
     {
+      id: 'evidence-1',
       source: 'github.commit on repository-1',
       observation: 'Three commits were returned.',
       relevance: 'Commits are a planned signal.',
+      recordReferences: ['commit-1', 'commit-2', 'commit-3'],
     },
   ];
   const criteria = [
     {
       criterion: 'Delivered commits',
       finding: 'Three identified commits provide direct delivery evidence.',
-      evidenceReferences: ['commit-1', 'commit-2', 'commit-3'],
+      evidenceIds: ['evidence-1'],
       status: 'met' as const,
     },
   ];
@@ -148,7 +152,7 @@ function validAssessment(verdict = 'supported' as const) {
         memberName: 'Member One',
         summary: 'The member has attributable delivery evidence.',
         criteria,
-        evidence,
+        evidenceIds: ['evidence-1'],
         rationale:
           'The identified commits directly support the delivery criterion.',
         verdict,
@@ -193,6 +197,20 @@ test('assesses every rule and groups shared and rule-specific calls by rule ID',
   assert.equal(
     result.assessments['rule-1']?.memberAssessments[0]?.memberIdentifier,
     'member-1',
+  );
+  assert.deepEqual(
+    result.assessments['rule-1']?.criteria[0]?.evidenceReferences,
+    ['commit-1', 'commit-2', 'commit-3'],
+  );
+  assert.deepEqual(
+    result.assessments['rule-1']?.memberAssessments[0]?.evidence,
+    [
+      {
+        source: 'github.commit on repository-1',
+        observation: 'Three commits were returned.',
+        relevance: 'Commits are a planned signal.',
+      },
+    ],
   );
   assert.equal(requests[0]?.resourceCalls.length, 2);
   assert.equal(requests[1]?.resourceCalls.length, 1);
@@ -265,6 +283,15 @@ test('passes empty evidence to the assessor so it can return not_evaluable', asy
       return {
         ...validAssessment('not_evaluable'),
         evidence: [],
+        memberAssessments: [],
+        criteria: [
+          {
+            criterion: 'Delivered commits',
+            finding: 'No evidence was available.',
+            evidenceIds: [],
+            status: 'unknown',
+          },
+        ],
       };
     }),
   });
@@ -365,6 +392,41 @@ test('LangChain assessor sends rule, all evidence, failures, and limitations as 
     /absence of evidence alone is not contrary evidence/,
   );
   assert.match(serialized, /Do not compare or rank members/);
+  assert.match(serialized, /format=\\?"toon\\?"/);
+  assert.match(serialized, /recordReferences/);
+});
+
+test('uses TOON only when requested or smaller and keeps a JSON fallback', () => {
+  const tabular = {
+    records: Array.from({ length: 20 }, (_, index) => ({
+      id: index,
+      name: `Record ${index}`,
+      active: true,
+    })),
+  };
+  const automatic = serializePromptData(tabular, 'auto');
+  assert.equal(automatic.format, 'toon');
+  assert.match(automatic.content, /records\[20\t\]\{id\tname\tactive\}/);
+
+  const forcedJson = serializePromptData(tabular, 'json');
+  assert.equal(forcedJson.format, 'json');
+  assert.deepEqual(JSON.parse(forcedJson.content), tabular);
+  assert.equal(parsePromptDataFormat(undefined), 'auto');
+  assert.equal(parsePromptDataFormat(' TOON '), 'toon');
+  assert.throws(() => parsePromptDataFormat('yaml'), /json, toon, or auto/);
+});
+
+test('rejects duplicate and dangling compact evidence references', () => {
+  const duplicate = validAssessment();
+  duplicate.evidence.push({ ...duplicate.evidence[0]! });
+  assert.equal(
+    ruleAssessmentAiOutputSchema.safeParse(duplicate).success,
+    false,
+  );
+
+  const dangling = validAssessment();
+  dangling.criteria[0]!.evidenceIds = ['missing'];
+  assert.equal(ruleAssessmentAiOutputSchema.safeParse(dangling).success, false);
 });
 
 test('uses a portable structured-output schema and requires a dedicated model', async () => {
@@ -372,10 +434,18 @@ test('uses a portable structured-output schema and requires a dedicated model', 
   assert.equal(jsonSchema.type, 'object');
   assert.match(JSON.stringify(jsonSchema), /partially_supported/);
   assert.match(JSON.stringify(jsonSchema), /memberAssessments/);
-  assert.match(JSON.stringify(jsonSchema), /evidenceReferences/);
+  assert.match(JSON.stringify(jsonSchema), /recordReferences/);
+  assert.match(JSON.stringify(jsonSchema), /evidenceIds/);
 
   await assert.rejects(
     createLangChainRuleAssessorFromEnv({}),
     /RULE_SUMMARY_MODEL must contain a LangChain provider:model identifier/,
+  );
+  await assert.rejects(
+    createLangChainRuleAssessorFromEnv({
+      RULE_SUMMARY_MODEL: 'google-genai:test',
+      PROMPT_DATA_FORMAT: 'yaml',
+    }),
+    /PROMPT_DATA_FORMAT must be json, toon, or auto/,
   );
 });
