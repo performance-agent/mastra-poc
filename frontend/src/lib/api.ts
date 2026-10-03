@@ -17,6 +17,8 @@ import type {
   Role,
   EvaluationRequest,
   EvaluationReport,
+  SavedEvaluation,
+  EvaluationHistoryPage,
   RulePackage,
   RulePackageInput,
 } from "./types";
@@ -226,6 +228,13 @@ export const api = {
       `/workspaces/${workspaceId}/evaluations?view=${view}`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+  listEvaluations: (workspaceId: string, groupId: string, cursor?: string) => {
+    const query = new URLSearchParams({ groupId });
+    if (cursor) query.set("cursor", cursor);
+    return request<EvaluationHistoryPage>(`/workspaces/${workspaceId}/evaluations?${query}`);
+  },
+  getEvaluation: (workspaceId: string, evaluationId: string) =>
+    request<SavedEvaluation>(`/workspaces/${workspaceId}/evaluations/${evaluationId}`),
   listRulePackages: (workspaceId: string) =>
     request<RulePackage[]>(`/workspaces/${workspaceId}/rule-packages`),
   createRulePackage: (workspaceId: string, body: RulePackageInput) =>

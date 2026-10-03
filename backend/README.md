@@ -112,6 +112,35 @@ The default `report` view returns keyed rule assessments, limitations,
 execution counts, and diagnostics. Use `?view=full` to inspect the complete
 graph state and raw plugin records during development.
 
+Each evaluation that returns a result is automatically saved as an
+`AGENT_EVALUATION` performance report before the API responds. Both response
+views include `evaluationId` and `createdAt`. Storage contains a versioned
+snapshot of the submitted rules, optional period, and the final report
+(including evidence and diagnostics), rather than the full graph state or raw
+plugin records. Partial results are saved too; invocations that throw are not.
+If persistence fails, the API returns 503 and explicitly reports that the
+evaluation could not be saved.
+
+Workspace owners and admins can retrieve history using:
+
+- `GET /api/workspaces/:workspaceId/evaluations?groupId=:groupId`: summaries,
+  newest first, with 20 items per page and a `nextCursor`. Omit `groupId` to
+  list all evaluations in the workspace. Pass `cursor=:nextCursor` for the next page.
+- `GET /api/workspaces/:workspaceId/evaluations/:evaluationId`: the saved record
+  with `data.schemaVersion`, `data.rules`, `data.period`, and `data.report`.
+
+The group's Agent evaluation tab displays this history. Selecting an entry
+shows its saved rules, period, and report without modifying the new evaluation
+form. These entries are excluded from the existing group Reports tab and
+`/api/reports/:id` endpoint. Historical comparison and agent resource integration
+are not implemented.
+
+Apply database migrations before running the updated API:
+
+```bash
+npx prisma migrate deploy
+```
+
 ## Run the backend with Docker Compose
 
 The Compose stack builds the backend and agent packages, starts PostgreSQL,

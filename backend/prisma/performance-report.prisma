@@ -25,6 +25,7 @@ model PerformanceReport {
 }
 
 enum PerformanceReportType {
+  AGENT_EVALUATION
   GITHUB_ACTIVITY
   GITHUB_HISTORY
   GROUP_REPORT

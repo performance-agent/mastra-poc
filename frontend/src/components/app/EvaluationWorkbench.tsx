@@ -9,7 +9,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
@@ -52,6 +52,9 @@ import { SearchInput } from "@/components/app/SearchInput";
 type EvaluationRule = { id: string; name: string; description: string; valuation: number };
 type WorkbenchState = {
   workspaceId: string;
+  groupId: string;
+  selectedEvaluationId?: string;
+  setSelectedEvaluationId: Dispatch<SetStateAction<string | undefined>>;
   rules: EvaluationRule[];
   setRules: Dispatch<SetStateAction<EvaluationRule[]>>;
   packages: RulePackage[];
@@ -92,6 +95,8 @@ function EvaluationProvider({
   groupId: string;
   children: ReactNode;
 }) {
+  const queryClient = useQueryClient();
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>();
   const packagesQ = useQuery({
     queryKey: ["workspace", workspaceId, "rule-packages"],
     queryFn: () => api.listRulePackages(workspaceId),
@@ -141,6 +146,7 @@ function EvaluationProvider({
     }
 
     setIsRunning(true);
+    setSelectedEvaluationId(undefined);
     setError(undefined);
     try {
       const response = await api.evaluateWorkspace(
@@ -157,7 +163,10 @@ function EvaluationProvider({
         "report",
       );
       setReport(response as EvaluationReport);
-      toast.success("Evaluation complete");
+      void queryClient.invalidateQueries({
+        queryKey: ["workspace", workspaceId, "evaluations", groupId],
+      });
+      toast.success("Evaluation saved");
     } catch (caught) {
       const message = errorMessage(caught);
       setError(
@@ -171,6 +180,9 @@ function EvaluationProvider({
 
   const value = {
     workspaceId,
+    groupId,
+    selectedEvaluationId,
+    setSelectedEvaluationId,
     rules,
     setRules,
     packages: packagesQ.data ?? [],
@@ -198,13 +210,14 @@ export function EvaluationWorkbench(props: {
   groupId: string;
 }) {
   return (
-    <EvaluationProvider {...props}>
+    <EvaluationProvider key={`${props.workspaceId}:${props.groupId}`} {...props}>
       <div className="evaluation-workbench overflow-hidden rounded-[1.35rem] border border-slate-300/70 bg-[#f7f9fb] shadow-[0_22px_70px_-38px_rgba(15,50,75,0.45)] dark:border-slate-700 dark:bg-[#111a21]">
         <WorkbenchHeader groupName={props.groupName} />
         <div className="grid min-w-0 lg:grid-cols-[minmax(310px,0.82fr)_minmax(0,1.35fr)]">
           <EvaluationSetup />
           <EvaluationOutput />
         </div>
+        <EvaluationHistory />
       </div>
     </EvaluationProvider>
   );
@@ -864,7 +877,14 @@ function DateField({
 }
 
 function EvaluationOutput() {
-  const { report, isRunning } = useWorkbench();
+  const { report: latestReport, isRunning, workspaceId, selectedEvaluationId } = useWorkbench();
+  const savedQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluation", selectedEvaluationId],
+    queryFn: () => api.getEvaluation(workspaceId, selectedEvaluationId!),
+    enabled: Boolean(selectedEvaluationId),
+  });
+  const saved = selectedEvaluationId ? savedQ.data : undefined;
+  const report = selectedEvaluationId ? saved?.data.report : latestReport;
   return (
     <section
       aria-labelledby="evaluation-report-title"
@@ -883,13 +903,126 @@ function EvaluationOutput() {
         </div>
         {report ? <StatusMark status={report.status} /> : null}
       </div>
-      {isRunning ? (
+      {saved ? (
+        <div className="mb-5 rounded-xl border p-4 text-sm">
+          <p className="font-semibold">
+            Saved evaluation · {new Date(saved.createdAt).toLocaleString()}
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            {saved.data.period
+              ? `${saved.data.period.from} – ${saved.data.period.to}`
+              : "No period specified"}
+          </p>
+          <ul className="mt-3 space-y-2">
+            {saved.data.rules.map((rule, index) => (
+              <li key={index}>
+                <span className="font-medium">{rule.name}</span> · Importance {rule.valuation}/10
+                {rule.description ? (
+                  <p className="text-muted-foreground">{rule.description}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {selectedEvaluationId && savedQ.isError ? (
+        <div role="alert" className="space-y-3 text-sm">
+          <p>{errorMessage(savedQ.error)}</p>
+          <Button variant="outline" onClick={() => void savedQ.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : selectedEvaluationId && savedQ.isPending ? (
+        <p role="status" className="text-sm">
+          Loading saved evaluation…
+        </p>
+      ) : isRunning ? (
         <EvaluationLoading />
       ) : report ? (
         <ReportView report={report} />
       ) : (
         <ReportEmpty />
       )}
+    </section>
+  );
+}
+
+function EvaluationHistory() {
+  const { workspaceId, groupId, selectedEvaluationId, setSelectedEvaluationId, isRunning } =
+    useWorkbench();
+  const historyQ = useInfiniteQuery({
+    queryKey: ["workspace", workspaceId, "evaluations", groupId],
+    queryFn: ({ pageParam }) => api.listEvaluations(workspaceId, groupId, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+  const items = historyQ.data?.pages.flatMap((page) => page.items) ?? [];
+  return (
+    <section aria-labelledby="evaluation-history-title" className="border-t p-5 sm:p-7">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 id="evaluation-history-title" className="text-lg font-semibold">
+          Evaluation history
+        </h3>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={historyQ.isFetching}
+          onClick={() => void historyQ.refetch()}
+        >
+          Refresh
+        </Button>
+      </div>
+      {historyQ.isPending ? (
+        <p role="status" className="text-sm">
+          Loading saved evaluations…
+        </p>
+      ) : null}
+      {historyQ.isError ? (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {errorMessage(historyQ.error)}. Use Refresh to retry.
+        </p>
+      ) : null}
+      {historyQ.isSuccess && !items.length ? (
+        <p className="text-sm text-muted-foreground">
+          No saved evaluations yet. New evaluations will appear here automatically.
+        </p>
+      ) : null}
+      <ul className="space-y-2">
+        {items.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              disabled={isRunning}
+              aria-pressed={selectedEvaluationId === item.id}
+              onClick={() => setSelectedEvaluationId(item.id)}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50",
+                selectedEvaluationId === item.id && "bg-muted border-primary",
+              )}
+            >
+              <span>
+                <span className="block font-medium">
+                  {new Date(item.createdAt).toLocaleString()}
+                </span>
+                <span className="text-muted-foreground">
+                  {item.period ? `${item.period.from} – ${item.period.to}` : "No period specified"}
+                </span>
+              </span>
+              <StatusMark status={item.status} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {historyQ.hasNextPage ? (
+        <Button
+          className="mt-4"
+          variant="outline"
+          disabled={historyQ.isFetching}
+          onClick={() => void historyQ.fetchNextPage()}
+        >
+          {historyQ.isFetchingNextPage ? "Loading…" : "Load more"}
+        </Button>
+      ) : null}
     </section>
   );
 }
