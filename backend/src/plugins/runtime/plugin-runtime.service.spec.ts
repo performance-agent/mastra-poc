@@ -181,6 +181,11 @@ describe('PluginRuntimeService', () => {
     );
 
     expect(ignored.provide).not.toHaveBeenCalled();
+    expect(selected.provide).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { period: { from: '2026-06-10', to: '2026-06-20' } },
+    );
     expect(result).toEqual({
       dataType: 'test.selected',
       records: [

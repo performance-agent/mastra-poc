@@ -30,9 +30,9 @@ export function createJiraPlugin(options: JiraPluginOptions = {}) {
     resourceProviders: [createProjectProvider(clients)],
     dataProviders: [providesData(jiraIssue, {
       secrets: jiraSecrets,
-      async provide(context, resource) {
+      async provide(context, resource, options) {
         const client = await clients.create(await readSecrets(context));
-        return client.listIssues(resource.externalId);
+        return client.listIssues(resource.externalId, options);
       },
     })] as const,
   });

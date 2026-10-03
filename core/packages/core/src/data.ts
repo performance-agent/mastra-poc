@@ -3,6 +3,10 @@ import type { PluginExecutionContext } from "./runtime.js";
 import type { PluginResource } from "./resource.js";
 import type { InferSecretValues, SecretDefinitions } from "./secret.js";
 
+/** Inclusive calendar dates interpreted in UTC. */
+export type DataProviderPeriod = Readonly<{ from: string; to: string }>;
+export type DataProviderOptions = Readonly<{ period?: DataProviderPeriod }>;
+
 export type DataTypeDefinition<TSchema extends Schema = Schema> = {
   readonly key: string;
   readonly schema: TSchema;
@@ -20,5 +24,6 @@ export type DataProvider<
   provide(
     context: PluginExecutionContext<InferSecretValues<TSecrets>>,
     resource: PluginResource,
+    options?: DataProviderOptions,
   ): Promise<readonly InferSchema<TSchema>[]>;
 };

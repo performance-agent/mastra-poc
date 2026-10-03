@@ -176,6 +176,7 @@ export class PluginRuntimeService {
     const records = await provider.provide(
       this.createContext(plugin, installation),
       toPluginResource(resource),
+      period ? { period } : undefined,
     );
     const limitations: string[] = [];
     const filtered = period

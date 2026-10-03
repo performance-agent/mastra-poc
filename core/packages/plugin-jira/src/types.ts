@@ -1,4 +1,4 @@
-import type { InferSchema } from "@pa/core";
+import type { DataProviderOptions, InferSchema } from "@pa/core";
 import type { InferSecrets } from "@pa/sdk";
 import type { jiraIssueSchema, jiraSecrets } from "./plugin.js";
 
@@ -7,7 +7,7 @@ export type JiraProject = { id: string; key: string; name: string; description?:
 export type JiraIssue = InferSchema<typeof jiraIssueSchema>;
 export interface JiraClient {
   listProjects(): Promise<readonly JiraProject[]>;
-  listIssues(projectKey: string): Promise<readonly JiraIssue[]>;
+  listIssues(projectKey: string, options?: DataProviderOptions): Promise<readonly JiraIssue[]>;
 }
 export interface JiraClientFactory {
   create(secrets: JiraSecrets): Promise<JiraClient> | JiraClient;

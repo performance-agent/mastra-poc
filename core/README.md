@@ -36,9 +36,9 @@ const discovered = providesResources(project, {
 
 const issues = providesData(issue, {
   secrets,
-  async provide(ctx, assignedResource) {
+  async provide(ctx, assignedResource, options) {
     const token = await ctx.secrets.get("token");
-    return loadIssues(token, assignedResource);
+    return loadIssues(token, assignedResource, options);
   },
 });
 
@@ -53,6 +53,44 @@ export const plugin = definePlugin({
 ```
 
 The host creates a scoped `SecretReader`, invokes resource discovery, persists the returned snapshot, and calls each data provider once per assigned resource. SDK wrappers validate the resource and provider output.
+
+## Optional date period
+
+Data providers accept a third, optional `DataProviderOptions` argument exported
+by `@pa/core`. Existing providers that accept two arguments remain compatible.
+
+```ts
+await issues.provide(context, assignedResource, {
+  period: { from: "2026-06-10", to: "2026-06-20" },
+});
+```
+
+Both values must be real calendar dates in `YYYY-MM-DD` format, with `from <= to`.
+The entire first and last days are included in UTC. The SDK rejects invalid
+periods before invoking the provider. `dataProviderPeriodBounds` and
+`isWithinDataProviderPeriod`, exported by `@pa/core`, support the same validation
+and exact timestamp filtering in clients. Options belong to each query; they
+are not part of the installation context or resource discovery.
+
+GitHub and Jira clients accept the same options as their second argument:
+
+- GitHub commits use `since`/`until`, then exact commit-date filtering, falling
+  back to author date when commit date is missing. Records without either date
+  are retained for the host to report their limitation.
+- GitHub issues and Jira issues are selected by their latest update. Jira JQL
+  uses a broader candidate window to account for the configured Jira timezone,
+  followed by exact UTC filtering.
+- GitHub pull requests are paged in descending update order and selected before
+  fetching details, comments and reviews. Returned comments and reviews are
+  restricted to the period by their own timestamps; undated reviews are omitted.
+  The PR's current state, changes and comment totals remain totals for the object,
+  not historical snapshots or period-only counts.
+- GitHub participation rejects periods explicitly because weekly aggregates
+  cannot represent arbitrary inclusive days. Use `github.commit` instead.
+
+Objects updated after `to` are excluded even if they had earlier activity in
+the period. Calls without a period continue to retrieve their existing history.
+The host also checks timestamps before truncating the returned dataset.
 
 ## Commands
 
