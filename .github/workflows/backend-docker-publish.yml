@@ -1,4 +1,3 @@
-
 name: Build and publish backend Docker image
 
 on:
@@ -129,7 +128,7 @@ jobs:
             --show-error \
             --location \
             --max-time 60 \
-            --request POST \
+            --request GET \
             "$DEPLOY_URL"
 
           echo "Deployment triggered successfully."
