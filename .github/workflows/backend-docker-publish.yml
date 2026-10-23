@@ -1,3 +1,4 @@
+
 name: Build and publish backend Docker image
 
 on:
@@ -14,6 +15,11 @@ on:
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: backend-production
+  queue: max
+  cancel-in-progress: false
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}/backend
@@ -102,3 +108,28 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    name: Deploy backend
+    runs-on: ubuntu-latest
+    needs: docker
+
+    steps:
+      - name: Trigger deployment
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+        run: |
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "::error::DEPLOY_URL is not configured"
+            exit 1
+          fi
+
+          curl --fail-with-body \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 60 \
+            --request POST \
+            "$DEPLOY_URL"
+
+          echo "Deployment triggered successfully."
