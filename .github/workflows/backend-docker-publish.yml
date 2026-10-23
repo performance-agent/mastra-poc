@@ -117,18 +117,23 @@ jobs:
       - name: Trigger deployment
         env:
           DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          DEPLOY_CLIENT_ID: ${{ secrets.DEPLOY_CLIENT_ID }}
+          DEPLOY_CLIENT_SECRET: ${{ secrets.DEPLOY_CLIENT_SECRET }}
         run: |
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "::error::DEPLOY_URL is not configured"
+          if [ -z "$DEPLOY_URL" ] || \
+             [ -z "$DEPLOY_CLIENT_ID" ] || \
+             [ -z "$DEPLOY_CLIENT_SECRET" ]; then
+            echo "::error::Missing deployment configuration"
             exit 1
           fi
 
           curl --fail-with-body \
             --silent \
             --show-error \
-            --location \
             --max-time 60 \
             --request GET \
+            --header "CF-Access-Client-Id: $DEPLOY_CLIENT_ID" \
+            --header "CF-Access-Client-Secret: $DEPLOY_CLIENT_SECRET" \
             "$DEPLOY_URL"
 
           echo "Deployment triggered successfully."
