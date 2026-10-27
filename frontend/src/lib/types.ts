@@ -151,12 +151,72 @@ export interface EvaluationRequest {
   groupId?: string;
 }
 
+export type RulePackageScope = "PUBLIC" | "WORKSPACE" | "ALL_WORKSPACES";
+
+export interface RulePackageRule {
+  id: string;
+  name: string;
+  description?: string | null;
+  valuation: number;
+  position: number;
+}
+
+export interface RulePackage {
+  id: string;
+  name: string;
+  evaluates: string;
+  scope: RulePackageScope;
+  ownerId?: string | null;
+  workspaceId?: string | null;
+  rules: RulePackageRule[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RulePackageInput {
+  name: string;
+  evaluates: string;
+  scope: Exclude<RulePackageScope, "PUBLIC">;
+  rules: Array<{
+    name: string;
+    description?: string;
+    valuation: number;
+    position: number;
+  }>;
+}
+
 export interface EvaluationReport {
+  evaluationId?: string;
+  createdAt?: string;
   status: string;
   assessments: Record<string, RuleAssessment>;
   limitations: string[];
   execution: { total: number; successful: number; failed: number } | null;
   diagnostics: Record<string, Array<Record<string, unknown>>>;
+}
+
+export interface SavedEvaluation {
+  id: string;
+  workspaceId: string;
+  groupId: string | null;
+  createdAt: string;
+  data: {
+    schemaVersion: 1;
+    rules: EvaluationRequest["rules"];
+    period: EvaluationRequest["period"] | null;
+    report: EvaluationReport;
+  };
+}
+
+export interface EvaluationHistoryPage {
+  items: Array<{
+    id: string;
+    groupId: string | null;
+    createdAt: string;
+    period: EvaluationRequest["period"] | null;
+    status: string;
+  }>;
+  nextCursor: string | null;
 }
 
 export type AssessmentVerdict =

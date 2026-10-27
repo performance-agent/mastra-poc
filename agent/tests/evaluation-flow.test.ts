@@ -98,30 +98,7 @@ function makeFlow(
     }),
     ruleAssessmentNode: createRuleAssessmentNode({
       assessor: {
-        assess:
-          options.assess ??
-          (async () => ({
-            overview: 'The available evidence supports the rule.',
-            evidence: [
-              {
-                source: 'activity.by_period',
-                observation: 'Activity was returned.',
-                relevance: 'It addresses the expected signal.',
-              },
-            ],
-            memberAssessments: [],
-            criteria: [
-              {
-                criterion: 'Activity',
-                finding: 'Activity was returned.',
-                evidenceReferences: ['activity.by_period aggregate'],
-                status: 'met',
-              },
-            ],
-            rationale: 'The planned evidence was available.',
-            verdict: 'supported',
-            limitations: [],
-          })),
+        assess: options.assess ?? (async () => compactAssessment()),
       },
     }),
   });
@@ -131,6 +108,33 @@ const input = {
   context: { workspaceId: 'workspace-1' },
   rules: [{ name: 'Delivery', valuation: 8 }],
 };
+
+function compactAssessment() {
+  return {
+    overview: 'The available evidence supports the rule.',
+    evidence: [
+      {
+        id: 'evidence-1',
+        source: 'activity.by_period',
+        observation: 'Activity was returned.',
+        relevance: 'It addresses the expected signal.',
+        recordReferences: ['activity.by_period aggregate'],
+      },
+    ],
+    memberAssessments: [],
+    criteria: [
+      {
+        criterion: 'Activity',
+        finding: 'Activity was returned.',
+        evidenceIds: ['evidence-1'],
+        status: 'met' as const,
+      },
+    ],
+    rationale: 'The planned evidence was available.',
+    verdict: 'supported' as const,
+    limitations: [],
+  };
+}
 
 test('runs the complete graph and produces a ready plan', async () => {
   const result = await makeFlow().invoke(input);
@@ -482,20 +486,8 @@ test('keeps successful assessments when a sibling assessment fails', async () =>
     assess: async ({ rule }) => {
       if (rule.ruleIndex === 1) throw new Error('reasoning model unavailable');
       return {
+        ...compactAssessment(),
         overview: 'Evidence supports delivery.',
-        evidence: [],
-        memberAssessments: [],
-        criteria: [
-          {
-            criterion: 'Delivery',
-            finding: 'Delivery evidence was available.',
-            evidenceReferences: [],
-            status: 'met',
-          },
-        ],
-        rationale: 'Delivery evidence was available.',
-        verdict: 'supported',
-        limitations: [],
       };
     },
   }).invoke({

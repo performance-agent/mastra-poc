@@ -269,5 +269,12 @@ describe('ReportsService', () => {
     await expect(service.findOne('history-1')).resolves.toEqual(
       legacyReports[1],
     );
+    expect(prisma.performanceReport.findMany).toHaveBeenCalledWith({
+      where: { groupId: 'group-1', type: { not: 'AGENT_EVALUATION' } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(prisma.performanceReport.findUnique).toHaveBeenCalledWith({
+      where: { id: 'history-1', type: { not: 'AGENT_EVALUATION' } },
+    });
   });
 });

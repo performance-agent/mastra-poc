@@ -1,6 +1,10 @@
-import { ruleAssessmentAiOutputSchema } from './schemas.js';
+import {
+  ruleAssessmentAiOutputSchema,
+  type RuleAssessmentAiOutput,
+} from './schemas.js';
 import type {
   RuleAssessment,
+  RuleAssessmentCriterion,
   RuleAssessmentError,
   RuleAssessmentNode,
   RuleAssessmentNodeOptions,
@@ -75,9 +79,65 @@ async function assessRule(
     ruleId: request.rule.id,
     value: {
       ruleName: request.rule.rule.name,
-      ...parsed.data,
+      ...expandAssessment(parsed.data),
     },
   };
+}
+
+function expandAssessment(
+  compact: RuleAssessmentAiOutput,
+): Omit<RuleAssessment, 'ruleName'> {
+  const evidenceById = new Map(
+    compact.evidence.map((evidence) => [evidence.id, evidence] as const),
+  );
+  const expandEvidence = (ids: string[]) =>
+    ids.map((id) => toPublicEvidence(evidenceById.get(id)!));
+  const expandCriterion = (
+    criterion: RuleAssessmentAiOutput['criteria'][number],
+  ): RuleAssessmentCriterion => ({
+    criterion: criterion.criterion,
+    finding: criterion.finding,
+    evidenceReferences: unique(
+      criterion.evidenceIds.flatMap(
+        (id) => evidenceById.get(id)?.recordReferences ?? [],
+      ),
+    ),
+    status: criterion.status,
+  });
+
+  return {
+    overview: compact.overview,
+    evidence: compact.evidence.map(toPublicEvidence),
+    memberAssessments: compact.memberAssessments.map((member) => ({
+      memberIdentifier: member.memberIdentifier,
+      memberName: member.memberName,
+      summary: member.summary,
+      criteria: member.criteria.map(expandCriterion),
+      evidence: expandEvidence(member.evidenceIds),
+      rationale: member.rationale,
+      verdict: member.verdict,
+      confidence: member.confidence,
+      limitations: member.limitations,
+    })),
+    criteria: compact.criteria.map(expandCriterion),
+    rationale: compact.rationale,
+    verdict: compact.verdict,
+    limitations: compact.limitations,
+  };
+}
+
+function toPublicEvidence(
+  evidence: RuleAssessmentAiOutput['evidence'][number],
+) {
+  return {
+    source: evidence.source,
+    observation: evidence.observation,
+    relevance: evidence.relevance,
+  };
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function failed(

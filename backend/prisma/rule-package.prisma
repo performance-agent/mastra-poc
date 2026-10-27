@@ -1,0 +1,44 @@
+model RulePackage {
+  id        String           @id @default(cuid())
+  name      String
+  evaluates String
+  scope     RulePackageScope
+
+  ownerId String?
+  owner   User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  rules RulePackageRule[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([scope])
+  @@index([ownerId])
+  @@index([workspaceId])
+}
+
+model RulePackageRule {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  valuation   Int
+  position    Int
+
+  packageId String
+  package   RulePackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@unique([packageId, position])
+  @@index([packageId])
+}
+
+enum RulePackageScope {
+  PUBLIC
+  WORKSPACE
+  ALL_WORKSPACES
+}

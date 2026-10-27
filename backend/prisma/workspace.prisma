@@ -15,6 +15,7 @@ model Workspace {
   resourceAssignments PluginInstallationResourceAssignment[]
   performanceReports  PerformanceReport[]
   invitations         Invitation[]
+  rulePackages        RulePackage[]
 
   @@index([organizationId])
 }

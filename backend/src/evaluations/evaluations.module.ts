@@ -10,12 +10,15 @@ import {
   createEvaluationFlowFactory,
 } from './evaluation-flow.provider';
 import { EvaluationsService } from './evaluations.service';
+import { RulePackagesController } from './rule-packages.controller';
+import { RulePackagesService } from './rule-packages.service';
 
 @Module({
   imports: [PluginsModule, ResourcesModule],
-  controllers: [EvaluationsController],
+  controllers: [EvaluationsController, RulePackagesController],
   providers: [
     EvaluationsService,
+    RulePackagesService,
     {
       provide: EVALUATION_FLOW_FACTORY,
       useFactory: createEvaluationFlowFactory,

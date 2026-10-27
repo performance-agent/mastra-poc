@@ -17,6 +17,10 @@ import type {
   Role,
   EvaluationRequest,
   EvaluationReport,
+  SavedEvaluation,
+  EvaluationHistoryPage,
+  RulePackage,
+  RulePackageInput,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
@@ -224,6 +228,29 @@ export const api = {
       `/workspaces/${workspaceId}/evaluations?view=${view}`,
       { method: "POST", body: JSON.stringify(body) },
     ),
+  listEvaluations: (workspaceId: string, groupId: string, cursor?: string) => {
+    const query = new URLSearchParams({ groupId });
+    if (cursor) query.set("cursor", cursor);
+    return request<EvaluationHistoryPage>(`/workspaces/${workspaceId}/evaluations?${query}`);
+  },
+  getEvaluation: (workspaceId: string, evaluationId: string) =>
+    request<SavedEvaluation>(`/workspaces/${workspaceId}/evaluations/${evaluationId}`),
+  listRulePackages: (workspaceId: string) =>
+    request<RulePackage[]>(`/workspaces/${workspaceId}/rule-packages`),
+  createRulePackage: (workspaceId: string, body: RulePackageInput) =>
+    request<RulePackage>(`/workspaces/${workspaceId}/rule-packages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateRulePackage: (workspaceId: string, packageId: string, body: Partial<RulePackageInput>) =>
+    request<RulePackage>(`/workspaces/${workspaceId}/rule-packages/${packageId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteRulePackage: (workspaceId: string, packageId: string) =>
+    request<void>(`/workspaces/${workspaceId}/rule-packages/${packageId}`, {
+      method: "DELETE",
+    }),
 
   // Groups
   getGroup: (id: string) => request<Group>(`/groups/${id}`),
