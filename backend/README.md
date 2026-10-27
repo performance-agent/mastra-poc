@@ -112,6 +112,15 @@ The default `report` view returns keyed rule assessments, limitations,
 execution counts, and diagnostics. Use `?view=full` to inspect the complete
 graph state and raw plugin records during development.
 
+When `period` is supplied, the runtime forwards it as explicit provider options
+to GitHub and Jira. Both dates are inclusive UTC days. Issues, tickets and PRs
+are selected by their latest update; commits use commit date, with author date
+as a fallback. PR comments and reviews use their own timestamps. PR totals and
+current state are not historical snapshots. `github.participation` reports a
+failed operation for bounded requests because its weekly aggregates cannot
+represent the requested days; use `github.commit` for bounded commit activity.
+Without a period, queries retain their existing history behavior.
+
 Each evaluation that returns a result is automatically saved as an
 `AGENT_EVALUATION` performance report before the API responds. Both response
 views include `evaluationId` and `createdAt`. Storage contains a versioned

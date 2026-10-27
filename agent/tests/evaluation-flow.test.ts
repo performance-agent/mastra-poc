@@ -157,6 +157,37 @@ test('runs the complete graph and produces a ready plan', async () => {
   );
 });
 
+test('preserves the requested period through planning, execution and assessment', async () => {
+  const period = { from: '2026-06-10', to: '2026-06-20' };
+  const executedPeriods: unknown[] = [];
+  const assessedPeriods: unknown[] = [];
+  const flow = makeFlow({
+    execute: async ({ context }) => {
+      executedPeriods.push(context.period);
+      return [];
+    },
+    assess: async ({ context }) => {
+      assessedPeriods.push(context.period);
+      return compactAssessment();
+    },
+  });
+  const bounded = await flow.invoke({
+    ...input,
+    context: { ...input.context, period },
+  });
+  assert.equal(bounded.status, 'ready');
+  assert.deepEqual(bounded.context.period, period);
+  assert.notEqual(bounded.evaluationPlanResult?.status, 'invalid');
+  if (bounded.evaluationPlanResult?.status === 'invalid') return;
+  assert.deepEqual(bounded.evaluationPlanResult?.plan.context.period, period);
+  // Reuse the compiled graph without leaking the previous request's period.
+  const unbounded = await flow.invoke(input);
+  assert.equal(unbounded.status, 'ready');
+  assert.equal(unbounded.context.period, undefined);
+  assert.deepEqual(executedPeriods, [period, undefined]);
+  assert.deepEqual(assessedPeriods, [period, undefined]);
+});
+
 test('executes a shared resource operation once for multiple rules', async () => {
   let executionCalls = 0;
   const result = await makeFlow({

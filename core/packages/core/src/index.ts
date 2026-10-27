@@ -1,4 +1,5 @@
 export * from "./data.js";
+export * from "./data-period.js";
 export * from "./errors.js";
 export * from "./manifest.js";
 export * from "./plugin.js";

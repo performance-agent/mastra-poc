@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { PluginExecutionContext, PluginResource } from "@pa/core";
+import type { DataProviderOptions, PluginExecutionContext, PluginResource } from "@pa/core";
 import { PluginValidationError } from "@pa/core";
 import { createGitHubPlugin, githubSecrets, type GitHubClient, type GitHubClientFactory, type GitHubSecrets } from "@pa/plugin-github";
 import { createSecretReader, defineSecrets, secret } from "@pa/sdk";
@@ -27,6 +27,29 @@ const repository: PluginResource = {
   externalId: "acme/api",
   type: "github.repository",
 };
+
+test("GitHub providers forward period options to their clients", async () => {
+  const calls: Array<{ repository: string; options: DataProviderOptions | undefined }> = [];
+  const plugin = createGitHubPlugin({ clientFactory: fakeFactory({
+    async listIssues(repository, options) { calls.push({ repository, options }); return []; },
+    async listPullRequests(repository, options) { calls.push({ repository, options }); return []; },
+    async listCommits(repository, options) { calls.push({ repository, options }); return []; },
+  }) });
+  const options = { period: { from: "2026-06-10", to: "2026-06-20" } };
+  for (const provider of plugin.dataProviders.slice(0, 3)) await provider.provide(context(), repository, options);
+  assert.equal(calls.length, 3);
+  for (const call of calls) {
+    assert.equal(call.repository, "acme/api");
+    assert.equal(call.options, options);
+  }
+});
+
+test("GitHub participation provider rejects a period without creating a client", async () => {
+  let createdClients = 0;
+  const plugin = createGitHubPlugin({ clientFactory: { create() { createdClients++; throw new Error("must not create client"); } } });
+  await assert.rejects(plugin.dataProviders[3].provide(context(), repository, { period: { from: "2026-06-10", to: "2026-06-20" } }), /Use github.commit instead/);
+  assert.equal(createdClients, 0);
+});
 
 function fakeFactory(overrides: Partial<GitHubClient> = {}): GitHubClientFactory {
   return {

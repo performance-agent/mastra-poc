@@ -1,4 +1,5 @@
 import {
+  dataProviderPeriodBounds,
   pluginResourceSchema,
   schemaFromJson,
   validateSchema,
@@ -16,9 +17,10 @@ export function providesData<TSchema extends Schema, TSecrets extends SecretDefi
   const outputSchema = schemaFromJson<readonly InferSchema<TSchema>[]>({ type: "array", items: type.schema.jsonSchema });
   return Object.freeze({
     dataType: type,
-    async provide(context, resource) {
+    async provide(context, resource, options) {
+      dataProviderPeriodBounds(options?.period);
       const parsedResource = validateSchema(pluginResourceSchema, resource, `Invalid resource for ${type.key}`);
-      return validateSchema(outputSchema, await input.provide(context, parsedResource), `Provider ${type.key} returned invalid data`);
+      return validateSchema(outputSchema, await input.provide(context, parsedResource, options), `Provider ${type.key} returned invalid data`);
     },
   });
 }

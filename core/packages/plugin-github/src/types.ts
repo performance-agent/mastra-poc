@@ -1,4 +1,4 @@
-import type { InferSchema } from "@pa/core";
+import type { DataProviderOptions, InferSchema } from "@pa/core";
 import type { InferSecrets } from "@pa/sdk";
 import type {
   githubCommitSchema, githubIssueSchema, githubParticipationSchema, githubPullRequestSchema, githubSecrets,
@@ -20,10 +20,10 @@ export type GitHubParticipation = InferSchema<typeof githubParticipationSchema>;
 
 export interface GitHubClient {
   listRepositories(): Promise<readonly GitHubRepository[]>;
-  listIssues(repository: string): Promise<readonly GitHubIssue[]>;
-  listPullRequests(repository: string): Promise<readonly GitHubPullRequest[]>;
-  listCommits(repository: string): Promise<readonly GitHubCommit[]>;
-  getParticipation(repository: string): Promise<GitHubParticipation>;
+  listIssues(repository: string, options?: DataProviderOptions): Promise<readonly GitHubIssue[]>;
+  listPullRequests(repository: string, options?: DataProviderOptions): Promise<readonly GitHubPullRequest[]>;
+  listCommits(repository: string, options?: DataProviderOptions): Promise<readonly GitHubCommit[]>;
+  getParticipation(repository: string, options?: DataProviderOptions): Promise<GitHubParticipation>;
 }
 
 export interface GitHubClientFactory {
