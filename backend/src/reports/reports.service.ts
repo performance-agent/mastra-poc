@@ -1,3 +1,6 @@
+import { RequestContext } from '@mastra/core/request-context';
+import { groupReportModels } from '../mastra/model-configuration';
+import { GenerationService } from '../generation/generation.service';
 import {
   BadRequestException,
   Injectable,
@@ -27,6 +30,7 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly runtime: PluginRuntimeService,
+    private readonly jobs: GenerationService,
   ) {}
 
   createGroupReport(groupId: string, dto: CreateReportDto) {
@@ -38,16 +42,22 @@ export class ReportsService {
     return this.createSoftwareReport(groupId);
   }
 
-  createGroupReportAsync(groupId: string, dto: CreateReportDto) {
-    void this.createGroupReport(groupId, dto).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      this.logger.error(
-        `Failed to create ${dto.type} report for group ${groupId}: ${message}`,
-        stack,
-      );
+  async createGroupReportAsync(groupId: string, dto: CreateReportDto) {
+    if (dto.type !== 'GROUP_REPORT')
+      throw new BadRequestException('Only GROUP_REPORT can be generated');
+    const group = await this.prisma.group.findUniqueOrThrow({
+      where: { id: groupId },
     });
-    return { status: 'CREATING', type: 'GROUP_REPORT' as const, groupId };
+    return this.jobs.enqueue(
+      group.workspaceId,
+      groupId,
+      'group_report',
+      dto,
+      () => this.createGroupReport(groupId, dto),
+    );
+  }
+  jobStatus(groupId: string, jobId: string) {
+    return this.jobs.status(jobId, { groupId });
   }
 
   private async createSoftwareReport(groupId: string) {
@@ -89,13 +99,54 @@ export class ReportsService {
 
     const guidelinesPrefix =
       buildEvaluationGuidelinesPrompt(evaluationGuidelines);
-    const prompt = `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(reportInput)}`;
-    const generatedReport = (
-      await this.groupReportAgent.generate(
-        [{ role: 'user', content: prompt }],
-        { structuredOutput: { schema: groupReportContentSchema } },
-      )
-    ).object;
+    const { modelRequest, modelBudget, projectEvidence, generationError } =
+      await import('@pa/agent');
+    let generatedReport: unknown;
+    let failure: unknown;
+    for (const model of groupReportModels()) {
+      const budget = modelBudget(model);
+      let sample = 12;
+      const prompt = () =>
+        `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(projectEvidence(reportInput, sample))}`;
+      let boundedPrompt = prompt();
+      while (
+        sample > 1 &&
+        Buffer.byteLength(JSON.stringify(boundedPrompt)) > budget.inputBytes
+      ) {
+        sample = Math.max(1, Math.floor(sample / 2));
+        boundedPrompt = prompt();
+      }
+      const requestContext = new RequestContext();
+      requestContext.set('generationModel', model);
+      try {
+        generatedReport = await modelRequest(
+          model,
+          'group_report',
+          boundedPrompt,
+          async (signal) => {
+            const response = await this.groupReportAgent.generate(
+              [{ role: 'user', content: boundedPrompt }],
+              {
+                requestContext,
+                abortSignal: signal,
+                maxSteps: 1,
+                modelSettings: {
+                  maxOutputTokens: budget.outputTokens,
+                  maxRetries: 0,
+                },
+                structuredOutput: { schema: groupReportContentSchema },
+              },
+            );
+            return groupReportContentSchema.parse(response.object);
+          },
+        );
+        break;
+      } catch (error) {
+        failure = error;
+        if (generationError(error) === 'authentication') throw error;
+      }
+    }
+    if (!generatedReport) throw failure;
 
     return this.persistGroupReport(
       groupId,
@@ -118,6 +169,7 @@ export class ReportsService {
       this.prisma.pluginInstallationResource.findMany({
         where: {
           active: true,
+          pluginInstallation: { status: 'ACTIVE' },
           assignments: { some: { groupId } },
         },
         include: { pluginInstallation: true },
@@ -157,6 +209,9 @@ export class ReportsService {
         : null;
 
     const coverage = buildCoverage(providerData);
+    coverage.limitations.push(
+      'Model input uses bounded evidence samples; aggregate counts cover available stored records. Sample omissions are disclosed in the input.',
+    );
     const reportInput = {
       group: { id: group.id, name: group.name },
       reportMode: 'history',

@@ -1,3 +1,4 @@
+import { generationError } from '../generation.js';
 import { resourceSelectionAiOutputSchema } from './schemas.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 import type { UnderstoodRule } from '../ruleUnderstanding/types.js';
@@ -58,7 +59,7 @@ async function selectResources(
       understoodRule: rule,
       resourceCatalog: catalog,
     });
-  } catch {
+  } catch (error) {
     return failed(
       rule,
       'selection_failed',

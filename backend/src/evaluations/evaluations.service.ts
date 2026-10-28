@@ -1,3 +1,10 @@
+import { gradingSettings, studentSummaries } from './grading';
+import {
+  IndividualInsightsService,
+  unavailable,
+  type IndividualInsights,
+} from './individual-insights.service';
+import { GenerationService } from '../generation/generation.service';
 import {
   BadRequestException,
   Inject,
@@ -18,7 +25,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { ListEvaluationsDto } from './dto/list-evaluations.dto';
 
 type SavedEvaluationData = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   rules: CreateEvaluationDto['rules'];
   period: EvaluationPeriod | null;
   report: ReturnType<typeof toReportResponse>;
@@ -35,7 +42,26 @@ export class EvaluationsService {
     @Inject(EVALUATION_FLOW_FACTORY)
     private readonly flowFactory: EvaluationFlowFactory,
     private readonly prisma: PrismaService,
+    private readonly jobs: GenerationService,
+    private readonly insights: IndividualInsightsService = new IndividualInsightsService(
+      prisma,
+    ),
   ) {}
+
+  async enqueue(
+    workspaceId: string,
+    dto: CreateEvaluationDto,
+    view: EvaluationView = EvaluationView.REPORT,
+  ) {
+    validatePeriod(dto.period);
+    await this.validateGroup(workspaceId, dto.groupId);
+    return this.jobs.enqueue(workspaceId, dto.groupId, 'evaluation', dto, () =>
+      this.evaluate(workspaceId, dto, view),
+    );
+  }
+  jobStatus(workspaceId: string, jobId: string) {
+    return this.jobs.status(jobId, { workspaceId });
+  }
 
   async evaluate(
     workspaceId: string,
@@ -45,9 +71,13 @@ export class EvaluationsService {
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { organizationId: true },
+      select: { organizationId: true, gradingSettings: true },
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
+    const settings = gradingSettings(
+      workspace.gradingSettings,
+      dto.gradingOverrides,
+    );
     await this.validateGroup(workspaceId, dto.groupId);
     // Snapshot the request before running the agent, which may transform rules.
     const rules = JSON.parse(
@@ -89,7 +119,92 @@ export class EvaluationsService {
       },
     )) as EvaluationFlowResult;
 
-    const report = toReportResponse(result);
+    const summaries = studentSummaries(result, settings, rules);
+    let individualInsights: IndividualInsights;
+    try {
+      individualInsights = await this.insights.generate(
+        workspaceId,
+        {
+          ...dto,
+          rules,
+        },
+        summaries.students,
+      );
+    } catch {
+      individualInsights = {
+        schemaVersion: 2,
+        generationStatus: 'unavailable',
+        people: summaries.students.map((person) => {
+          const [provider, installationId, ...actor] =
+            person.identifier.split(':');
+          return unavailable(
+            {
+              identifier: person.identifier,
+              name: person.name,
+              provider,
+              installationId: installationId ?? '',
+              actorId: actor.join(':'),
+              evidence: [],
+            },
+            ['Stored individual evidence could not be read or synthesized.'],
+            'unavailable',
+            [{ stage: 'generation', code: 'generation_failed', paths: [] }],
+          );
+        }),
+        limitations: [
+          'Synthesis unavailable. No performance conclusion was generated.',
+        ],
+      };
+    }
+    // Persist a factual fallback for guideline-only identities using their explicitly
+    // attributed details. Never use another person's evidence or numeric grade.
+    individualInsights.people = individualInsights.people.map((person) => {
+      if (person.references.length || person.contentKind !== 'factual_fallback')
+        return person;
+      const grade = summaries.students.find(
+        (s) => s.identifier === person.identifier,
+      );
+      const evidence = (grade?.details ?? []).flatMap((rule) =>
+        rule.evidence.map((e, i) => ({
+          id: `guideline:${rule.ruleId}:${i}`,
+          identifier: person.identifier,
+          resourceId: '',
+          recordId: '',
+          role: 'stored guideline observation',
+          label: `${e.source}: ${e.observation}`,
+          url: /^https?:\/\//i.test(e.source) ? e.source : null,
+          date: null,
+          facts: e.observation,
+        })),
+      );
+      if (!evidence.length) return person;
+      const { identifier, provider, installationId, actorId, name } = person;
+      return unavailable(
+        { identifier, provider, installationId, actorId, name, evidence },
+        [
+          ...individualInsights.limitations,
+          'Only explicitly attributed guideline observations are available; raw individual activity is unavailable.',
+        ],
+        'partial',
+        person.diagnostics,
+      );
+    });
+    const freshness =
+      result.resourceExecutionResult?.calls
+        .filter((c) => c.status === 'succeeded')
+        .map((c) => ({
+          resourceId: c.resourceId,
+          operation: c.operationName,
+          limitations:
+            (c.rawData as { limitations?: string[] }).limitations ?? [],
+        })) ?? [];
+    const report = {
+      ...toReportResponse(result),
+      studentSummaries: summaries,
+      individualInsights,
+      period: period ?? null,
+      evidenceFreshness: freshness,
+    };
     let saved: { id: string; createdAt: Date };
     try {
       saved = await this.prisma.performanceReport.create({
@@ -100,7 +215,9 @@ export class EvaluationsService {
           type: 'AGENT_EVALUATION',
           data: JSON.parse(
             JSON.stringify({
-              schemaVersion: 1,
+              schemaVersion: 2,
+              gradingSettings: settings,
+              evidenceFreshness: freshness,
               rules,
               period: period ?? null,
               report,

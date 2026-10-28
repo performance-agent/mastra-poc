@@ -1,4 +1,7 @@
 model PluginInstallationResource {
+  storedRecords ProviderRecord[]
+  syncStates ResourceSync[]
+  syncCoverage SyncCoverage[]
   id          String   @id @default(cuid())
   name        String
   description String?

@@ -36,6 +36,16 @@ export class GroupsController {
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
   })
+  @Get(':id/generation-jobs/:jobId')
+  jobStatus(@Param('id') id: string, @Param('jobId') jobId: string) {
+    return this.reportsService.jobStatus(id, jobId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.groupsService.findOne(id);

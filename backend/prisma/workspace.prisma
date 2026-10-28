@@ -1,4 +1,7 @@
 model Workspace {
+  generationJobs GenerationJob[]
+  taskAnalyses TaskAnalysis[]
+  gradingSettings Json?
   id          String  @id @default(cuid())
   name        String
   description String?

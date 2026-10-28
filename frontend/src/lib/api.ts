@@ -1,3 +1,4 @@
+import type { GradingSettings } from "./types";
 import type {
   Organization,
   Workspace,
@@ -48,6 +49,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const token = await getAccessToken();
     res = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
+      signal: init?.signal ?? AbortSignal.timeout(30000),
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
@@ -93,6 +95,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getGradingSettings: (id: string) =>
+    request<GradingSettings>(`/workspaces/${id}/evaluations/grading-settings`),
+  saveGradingSettings: (id: string, settings: GradingSettings) =>
+    request<GradingSettings>(`/workspaces/${id}/evaluations/grading-settings`, {
+      method: "PATCH",
+      body: JSON.stringify(settings),
+    }),
+  listStoredTasks: (id: string, groupId: string, search = "") =>
+    request<
+      Array<{ id: string; operation: string; externalId: string; payload: Record<string, unknown> }>
+    >(`/workspaces/${id}/evaluations/tasks?${new URLSearchParams({ groupId, search })}`),
+  syncStatus: (id: string, groupId: string) =>
+    request<
+      Array<{
+        resourceId: string;
+        operation: string;
+        checkpoint: string | null;
+        nextRetryAt: string | null;
+        error: string | null;
+      }>
+    >(`/workspaces/${id}/evaluations/sync-status?groupId=${encodeURIComponent(groupId)}`),
+  analyzeTask: (id: string, body: { groupId: string; recordId?: string; description?: string }) =>
+    submitJob<{ result: Record<string, string> }>(
+      `/workspaces/${id}/evaluations/task-analysis`,
+      { method: "POST", body: JSON.stringify(body) },
+      `/workspaces/${id}/evaluations/jobs`,
+    ),
   health: () => request<unknown>("/"),
   getMcpAuthorization: (authorizationId: string) =>
     request<{
@@ -224,9 +253,10 @@ export const api = {
   unassignWorkspaceResource: (workspaceId: string, resourceId: string) =>
     request<unknown>(`/workspaces/${workspaceId}/resources/${resourceId}`, { method: "DELETE" }),
   evaluateWorkspace: (workspaceId: string, body: EvaluationRequest, view: "report" | "full") =>
-    request<EvaluationReport | Record<string, unknown>>(
+    submitJob<EvaluationReport>(
       `/workspaces/${workspaceId}/evaluations?view=${view}`,
       { method: "POST", body: JSON.stringify(body) },
+      `/workspaces/${workspaceId}/evaluations/jobs`,
     ),
   listEvaluations: (workspaceId: string, groupId: string, cursor?: string) => {
     const query = new URLSearchParams({ groupId });
@@ -284,9 +314,10 @@ export const api = {
   unassignGroupResource: (groupId: string, resourceId: string) =>
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "DELETE" }),
   createGroupReport: (groupId: string, body: { type: "GROUP_REPORT" }) =>
-    request<{ status: "CREATING"; type: "GROUP_REPORT"; groupId: string }>(
+    submitJob<unknown>(
       `/groups/${groupId}/reports`,
       { method: "POST", body: JSON.stringify(body) },
+      `/groups/${groupId}/generation-jobs`,
     ),
   listGroupReports: (groupId: string) =>
     request<
@@ -309,4 +340,18 @@ export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   if (e instanceof Error) return e.message;
   return "Something went wrong";
+}
+
+async function submitJob<T>(path: string, init: RequestInit, statusPath: string): Promise<T> {
+  const { jobId } = await request<{ jobId: string }>(path, init);
+  const deadline = Date.now() + 31 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const job = await request<{ status: string; result: T; error?: string }>(
+      statusPath + "/" + jobId,
+    );
+    if (job.status === "succeeded") return job.result;
+    if (job.status === "failed") throw new Error(job.error ?? "Generation failed");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error("Generation timed out. Job: " + jobId);
 }

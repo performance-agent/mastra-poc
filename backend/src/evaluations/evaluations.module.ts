@@ -1,3 +1,5 @@
+import { TaskAnalysisService } from './task-analysis.service';
+import { IndividualInsightsService } from './individual-insights.service';
 import { Module } from '@nestjs/common';
 import { PluginRegistryService } from '../plugins/plugin-registry.service';
 import { RESOURCE_EXECUTION_NODE } from '../plugins/runtime/plugin-resource-executor.service';
@@ -17,6 +19,8 @@ import { RulePackagesService } from './rule-packages.service';
   imports: [PluginsModule, ResourcesModule],
   controllers: [EvaluationsController, RulePackagesController],
   providers: [
+    IndividualInsightsService,
+    TaskAnalysisService,
     EvaluationsService,
     RulePackagesService,
     {

@@ -220,8 +220,8 @@ function GroupPage() {
     setIsCreatingReport(true);
     try {
       await api.createGroupReport(groupId, { type: "GROUP_REPORT" });
-      setReportStartedAt(new Date().toISOString());
-      toast.success("Report generation started");
+      setReportStartedAt(null);
+      toast.success("Report saved");
       reportsQ.refetch();
     } catch (e) {
       toast.error(errorMessage(e));

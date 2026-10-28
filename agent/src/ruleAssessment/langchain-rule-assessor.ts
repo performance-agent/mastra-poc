@@ -1,5 +1,12 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { initChatModel } from 'langchain/chat_models/universal';
+import { modelBudget } from '../generation.js';
+import {
+  modelIdentifier,
+  configuredModel,
+  withConfiguredFallback,
+  modelRequest,
+  projectEvidence,
+} from '../generation.js';
 import {
   parsePromptDataFormat,
   serializePromptData,
@@ -16,8 +23,8 @@ const SYSTEM_PROMPT = `You assess one performance rule using only the supplied e
 Return a concise, display-ready assessment:
 - overview: summarize what the evidence indicates.
 - evidence: define each table-ready source, observation, and relevance row exactly once. Give it a unique evidence ID and list the stable source record IDs or precise aggregate references in recordReferences.
-- memberAssessments: one assessment per distinct member attributable from the evidence. Use a stable actor ID, login, email, or other source identifier as memberIdentifier; use the best evidence-backed display value as memberName. Reference the shared evidence registry through evidenceIds instead of repeating evidence rows. Do not merge identities unless the evidence explicitly links them. Return an empty array when no member can be identified.
-- criteria: assess each evaluation question or expected signal separately for the overall rule.
+- memberAssessments: one assessment per distinct member attributable from the evidence. Use an exact actor ID, login or email present in source evidence as memberIdentifier; never use a display name as an identifier; use the best evidence-backed display value as memberName. Reference the shared evidence registry through evidenceIds instead of repeating evidence rows. Do not merge identities unless the evidence explicitly links them. Return an empty array when no member can be identified.
+- criteria: for both the rule and every member, include exactly one criterion for EVERY evaluationQuestions entry, copying its exact text into criterion. Missing evidence must produce unknown, never omit a question. Use expected signals as supporting context.
 - rationale: provide a concise evidence synthesis using the rubric below; do not expose hidden chain-of-thought. The overall rationale may be detailed enough to resolve mixed evidence, while each member rationale must be brief and specific.
 - verdict: supported, partially_supported, not_supported, or not_evaluable.
 - limitations: state missing, failed, truncated, or otherwise insufficient evidence.
@@ -72,6 +79,9 @@ Member rationale style:
   immediately naming the records and criterion that make the statement relevant.
 
 For each criterion:
+- For member criteria, set responsibility to author, reviewer, assignee, or other_individual only when records establish that person's responsibility for the practice being judged. Otherwise use collective or unknown and status unknown.
+- Separate PR authorship from review authorship and task assignment. Missing reviews by others are never a failure of the PR author. Receiving reviews does not prove that the author performed reviews. A collective review policy without established individual responsibility is unknown for that member, even when the team criterion can be evaluated.
+- Keep each finding to one or two short complete sentences, with the observation first. Preserve nuance and full justification in rationale.
 - Use met only when direct evidence supports it, partially_met for incomplete or mixed support, not_met for direct contrary evidence, and unknown when evidence is absent or insufficient.
 - evidenceIds must reference entries from the shared evidence registry. Use an empty array for unknown criteria. Stable record IDs and precise aggregate references belong in each evidence entry's recordReferences.
 
@@ -98,17 +108,37 @@ export function createLangChainRuleAssessor(
 ): RuleAssessor {
   const structuredModel = model.withStructuredOutput(
     ruleAssessmentAiOutputSchema,
+    modelIdentifier(model).startsWith('groq') ? { method: 'jsonSchema' } : {},
   );
   const promptDataFormat = options.promptDataFormat ?? 'auto';
   return {
     async assess(input) {
-      return structuredModel.invoke([
+      let sample = 12;
+      const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: createUserPrompt(input, promptDataFormat),
+          content: createUserPrompt(input, promptDataFormat, sample),
         },
-      ]);
+      ];
+      while (
+        sample > 1 &&
+        Buffer.byteLength(JSON.stringify(messages)) >
+          modelBudget(modelIdentifier(model)).inputBytes
+      ) {
+        sample = Math.max(1, Math.floor(sample / 2));
+        messages[1]!.content = createUserPrompt(
+          input,
+          promptDataFormat,
+          sample,
+        );
+      }
+      return modelRequest(
+        modelIdentifier(model),
+        'assessment',
+        messages,
+        (signal) => structuredModel.invoke(messages, { signal }),
+      );
     },
   };
 }
@@ -125,14 +155,18 @@ export async function createLangChainRuleAssessorFromEnv(
   const promptDataFormat = parsePromptDataFormat(
     environment[PROMPT_DATA_FORMAT_ENVIRONMENT_VARIABLE],
   );
-  return createLangChainRuleAssessor(await initChatModel(modelId), {
-    promptDataFormat,
-  });
+  return {
+    assess: (input) =>
+      withConfiguredFallback(modelId, environment, (model) =>
+        createLangChainRuleAssessor(model, { promptDataFormat }).assess(input),
+      ),
+  };
 }
 
 function createUserPrompt(
   input: RuleAssessmentRequest,
   promptDataFormat: PromptDataFormat,
+  sample = 12,
 ): string {
   return `Assess the rule from the execution evidence below.
 
@@ -148,7 +182,7 @@ ${serializeSection(
   promptDataFormat,
 )}
 
-${serializeResourceCalls(input.resourceCalls, promptDataFormat)}
+${serializeResourceCalls(input.resourceCalls, promptDataFormat, sample)}
 
 ${serializeSection(
   'plan_limitations',
@@ -173,10 +207,16 @@ ${serialized.content}
 function serializeResourceCalls(
   calls: RuleAssessmentRequest['resourceCalls'],
   mode: PromptDataFormat,
+  sample: number,
 ): string {
   if (calls.length === 0) return '<resource_calls count="0"></resource_calls>';
   const serializedCalls = calls.map((call, index) =>
-    serializeSection('resource_call', call, mode, ` index="${index}"`),
+    serializeSection(
+      'resource_call',
+      projectEvidence(call, sample),
+      mode,
+      ` index="${index}"`,
+    ),
   );
   return `<resource_calls count="${calls.length}">
 ${serializedCalls.join('\n')}

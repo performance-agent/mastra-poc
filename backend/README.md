@@ -75,6 +75,49 @@ LANGCHAIN_CALLBACKS_BACKGROUND=false
 
 `RULE_UNDERSTANDING_MODEL` is used for rule interpretation and resource
 selection. `RULE_SUMMARY_MODEL` produces the final structured assessment.
+
+Team synthesis optionally supports a text analysis stage before structured review:
+
+```dotenv
+TEAM_ANALYSIS_MODEL=openrouter:openrouter/free
+OPENROUTER_API_KEY=your-openrouter-api-key
+```
+
+The [free router](https://openrouter.ai/openrouter/free) selects an available free
+model; specific identifiers such as `openrouter:vendor/model:free` are also
+accepted. The client uses `https://openrouter.ai/api/v1`. Without
+`TEAM_ANALYSIS_MODEL`, synthesis remains direct. This stage does not change rule
+assessment, grades, saved evaluations, or report/HTTP schemas. It does not add
+OpenRouter models to `FREE_TIER_FALLBACK_MODELS` (the existing Gemini/Groq
+structured fallback chain).
+
+Text analysis uses no tools or response format. Each collaborator must have one
+section with owned `[evidence:ID]` citations and a completion marker. Empty,
+truncated, missing-person, duplicate-person and invalid-citation drafts fall back
+to direct synthesis. `RULE_SUMMARY_MODEL` reviews the untrusted draft against
+the cited source records, checks attribution and unsupported claims, and produces
+the existing report schema. Drafts are cached within a generation across
+structured-model fallbacks and are never published. Factual correctness still
+depends on model review; citation/schema checks alone do not establish it.
+
+Evidence is split only when budgets require it. Review overflow rebuilds smaller
+blocks from the original evidence; no text is silently dropped. HTTP 413 halves
+block capacity, with at most three reductions per model, without shrinking the
+output allowance or repeating identical requests. HTTP 429 is temporary unless
+the provider explicitly reports exhausted quota. Transient calls have two retries;
+`Retry-After` (seconds or HTTP date), then explicit provider delay, then exponential
+backoff determines the wait. Waits over 60 seconds advance to fallback instead.
+If synthesis cannot finish, the factual summary remains available.
+
+Budgets use `GENERATION_INPUT_BYTES`, `GENERATION_OUTPUT_TOKENS` and
+`GENERATION_TIMEOUT_MS`, overridden per model with uppercase identifiers and
+punctuation replaced by underscores, for example
+`OPENROUTER_OPENROUTER_FREE_INPUT_BYTES=48000`. Diagnostics distinguish
+`team_analysis_text`, `team_structure_review` and `team_structure_direct`, and
+record HTTP status, provider code, budgets, available token usage and retry waits
+without API keys or complete evidence. Analysis quality requires separately
+authorized real generations; compilation and static review do not measure it.
+
 `PROMPT_DATA_FORMAT` controls serialization of the data sections sent to that
 model: `json` always uses compact JSON, `toon` forces TOON, and the default
 `auto` uses TOON only when its encoded representation is smaller, with an
