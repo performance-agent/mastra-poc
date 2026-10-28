@@ -199,12 +199,14 @@ export class ReportsService {
   }
 
   findOne(id: string) {
-    return this.prisma.performanceReport.findUnique({ where: { id } });
+    return this.prisma.performanceReport.findUnique({
+      where: { id, type: { not: 'AGENT_EVALUATION' } },
+    });
   }
 
   findAllByGroup(groupId: string) {
     return this.prisma.performanceReport.findMany({
-      where: { groupId },
+      where: { groupId, type: { not: 'AGENT_EVALUATION' } },
       orderBy: { createdAt: 'desc' },
     });
   }

@@ -1,12 +1,15 @@
 import {
   createContext,
   use,
+  useEffect,
   useId,
+  useMemo,
   useState,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
@@ -15,8 +18,11 @@ import {
   CircleDashed,
   FileSearch,
   Gauge,
+  Library,
   LoaderCircle,
+  Pencil,
   Plus,
+  Save,
   SearchCheck,
   Sparkles,
   Trash2,
@@ -28,6 +34,8 @@ import type {
   AssessmentCriterion,
   AssessmentVerdict,
   EvaluationReport,
+  RulePackage,
+  RulePackageInput,
   RuleAssessment,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -37,11 +45,24 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDialog } from "@/components/app/ConfirmDialog";
+import { FormModal } from "@/components/app/FormModal";
+import { SearchInput } from "@/components/app/SearchInput";
 
 type EvaluationRule = { id: string; name: string; description: string; valuation: number };
 type WorkbenchState = {
+  workspaceId: string;
+  groupId: string;
+  selectedEvaluationId?: string;
+  setSelectedEvaluationId: Dispatch<SetStateAction<string | undefined>>;
   rules: EvaluationRule[];
   setRules: Dispatch<SetStateAction<EvaluationRule[]>>;
+  packages: RulePackage[];
+  packagesLoading: boolean;
+  packagesError?: string;
+  selectedPackage?: RulePackage;
+  selectPackage: (value: RulePackage) => void;
+  packageDirty: boolean;
   from: string;
   setFrom: (value: string) => void;
   to: string;
@@ -66,7 +87,6 @@ function newRule(name = "", description = "", valuation = 5): EvaluationRule {
 
 function EvaluationProvider({
   workspaceId,
-  groupName,
   groupId,
   children,
 }: {
@@ -75,18 +95,48 @@ function EvaluationProvider({
   groupId: string;
   children: ReactNode;
 }) {
-  const [rules, setRules] = useState(() => [
-    newRule(
-      `${groupName} delivery performance`,
-      `Evaluate delivery activity, collaboration, and traceability for ${groupName}.`,
-      8,
-    ),
-  ]);
+  const queryClient = useQueryClient();
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>();
+  const packagesQ = useQuery({
+    queryKey: ["workspace", workspaceId, "rule-packages"],
+    queryFn: () => api.listRulePackages(workspaceId),
+  });
+  const [rules, setRules] = useState<EvaluationRule[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<string>();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [report, setReport] = useState<EvaluationReport>();
   const [error, setError] = useState<string>();
   const [isRunning, setIsRunning] = useState(false);
+  const selectedPackage = packagesQ.data?.find((value) => value.id === selectedPackageId);
+
+  const selectPackage = (value: RulePackage) => {
+    setSelectedPackageId(value.id);
+    setRules(value.rules.map((rule) => newRule(rule.name, rule.description ?? "", rule.valuation)));
+  };
+
+  useEffect(() => {
+    if (selectedPackageId || !packagesQ.data?.length) return;
+    const initial = packagesQ.data.find((value) => value.scope === "PUBLIC") ?? packagesQ.data[0];
+    setSelectedPackageId(initial.id);
+    setRules(
+      initial.rules.map((rule) => newRule(rule.name, rule.description ?? "", rule.valuation)),
+    );
+  }, [packagesQ.data, selectedPackageId]);
+
+  const packageDirty = Boolean(
+    selectedPackage &&
+    JSON.stringify(
+      rules.map(({ name, description, valuation }) => ({ name, description, valuation })),
+    ) !==
+      JSON.stringify(
+        selectedPackage.rules.map(({ name, description, valuation }) => ({
+          name,
+          description: description ?? "",
+          valuation,
+        })),
+      ),
+  );
 
   const run = async () => {
     const invalidPeriod = Boolean(from) !== Boolean(to) || (from && to && from > to);
@@ -96,6 +146,7 @@ function EvaluationProvider({
     }
 
     setIsRunning(true);
+    setSelectedEvaluationId(undefined);
     setError(undefined);
     try {
       const response = await api.evaluateWorkspace(
@@ -112,7 +163,10 @@ function EvaluationProvider({
         "report",
       );
       setReport(response as EvaluationReport);
-      toast.success("Evaluation complete");
+      void queryClient.invalidateQueries({
+        queryKey: ["workspace", workspaceId, "evaluations", groupId],
+      });
+      toast.success("Evaluation saved");
     } catch (caught) {
       const message = errorMessage(caught);
       setError(
@@ -124,7 +178,28 @@ function EvaluationProvider({
     }
   };
 
-  const value = { rules, setRules, from, setFrom, to, setTo, report, error, isRunning, run };
+  const value = {
+    workspaceId,
+    groupId,
+    selectedEvaluationId,
+    setSelectedEvaluationId,
+    rules,
+    setRules,
+    packages: packagesQ.data ?? [],
+    packagesLoading: packagesQ.isLoading,
+    packagesError: packagesQ.error ? errorMessage(packagesQ.error) : undefined,
+    selectedPackage,
+    selectPackage,
+    packageDirty,
+    from,
+    setFrom,
+    to,
+    setTo,
+    report,
+    error,
+    isRunning,
+    run,
+  };
 
   return <WorkbenchContext value={value}>{children}</WorkbenchContext>;
 }
@@ -135,13 +210,14 @@ export function EvaluationWorkbench(props: {
   groupId: string;
 }) {
   return (
-    <EvaluationProvider {...props}>
+    <EvaluationProvider key={`${props.workspaceId}:${props.groupId}`} {...props}>
       <div className="evaluation-workbench overflow-hidden rounded-[1.35rem] border border-slate-300/70 bg-[#f7f9fb] shadow-[0_22px_70px_-38px_rgba(15,50,75,0.45)] dark:border-slate-700 dark:bg-[#111a21]">
         <WorkbenchHeader groupName={props.groupName} />
         <div className="grid min-w-0 lg:grid-cols-[minmax(310px,0.82fr)_minmax(0,1.35fr)]">
           <EvaluationSetup />
           <EvaluationOutput />
         </div>
+        <EvaluationHistory />
       </div>
     </EvaluationProvider>
   );
@@ -174,7 +250,43 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
 }
 
 function EvaluationSetup() {
-  const { rules, setRules, from, setFrom, to, setTo, isRunning, run, error } = useWorkbench();
+  const {
+    workspaceId,
+    rules,
+    setRules,
+    packages,
+    packagesLoading,
+    packagesError,
+    selectedPackage,
+    selectPackage,
+    packageDirty,
+    from,
+    setFrom,
+    to,
+    setTo,
+    isRunning,
+    run,
+    error,
+  } = useWorkbench();
+  const queryClient = useQueryClient();
+  const [packageSearch, setPackageSearch] = useState("");
+  const [packageFilter, setPackageFilter] = useState<"all" | "public" | "mine">("all");
+  const [pendingPackage, setPendingPackage] = useState<RulePackage>();
+  const [editor, setEditor] = useState<{
+    mode: "create" | "edit" | "copy";
+    value?: RulePackage;
+    rules?: EvaluationRule[];
+  }>();
+  const [deleteTarget, setDeleteTarget] = useState<RulePackage>();
+  const [savingRules, setSavingRules] = useState(false);
+  const filteredPackages = useMemo(() => {
+    const search = packageSearch.trim().toLowerCase();
+    return packages.filter((value) => {
+      if (packageFilter === "public" && value.scope !== "PUBLIC") return false;
+      if (packageFilter === "mine" && value.scope === "PUBLIC") return false;
+      return !search || `${value.name} ${value.evaluates}`.toLowerCase().includes(search);
+    });
+  }, [packageFilter, packageSearch, packages]);
   const canRun =
     rules.length > 0 &&
     rules.every((rule) => rule.name.trim() && rule.valuation >= 1 && rule.valuation <= 10);
@@ -183,11 +295,132 @@ function EvaluationSetup() {
     setRules((current) => current.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)));
   };
 
+  const choosePackage = (value: RulePackage) => {
+    if (value.id === selectedPackage?.id) return;
+    if (packageDirty) setPendingPackage(value);
+    else selectPackage(value);
+  };
+
+  const refreshPackages = () =>
+    queryClient.invalidateQueries({ queryKey: ["workspace", workspaceId, "rule-packages"] });
+
+  const saveCurrentRules = async () => {
+    if (!selectedPackage) return;
+    if (selectedPackage.scope === "PUBLIC") {
+      setEditor({ mode: "copy", value: selectedPackage, rules });
+      return;
+    }
+    setSavingRules(true);
+    try {
+      const updated = await api.updateRulePackage(workspaceId, selectedPackage.id, {
+        rules: packageRulesInput(rules),
+      });
+      selectPackage(updated);
+      await refreshPackages();
+      toast.success("Rule package saved");
+    } catch (caught) {
+      toast.error(errorMessage(caught));
+    } finally {
+      setSavingRules(false);
+    }
+  };
+
+  const deletePackage = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.deleteRulePackage(workspaceId, deleteTarget.id);
+      const remaining = packages.filter((value) => value.id !== deleteTarget.id);
+      queryClient.setQueryData(["workspace", workspaceId, "rule-packages"], remaining);
+      if (selectedPackage?.id === deleteTarget.id && remaining[0]) {
+        selectPackage(remaining.find((value) => value.scope === "PUBLIC") ?? remaining[0]);
+      }
+      setDeleteTarget(undefined);
+      await refreshPackages();
+      toast.success("Rule package deleted");
+    } catch (caught) {
+      toast.error(errorMessage(caught));
+    }
+  };
+
   return (
     <section
       aria-labelledby="evaluation-brief-title"
       className="border-b border-slate-200 p-5 sm:p-7 lg:border-b-0 lg:border-r dark:border-slate-700"
     >
+      <div className="mb-6 border-b border-slate-200 pb-6 dark:border-slate-700">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#607988]">
+              Rule Package Library
+            </p>
+            <h3 className="mt-1 text-lg font-semibold">Choose an evaluation package</h3>
+          </div>
+          <Button type="button" size="sm" onClick={() => setEditor({ mode: "create" })}>
+            <Plus aria-hidden="true" /> New
+          </Button>
+        </div>
+        <div className="mt-4 space-y-3">
+          <SearchInput
+            value={packageSearch}
+            onChange={setPackageSearch}
+            placeholder="Search names and evaluation focus…"
+          />
+          <div className="flex flex-wrap gap-1.5" aria-label="Filter rule packages">
+            {(["all", "public", "mine"] as const).map((value) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={packageFilter === value ? "default" : "outline"}
+                onClick={() => setPackageFilter(value)}
+              >
+                {value === "all" ? "All" : value === "public" ? "Public" : "My packages"}
+              </Button>
+            ))}
+          </div>
+          <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+            {packagesLoading ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Loading packages…</p>
+            ) : packagesError ? (
+              <p
+                role="alert"
+                className="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200"
+              >
+                {packagesError}
+              </p>
+            ) : filteredPackages.length ? (
+              filteredPackages.map((value) => (
+                <button
+                  key={value.id}
+                  type="button"
+                  onClick={() => choosePackage(value)}
+                  className={cn(
+                    "w-full rounded-xl border p-3 text-left transition-colors",
+                    selectedPackage?.id === value.id
+                      ? "border-[#315f76] bg-[#eaf3f7] dark:border-sky-400 dark:bg-slate-800"
+                      : "border-slate-200 bg-white hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900",
+                  )}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="font-semibold">{value.name}</span>
+                    <Badge variant="outline" className="shrink-0 text-[9px]">
+                      {packageScopeLabel(value.scope)}
+                    </Badge>
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                    {value.evaluates}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No packages match this filter.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#607988]">
@@ -201,6 +434,39 @@ function EvaluationSetup() {
           {rules.length} {rules.length === 1 ? "rule" : "rules"}
         </Badge>
       </div>
+
+      {selectedPackage ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+          <Library aria-hidden="true" className="h-4 w-4 text-[#315f76]" />
+          <span className="mr-auto truncate text-sm font-medium">{selectedPackage.name}</span>
+          {packageDirty ? <Badge variant="secondary">Unsaved</Badge> : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              setEditor({
+                mode: selectedPackage.scope === "PUBLIC" ? "copy" : "edit",
+                value: selectedPackage,
+                rules,
+              })
+            }
+          >
+            <Pencil aria-hidden="true" />
+            {selectedPackage.scope === "PUBLIC" ? "Copy" : "Edit"}
+          </Button>
+          {selectedPackage.scope !== "PUBLIC" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setDeleteTarget(selectedPackage)}
+            >
+              <Trash2 aria-hidden="true" /> Delete
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {rules.map((rule, index) => (
@@ -223,6 +489,23 @@ function EvaluationSetup() {
       >
         <Plus aria-hidden="true" /> Add Another Rule
       </Button>
+
+      {packageDirty ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-2 w-full"
+          disabled={savingRules || !canRun}
+          onClick={saveCurrentRules}
+        >
+          <Save aria-hidden="true" />
+          {savingRules
+            ? "Saving…"
+            : selectedPackage?.scope === "PUBLIC"
+              ? "Save as Private Copy"
+              : "Save Changes to Package"}
+        </Button>
+      ) : null}
 
       <fieldset className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-700">
         <legend className="px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#607988]">
@@ -259,9 +542,230 @@ function EvaluationSetup() {
         {!isRunning ? <ArrowRight aria-hidden="true" className="ml-auto" /> : null}
       </Button>
       <p className="mt-2 text-center text-[11px] leading-4 text-muted-foreground">
-        Available to workspace owners and admins. Results are not saved.
+        Packages are saved. Generated results are not.
       </p>
+
+      <ConfirmDialog
+        open={Boolean(pendingPackage)}
+        onOpenChange={(open) => !open && setPendingPackage(undefined)}
+        title="Discard unsaved rule changes?"
+        description="Selecting another package will replace the rules currently in the workbench."
+        confirmLabel="Discard and switch"
+        destructive
+        onConfirm={() => {
+          if (pendingPackage) selectPackage(pendingPackage);
+          setPendingPackage(undefined);
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && setDeleteTarget(undefined)}
+        title="Delete this rule package?"
+        description="The package and its saved rules will be permanently removed."
+        confirmLabel="Delete package"
+        destructive
+        onConfirm={deletePackage}
+      />
+      {editor ? (
+        <RulePackageEditorDialog
+          workspaceId={workspaceId}
+          editor={editor}
+          onClose={() => setEditor(undefined)}
+          onSaved={async (value) => {
+            selectPackage(value);
+            setEditor(undefined);
+            await refreshPackages();
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function packageRulesInput(rules: EvaluationRule[]) {
+  return rules.map(({ name, description, valuation }, position) => ({
+    name: name.trim(),
+    description: description.trim() || undefined,
+    valuation,
+    position,
+  }));
+}
+
+function packageScopeLabel(scope: RulePackage["scope"]) {
+  if (scope === "PUBLIC") return "Public";
+  if (scope === "WORKSPACE") return "This workspace";
+  return "All my workspaces";
+}
+
+function RulePackageEditorDialog({
+  workspaceId,
+  editor,
+  onClose,
+  onSaved,
+}: {
+  workspaceId: string;
+  editor: {
+    mode: "create" | "edit" | "copy";
+    value?: RulePackage;
+    rules?: EvaluationRule[];
+  };
+  onClose: () => void;
+  onSaved: (value: RulePackage) => void | Promise<void>;
+}) {
+  const sourceRules = editor.rules ??
+    editor.value?.rules.map((rule) =>
+      newRule(rule.name, rule.description ?? "", rule.valuation),
+    ) ?? [newRule()];
+  const [name, setName] = useState(
+    editor.mode === "copy"
+      ? `Copy of ${editor.value?.name ?? "rule package"}`
+      : (editor.value?.name ?? ""),
+  );
+  const [evaluates, setEvaluates] = useState(editor.value?.evaluates ?? "");
+  const [scope, setScope] = useState<RulePackageInput["scope"]>(
+    editor.value?.scope === "ALL_WORKSPACES" ? "ALL_WORKSPACES" : "WORKSPACE",
+  );
+  const [draftRules, setDraftRules] = useState<EvaluationRule[]>(sourceRules);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    const valid =
+      name.trim() &&
+      evaluates.trim() &&
+      draftRules.length > 0 &&
+      draftRules.every((rule) => rule.name.trim() && rule.valuation >= 1 && rule.valuation <= 10);
+    if (!valid) {
+      toast.error(
+        "Add a package name, evaluation focus, and valid rules with importance from 1–10.",
+      );
+      return;
+    }
+    const payload: RulePackageInput = {
+      name: name.trim(),
+      evaluates: evaluates.trim(),
+      scope,
+      rules: packageRulesInput(draftRules),
+    };
+    setSubmitting(true);
+    try {
+      const saved =
+        editor.mode === "edit" && editor.value
+          ? await api.updateRulePackage(workspaceId, editor.value.id, payload)
+          : await api.createRulePackage(workspaceId, payload);
+      await onSaved(saved);
+      toast.success(editor.mode === "edit" ? "Rule package updated" : "Rule package created");
+    } catch (caught) {
+      toast.error(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const updateDraftRule = (id: string, patch: Partial<EvaluationRule>) => {
+    setDraftRules((current) =>
+      current.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)),
+    );
+  };
+
+  return (
+    <FormModal
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={
+        editor.mode === "edit"
+          ? "Edit rule package"
+          : editor.mode === "copy"
+            ? "Create a private copy"
+            : "Create rule package"
+      }
+      description="Save a reusable set of evaluation rules and choose where it is available."
+      submitLabel={editor.mode === "edit" ? "Save package" : "Create package"}
+      submitting={submitting}
+      onSubmit={submit}
+      contentClassName="sm:max-w-2xl"
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="rule-package-name">Package name</Label>
+        <Input
+          id="rule-package-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="e.g. Engineering delivery health"
+          autoComplete="off"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="rule-package-evaluates">What it evaluates</Label>
+        <Textarea
+          id="rule-package-evaluates"
+          value={evaluates}
+          onChange={(event) => setEvaluates(event.target.value)}
+          placeholder="Summarize the signals and outcomes covered by this package."
+          rows={2}
+        />
+      </div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Availability</legend>
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
+          <input
+            type="radio"
+            name="rule-package-scope"
+            value="WORKSPACE"
+            checked={scope === "WORKSPACE"}
+            onChange={() => setScope("WORKSPACE")}
+            className="mt-1"
+          />
+          <span>
+            <span className="block text-sm font-medium">This workspace</span>
+            <span className="block text-xs text-muted-foreground">
+              Only available here, and only to you.
+            </span>
+          </span>
+        </label>
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
+          <input
+            type="radio"
+            name="rule-package-scope"
+            value="ALL_WORKSPACES"
+            checked={scope === "ALL_WORKSPACES"}
+            onChange={() => setScope("ALL_WORKSPACES")}
+            className="mt-1"
+          />
+          <span>
+            <span className="block text-sm font-medium">All my workspaces</span>
+            <span className="block text-xs text-muted-foreground">
+              Available to you anywhere you can evaluate.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+      <div className="space-y-3 border-t pt-4">
+        <div className="flex items-center justify-between">
+          <Label>Rules</Label>
+          <Badge variant="outline">{draftRules.length}</Badge>
+        </div>
+        {draftRules.map((rule, index) => (
+          <RuleEditor
+            key={rule.id}
+            rule={rule}
+            index={index}
+            canRemove={draftRules.length > 1}
+            onChange={(patch) => updateDraftRule(rule.id, patch)}
+            onRemove={() =>
+              setDraftRules((current) => current.filter((value) => value.id !== rule.id))
+            }
+          />
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => setDraftRules((current) => [...current, newRule()])}
+        >
+          <Plus aria-hidden="true" /> Add Rule
+        </Button>
+      </div>
+    </FormModal>
   );
 }
 
@@ -373,7 +877,14 @@ function DateField({
 }
 
 function EvaluationOutput() {
-  const { report, isRunning } = useWorkbench();
+  const { report: latestReport, isRunning, workspaceId, selectedEvaluationId } = useWorkbench();
+  const savedQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluation", selectedEvaluationId],
+    queryFn: () => api.getEvaluation(workspaceId, selectedEvaluationId!),
+    enabled: Boolean(selectedEvaluationId),
+  });
+  const saved = selectedEvaluationId ? savedQ.data : undefined;
+  const report = selectedEvaluationId ? saved?.data.report : latestReport;
   return (
     <section
       aria-labelledby="evaluation-report-title"
@@ -392,13 +903,126 @@ function EvaluationOutput() {
         </div>
         {report ? <StatusMark status={report.status} /> : null}
       </div>
-      {isRunning ? (
+      {saved ? (
+        <div className="mb-5 rounded-xl border p-4 text-sm">
+          <p className="font-semibold">
+            Saved evaluation · {new Date(saved.createdAt).toLocaleString()}
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            {saved.data.period
+              ? `${saved.data.period.from} – ${saved.data.period.to}`
+              : "No period specified"}
+          </p>
+          <ul className="mt-3 space-y-2">
+            {saved.data.rules.map((rule, index) => (
+              <li key={index}>
+                <span className="font-medium">{rule.name}</span> · Importance {rule.valuation}/10
+                {rule.description ? (
+                  <p className="text-muted-foreground">{rule.description}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {selectedEvaluationId && savedQ.isError ? (
+        <div role="alert" className="space-y-3 text-sm">
+          <p>{errorMessage(savedQ.error)}</p>
+          <Button variant="outline" onClick={() => void savedQ.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : selectedEvaluationId && savedQ.isPending ? (
+        <p role="status" className="text-sm">
+          Loading saved evaluation…
+        </p>
+      ) : isRunning ? (
         <EvaluationLoading />
       ) : report ? (
         <ReportView report={report} />
       ) : (
         <ReportEmpty />
       )}
+    </section>
+  );
+}
+
+function EvaluationHistory() {
+  const { workspaceId, groupId, selectedEvaluationId, setSelectedEvaluationId, isRunning } =
+    useWorkbench();
+  const historyQ = useInfiniteQuery({
+    queryKey: ["workspace", workspaceId, "evaluations", groupId],
+    queryFn: ({ pageParam }) => api.listEvaluations(workspaceId, groupId, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+  const items = historyQ.data?.pages.flatMap((page) => page.items) ?? [];
+  return (
+    <section aria-labelledby="evaluation-history-title" className="border-t p-5 sm:p-7">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 id="evaluation-history-title" className="text-lg font-semibold">
+          Evaluation history
+        </h3>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={historyQ.isFetching}
+          onClick={() => void historyQ.refetch()}
+        >
+          Refresh
+        </Button>
+      </div>
+      {historyQ.isPending ? (
+        <p role="status" className="text-sm">
+          Loading saved evaluations…
+        </p>
+      ) : null}
+      {historyQ.isError ? (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {errorMessage(historyQ.error)}. Use Refresh to retry.
+        </p>
+      ) : null}
+      {historyQ.isSuccess && !items.length ? (
+        <p className="text-sm text-muted-foreground">
+          No saved evaluations yet. New evaluations will appear here automatically.
+        </p>
+      ) : null}
+      <ul className="space-y-2">
+        {items.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              disabled={isRunning}
+              aria-pressed={selectedEvaluationId === item.id}
+              onClick={() => setSelectedEvaluationId(item.id)}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50",
+                selectedEvaluationId === item.id && "bg-muted border-primary",
+              )}
+            >
+              <span>
+                <span className="block font-medium">
+                  {new Date(item.createdAt).toLocaleString()}
+                </span>
+                <span className="text-muted-foreground">
+                  {item.period ? `${item.period.from} – ${item.period.to}` : "No period specified"}
+                </span>
+              </span>
+              <StatusMark status={item.status} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {historyQ.hasNextPage ? (
+        <Button
+          className="mt-4"
+          variant="outline"
+          disabled={historyQ.isFetching}
+          onClick={() => void historyQ.fetchNextPage()}
+        >
+          {historyQ.isFetchingNextPage ? "Loading…" : "Load more"}
+        </Button>
+      ) : null}
     </section>
   );
 }

@@ -98,30 +98,7 @@ function makeFlow(
     }),
     ruleAssessmentNode: createRuleAssessmentNode({
       assessor: {
-        assess:
-          options.assess ??
-          (async () => ({
-            overview: 'The available evidence supports the rule.',
-            evidence: [
-              {
-                source: 'activity.by_period',
-                observation: 'Activity was returned.',
-                relevance: 'It addresses the expected signal.',
-              },
-            ],
-            memberAssessments: [],
-            criteria: [
-              {
-                criterion: 'Activity',
-                finding: 'Activity was returned.',
-                evidenceReferences: ['activity.by_period aggregate'],
-                status: 'met',
-              },
-            ],
-            rationale: 'The planned evidence was available.',
-            verdict: 'supported',
-            limitations: [],
-          })),
+        assess: options.assess ?? (async () => compactAssessment()),
       },
     }),
   });
@@ -131,6 +108,33 @@ const input = {
   context: { workspaceId: 'workspace-1' },
   rules: [{ name: 'Delivery', valuation: 8 }],
 };
+
+function compactAssessment() {
+  return {
+    overview: 'The available evidence supports the rule.',
+    evidence: [
+      {
+        id: 'evidence-1',
+        source: 'activity.by_period',
+        observation: 'Activity was returned.',
+        relevance: 'It addresses the expected signal.',
+        recordReferences: ['activity.by_period aggregate'],
+      },
+    ],
+    memberAssessments: [],
+    criteria: [
+      {
+        criterion: 'Activity',
+        finding: 'Activity was returned.',
+        evidenceIds: ['evidence-1'],
+        status: 'met' as const,
+      },
+    ],
+    rationale: 'The planned evidence was available.',
+    verdict: 'supported' as const,
+    limitations: [],
+  };
+}
 
 test('runs the complete graph and produces a ready plan', async () => {
   const result = await makeFlow().invoke(input);
@@ -151,6 +155,37 @@ test('runs the complete graph and produces a ready plan', async () => {
     result.ruleAssessmentResult?.assessments.rule_input_1_delivery?.ruleName,
     'Delivery',
   );
+});
+
+test('preserves the requested period through planning, execution and assessment', async () => {
+  const period = { from: '2026-06-10', to: '2026-06-20' };
+  const executedPeriods: unknown[] = [];
+  const assessedPeriods: unknown[] = [];
+  const flow = makeFlow({
+    execute: async ({ context }) => {
+      executedPeriods.push(context.period);
+      return [];
+    },
+    assess: async ({ context }) => {
+      assessedPeriods.push(context.period);
+      return compactAssessment();
+    },
+  });
+  const bounded = await flow.invoke({
+    ...input,
+    context: { ...input.context, period },
+  });
+  assert.equal(bounded.status, 'ready');
+  assert.deepEqual(bounded.context.period, period);
+  assert.notEqual(bounded.evaluationPlanResult?.status, 'invalid');
+  if (bounded.evaluationPlanResult?.status === 'invalid') return;
+  assert.deepEqual(bounded.evaluationPlanResult?.plan.context.period, period);
+  // Reuse the compiled graph without leaking the previous request's period.
+  const unbounded = await flow.invoke(input);
+  assert.equal(unbounded.status, 'ready');
+  assert.equal(unbounded.context.period, undefined);
+  assert.deepEqual(executedPeriods, [period, undefined]);
+  assert.deepEqual(assessedPeriods, [period, undefined]);
 });
 
 test('executes a shared resource operation once for multiple rules', async () => {
@@ -482,20 +517,8 @@ test('keeps successful assessments when a sibling assessment fails', async () =>
     assess: async ({ rule }) => {
       if (rule.ruleIndex === 1) throw new Error('reasoning model unavailable');
       return {
+        ...compactAssessment(),
         overview: 'Evidence supports delivery.',
-        evidence: [],
-        memberAssessments: [],
-        criteria: [
-          {
-            criterion: 'Delivery',
-            finding: 'Delivery evidence was available.',
-            evidenceReferences: [],
-            status: 'met',
-          },
-        ],
-        rationale: 'Delivery evidence was available.',
-        verdict: 'supported',
-        limitations: [],
       };
     },
   }).invoke({

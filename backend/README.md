@@ -65,6 +65,7 @@ two LangChain `provider:model` identifiers:
 ```dotenv
 RULE_UNDERSTANDING_MODEL=openai:gpt-5-mini
 RULE_SUMMARY_MODEL=openai:gpt-5
+PROMPT_DATA_FORMAT=auto
 LANGSMITH_TRACING=true
 LANGSMITH_API_KEY=your-langsmith-api-key
 LANGSMITH_PROJECT=mastra-poc-agent-flow
@@ -74,6 +75,11 @@ LANGCHAIN_CALLBACKS_BACKGROUND=false
 
 `RULE_UNDERSTANDING_MODEL` is used for rule interpretation and resource
 selection. `RULE_SUMMARY_MODEL` produces the final structured assessment.
+`PROMPT_DATA_FORMAT` controls serialization of the data sections sent to that
+model: `json` always uses compact JSON, `toon` forces TOON, and the default
+`auto` uses TOON only when its encoded representation is smaller, with an
+automatic JSON fallback if encoding fails. This setting does not change the
+HTTP response format.
 With the `LANGSMITH_*` values enabled, evaluations started through the API are
 recorded as `workspace-evaluation-flow` runs, tagged with `backend`,
 `evaluation-flow`, and `runner:<LANGSMITH_RUNNER_ID>`, and include the workspace
@@ -105,6 +111,44 @@ curl -X POST \
 The default `report` view returns keyed rule assessments, limitations,
 execution counts, and diagnostics. Use `?view=full` to inspect the complete
 graph state and raw plugin records during development.
+
+When `period` is supplied, the runtime forwards it as explicit provider options
+to GitHub and Jira. Both dates are inclusive UTC days. Issues, tickets and PRs
+are selected by their latest update; commits use commit date, with author date
+as a fallback. PR comments and reviews use their own timestamps. PR totals and
+current state are not historical snapshots. `github.participation` reports a
+failed operation for bounded requests because its weekly aggregates cannot
+represent the requested days; use `github.commit` for bounded commit activity.
+Without a period, queries retain their existing history behavior.
+
+Each evaluation that returns a result is automatically saved as an
+`AGENT_EVALUATION` performance report before the API responds. Both response
+views include `evaluationId` and `createdAt`. Storage contains a versioned
+snapshot of the submitted rules, optional period, and the final report
+(including evidence and diagnostics), rather than the full graph state or raw
+plugin records. Partial results are saved too; invocations that throw are not.
+If persistence fails, the API returns 503 and explicitly reports that the
+evaluation could not be saved.
+
+Workspace owners and admins can retrieve history using:
+
+- `GET /api/workspaces/:workspaceId/evaluations?groupId=:groupId`: summaries,
+  newest first, with 20 items per page and a `nextCursor`. Omit `groupId` to
+  list all evaluations in the workspace. Pass `cursor=:nextCursor` for the next page.
+- `GET /api/workspaces/:workspaceId/evaluations/:evaluationId`: the saved record
+  with `data.schemaVersion`, `data.rules`, `data.period`, and `data.report`.
+
+The group's Agent evaluation tab displays this history. Selecting an entry
+shows its saved rules, period, and report without modifying the new evaluation
+form. These entries are excluded from the existing group Reports tab and
+`/api/reports/:id` endpoint. Historical comparison and agent resource integration
+are not implemented.
+
+Apply database migrations before running the updated API:
+
+```bash
+npx prisma migrate deploy
+```
 
 ## Run the backend with Docker Compose
 

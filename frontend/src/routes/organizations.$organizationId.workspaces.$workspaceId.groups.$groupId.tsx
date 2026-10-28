@@ -188,6 +188,8 @@ function GroupPage() {
   const currentUserId =
     groupMembership?.userId ?? workspaceMembership?.userId ?? organizationMembership?.userId;
   const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const evaluationRole = highestRole([workspaceMembership?.role, organizationMembership?.role]);
+  const canEvaluate = evaluationRole === "OWNER" || evaluationRole === "ADMIN";
   const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
   const invitationsQ = useQuery({
     queryKey: ["group", groupId, "invitations"],
@@ -298,13 +300,22 @@ function GroupPage() {
             />
           )}
 
-          {tab === "evaluation" && (
-            <EvaluationWorkbench
-              workspaceId={workspaceId}
-              groupName={group.name}
-              groupId={groupId}
-            />
-          )}
+          {tab === "evaluation" &&
+            (canEvaluate ? (
+              <EvaluationWorkbench
+                workspaceId={workspaceId}
+                groupName={group.name}
+                groupId={groupId}
+              />
+            ) : (
+              <Card className="rounded-xl p-8 text-center">
+                <Sparkles aria-hidden="true" className="mx-auto h-8 w-8 text-muted-foreground" />
+                <h2 className="mt-3 font-semibold">Evaluation access is restricted</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Workspace owners and admins can run evaluations and manage rule packages.
+                </p>
+              </Card>
+            ))}
 
           {tab === "members" && (
             <div className="space-y-4">

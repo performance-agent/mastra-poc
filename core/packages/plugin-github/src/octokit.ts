@@ -1,5 +1,6 @@
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/rest";
+import { dataProviderPeriodBounds, isWithinDataProviderPeriod, type DataProviderOptions, type DataProviderPeriodBounds } from "@pa/core";
 import type {
   GitHubClient,
   GitHubClientFactory,
@@ -48,10 +49,14 @@ class OctokitGitHubClient implements GitHubClient {
     }));
   }
 
-  async listIssues(repository: string): Promise<readonly GitHubIssue[]> {
+  async listIssues(repository: string, options?: DataProviderOptions): Promise<readonly GitHubIssue[]> {
+    const bounds = dataProviderPeriodBounds(options?.period);
     const { owner, repo } = repositoryName(repository);
-    const issues = await this.octokit.paginate(this.octokit.rest.issues.listForRepo, { owner, repo, state: "all", per_page: 100 });
-    return issues.filter((issue) => !issue.pull_request).map((issue) => ({
+    const issues = await this.octokit.paginate(this.octokit.rest.issues.listForRepo, {
+      owner, repo, state: "all", per_page: 100,
+      ...(bounds ? { since: new Date(bounds.from - 1000).toISOString() } : {}),
+    });
+    return issues.filter((issue) => !issue.pull_request && (!bounds || isWithinDataProviderPeriod(issue.updated_at, bounds))).map((issue) => ({
       id: String(issue.id),
       repository,
       number: issue.number,
@@ -69,10 +74,13 @@ class OctokitGitHubClient implements GitHubClient {
     }));
   }
 
-  async listPullRequests(repository: string): Promise<readonly GitHubPullRequest[]> {
+  async listPullRequests(repository: string, options?: DataProviderOptions): Promise<readonly GitHubPullRequest[]> {
+    const bounds = dataProviderPeriodBounds(options?.period);
     const { owner, repo } = repositoryName(repository);
-    const pulls = await this.octokit.paginate(this.octokit.rest.pulls.list, { owner, repo, state: "all", per_page: 100 });
-    return Promise.all(pulls.map(async (listedPull) => {
+    const pulls = bounds
+      ? await this.listPeriodPullRequests(owner, repo, bounds)
+      : await this.octokit.paginate(this.octokit.rest.pulls.list, { owner, repo, state: "all", per_page: 100 });
+    const reports = await Promise.all(pulls.map(async (listedPull) => {
       const pullNumber = listedPull.number;
       const [{ data: pull }, issueComments, reviewCommentsData, reviews] = await Promise.all([
         this.octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
@@ -90,16 +98,16 @@ class OctokitGitHubClient implements GitHubClient {
         comments: pull.comments, reviewComments: pull.review_comments,
         additions: pull.additions, deletions: pull.deletions, changedFiles: pull.changed_files,
         files: [],
-        issueComments: issueComments.map((comment) => ({
+        issueComments: issueComments.filter((comment) => !bounds || isWithinDataProviderPeriod(comment.created_at, bounds)).map((comment) => ({
           body: requiredString(comment.body, "issue comment body"), createdAt: new Date(comment.created_at).toISOString(),
           ...(comment.user?.login ? { author: comment.user.login } : {}),
         })),
-        reviewCommentsData: reviewCommentsData.map((comment) => ({
+        reviewCommentsData: reviewCommentsData.filter((comment) => !bounds || isWithinDataProviderPeriod(comment.created_at, bounds)).map((comment) => ({
           body: comment.body, path: comment.path, createdAt: new Date(comment.created_at).toISOString(),
           ...(comment.user?.login ? { author: comment.user.login } : {}),
           ...(comment.line == null ? {} : { line: comment.line }),
         })),
-        reviews: reviews.map((review) => ({
+        reviews: reviews.filter((review) => !bounds || isWithinDataProviderPeriod(review.submitted_at, bounds)).map((review) => ({
           state: review.state, body: review.body,
           ...(review.user?.login ? { author: review.user.login } : {}),
           ...(isoDate(review.submitted_at) ? { submittedAt: isoDate(review.submitted_at) } : {}),
@@ -110,12 +118,36 @@ class OctokitGitHubClient implements GitHubClient {
         ...(pull.body === null ? {} : { body: pull.body }),
       };
     }));
+    // A pull request can change between the list and detail requests.
+    return reports.filter((pull) => !bounds || isWithinDataProviderPeriod(pull.updatedAt, bounds));
   }
 
-  async listCommits(repository: string): Promise<readonly GitHubCommit[]> {
+  private async listPeriodPullRequests(owner: string, repo: string, bounds: DataProviderPeriodBounds) {
+    const pulls: Array<{ number: number }> = [];
+    for await (const page of this.octokit.paginate.iterator(this.octokit.rest.pulls.list, {
+      owner, repo, state: "all", sort: "updated", direction: "desc", per_page: 100,
+    })) {
+      let reachedStart = false;
+      for (const pull of page.data) {
+        if (Date.parse(pull.updated_at) < bounds.from) reachedStart = true;
+        if (isWithinDataProviderPeriod(pull.updated_at, bounds)) pulls.push({ number: pull.number });
+      }
+      if (reachedStart) break;
+    }
+    return pulls;
+  }
+
+  async listCommits(repository: string, options?: DataProviderOptions): Promise<readonly GitHubCommit[]> {
+    const bounds = dataProviderPeriodBounds(options?.period);
     const { owner, repo } = repositoryName(repository);
-    const commits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, { owner, repo, per_page: 100 });
-    return commits.map((commit) => ({
+    const commits = await this.octokit.paginate(this.octokit.rest.repos.listCommits, {
+      owner, repo, per_page: 100,
+      ...(bounds ? { since: new Date(bounds.from - 1000).toISOString(), until: new Date(bounds.toExclusive).toISOString() } : {}),
+    });
+    return commits.filter((commit) => {
+      const timestamp = commit.commit.committer?.date ?? commit.commit.author?.date;
+      return !bounds || !timestamp || isWithinDataProviderPeriod(timestamp, bounds);
+    }).map((commit) => ({
       sha: commit.sha, repository, message: commit.commit.message,
       ...(commit.author?.login ? { author: commit.author.login } : commit.commit.author?.name ? { author: commit.commit.author.name } : {}),
       ...(isoDate(commit.commit.author?.date) ? { authoredAt: isoDate(commit.commit.author?.date) } : {}),
@@ -124,7 +156,8 @@ class OctokitGitHubClient implements GitHubClient {
     }));
   }
 
-  async getParticipation(repository: string): Promise<GitHubParticipation> {
+  async getParticipation(repository: string, options?: DataProviderOptions): Promise<GitHubParticipation> {
+    if (dataProviderPeriodBounds(options?.period)) throw new Error("github.participation cannot evaluate a date period: weekly aggregates do not represent the requested range. Use github.commit instead.");
     const { owner, repo } = repositoryName(repository);
     const { data } = await this.octokit.rest.repos.getParticipationStats({ owner, repo });
     const coverageTo = utcMidnight(new Date());

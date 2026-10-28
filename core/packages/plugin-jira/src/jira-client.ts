@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dataProviderPeriodBounds, isWithinDataProviderPeriod, type DataProviderOptions } from "@pa/core";
 import type { JiraClient, JiraClientFactory, JiraFetch, JiraIssue, JiraProject, JiraSecrets } from "./types.js";
 
 const projectPageSchema = z.object({
@@ -64,16 +65,22 @@ class RestJiraClient implements JiraClient {
     }
   }
 
-  async listIssues(projectKey: string): Promise<readonly JiraIssue[]> {
+  async listIssues(projectKey: string, options?: DataProviderOptions): Promise<readonly JiraIssue[]> {
+    const bounds = dataProviderPeriodBounds(options?.period);
+    const day = 24 * 60 * 60 * 1000;
+    // JQL dates use the account's timezone. Broaden candidates, then filter in UTC.
+    const dateClause = bounds
+      ? ` AND updated >= "${new Date(bounds.from - day).toISOString().slice(0, 10)}" AND updated < "${new Date(bounds.toExclusive + day).toISOString().slice(0, 10)}"`
+      : "";
     const issues: JiraIssue[] = [];
     let nextPageToken: string | undefined;
     for (;;) {
       const body = JSON.stringify({
-        jql: `project = "${escapeJqlString(projectKey)}" ORDER BY key ASC`, fields: issueFields, maxResults: 100,
+        jql: `project = "${escapeJqlString(projectKey)}"${dateClause} ORDER BY key ASC`, fields: issueFields, maxResults: 100,
         ...(nextPageToken === undefined ? {} : { nextPageToken }),
       });
       const page = issuePageSchema.parse(await this.request("POST", "/rest/api/3/search/jql", body));
-      issues.push(...page.issues.map(mapIssue));
+      issues.push(...page.issues.filter((issue) => !bounds || isWithinDataProviderPeriod(issue.fields.updated, bounds)).map(mapIssue));
       if (page.isLast === true || page.nextPageToken == null || page.issues.length === 0) return issues;
       nextPageToken = page.nextPageToken;
     }

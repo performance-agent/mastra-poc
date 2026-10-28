@@ -81,9 +81,9 @@ export const githubIssue = dataType({ key: "github.issue", schema: githubIssueSc
 export const githubPullRequest = dataType({
   key: "github.pullRequest",
   schema: githubPullRequestSchema,
-  description: "Pull requests with lifecycle timestamps and guaranteed additions, deletions, and changedFiles totals.",
+  description: "Pull requests selected by their latest update, with lifecycle timestamps and guaranteed additions, deletions, and changedFiles totals. With a period, comments and reviews are restricted to that period; totals describe the current pull request, not period-only activity.",
   freshness: "realtime",
-  limitations: ["Pull request activity is not equivalent to commit activity."],
+  limitations: ["Pull request activity is not equivalent to commit activity.", "Pull request totals and current state are not historical snapshots or period-only counts."],
 });
 export const githubCommit = dataType({ key: "github.commit", schema: githubCommitSchema });
 export const githubParticipation = dataType({
@@ -114,30 +114,31 @@ export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
     dataProviders: [
       providesData(githubIssue, {
         secrets: githubSecrets,
-        async provide(context, resource) {
+        async provide(context, resource, options) {
           const client = await clients.create(await readSecrets(context));
-          return client.listIssues(resource.externalId);
+          return client.listIssues(resource.externalId, options);
         },
       }),
       providesData(githubPullRequest, {
         secrets: githubSecrets,
-        async provide(context, resource) {
+        async provide(context, resource, options) {
           const client = await clients.create(await readSecrets(context));
-          return client.listPullRequests(resource.externalId);
+          return client.listPullRequests(resource.externalId, options);
         },
       }),
       providesData(githubCommit, {
         secrets: githubSecrets,
-        async provide(context, resource) {
+        async provide(context, resource, options) {
           const client = await clients.create(await readSecrets(context));
-          return client.listCommits(resource.externalId);
+          return client.listCommits(resource.externalId, options);
         },
       }),
       providesData(githubParticipation, {
         secrets: githubSecrets,
-        async provide(context, resource) {
+        async provide(context, resource, options) {
+          if (options?.period) throw new Error("github.participation cannot evaluate a date period: weekly aggregates do not represent the requested range. Use github.commit instead.");
           const client = await clients.create(await readSecrets(context));
-          return [await client.getParticipation(resource.externalId)];
+          return [await client.getParticipation(resource.externalId, options)];
         },
       }),
     ] as const,

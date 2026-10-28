@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { PluginExecutionContext, PluginResource } from "@pa/core";
+import type { DataProviderOptions, PluginExecutionContext, PluginResource } from "@pa/core";
 import { PluginValidationError } from "@pa/core";
 import {
   createJiraPlugin, createRestJiraClient, jiraSecrets,
@@ -99,3 +99,44 @@ function issuePage(nextPageToken: string | undefined, isLast: boolean) {
     }}], isLast, ...(nextPageToken === undefined ? {} : { nextPageToken }),
   };
 }
+
+test("Jira provider forwards options and leaves unbounded calls compatible", async () => {
+  const calls: Array<{ key: string; options: DataProviderOptions | undefined }> = [];
+  const plugin = createJiraPlugin({ clientFactory: fakeFactory({ async listIssues(key, options) { calls.push({ key, options }); return []; } }) });
+  const options = { period: { from: "2026-06-10", to: "2026-06-20" } };
+  await plugin.dataProviders[0].provide(context(), project, options);
+  await plugin.dataProviders[0].provide(context(), project);
+  assert.deepEqual(calls, [{ key: "PLAT", options }, { key: "PLAT", options: undefined }]);
+});
+
+test("Jira queries a timezone-safe candidate window and filters UTC dates across pages", async () => {
+  const requests: Array<{ jql: string; nextPageToken?: string }> = [];
+  function datedIssue(updated: string, id: string) {
+    const sample = issuePage(undefined, true).issues[0]!;
+    return { ...sample, id, fields: { ...sample.fields, updated } };
+  }
+  const pages = [
+    { issues: [datedIssue("2026-06-09T23:59:59.999Z", "before"), datedIssue("2026-06-09T21:00:00-03:00", "from")], isLast: false, nextPageToken: "next" },
+    { issues: [datedIssue("2026-06-20T23:59:59.999Z", "to"), datedIssue("2026-06-20T21:00:00-03:00", "after")], isLast: true },
+  ];
+  const fetcher: JiraFetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body!) as { jql: string; nextPageToken?: string });
+    return { ok: true, status: 200, async json() { return pages.shift(); } };
+  };
+  const client = createRestJiraClient(values, fetcher);
+  const result = await client.listIssues("PLAT", { period: { from: "2026-06-10", to: "2026-06-20" } });
+  assert.deepEqual(result.map((issue) => issue.id), ["from", "to"]);
+  assert.equal(result[0]!.updatedAt, "2026-06-10T00:00:00.000Z");
+  assert.equal(requests[0]!.jql, 'project = "PLAT" AND updated >= "2026-06-09" AND updated < "2026-06-22" ORDER BY key ASC');
+  assert.equal(requests[1]!.jql, requests[0]!.jql);
+  assert.equal(requests[1]!.nextPageToken, "next");
+});
+
+test("Jira handles empty periods and rejects invalid dates before requesting data", async () => {
+  let calls = 0;
+  const fetcher: JiraFetch = async () => { calls++; return { ok: true, status: 200, async json() { return { issues: [], isLast: true }; } }; };
+  const client = createRestJiraClient(values, fetcher);
+  assert.deepEqual(await client.listIssues("PLAT", { period: { from: "2026-06-10", to: "2026-06-10" } }), []);
+  await assert.rejects(client.listIssues("PLAT", { period: { from: "2026-02-30", to: "2026-03-01" } }), PluginValidationError);
+  assert.equal(calls, 1);
+});
