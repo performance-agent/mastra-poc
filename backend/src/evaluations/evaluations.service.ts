@@ -68,6 +68,20 @@ export class EvaluationsService {
     dto: CreateEvaluationDto,
     view: EvaluationView = EvaluationView.REPORT,
   ) {
+    const { generationStage } = await import('@pa/agent');
+    return generationStage(
+      'evaluation-request',
+      { workspaceId, dto, view },
+      () => this.evaluateRequest(workspaceId, dto, view),
+      { workspaceId, groupId: dto.groupId, runner: langSmithRunnerTag() },
+    );
+  }
+
+  private async evaluateRequest(
+    workspaceId: string,
+    dto: CreateEvaluationDto,
+    view: EvaluationView,
+  ) {
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
@@ -122,13 +136,19 @@ export class EvaluationsService {
     const summaries = studentSummaries(result, settings, rules);
     let individualInsights: IndividualInsights;
     try {
-      individualInsights = await this.insights.generate(
-        workspaceId,
-        {
-          ...dto,
-          rules,
-        },
-        summaries.students,
+      const { generationStage } = await import('@pa/agent');
+      individualInsights = await generationStage(
+        'team-synthesis',
+        { workspaceId, period },
+        () =>
+          this.insights.generate(
+            workspaceId,
+            {
+              ...dto,
+              rules,
+            },
+            summaries.students,
+          ),
       );
     } catch {
       individualInsights = {

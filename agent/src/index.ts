@@ -20,6 +20,8 @@ export {
   modelBudget,
   modelIdentifier,
   modelRequest,
+  generationStage,
+  type ModelRequestOptions,
   generationError,
   generationErrorDetails,
   projectEvidence,

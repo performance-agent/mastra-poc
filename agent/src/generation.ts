@@ -2,6 +2,26 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { initChatModel } from 'langchain/chat_models/universal';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { RunnableLambda } from '@langchain/core/runnables';
+
+/** Runnable context propagates callbacks to nested graphs and model calls. */
+export function generationStage<T>(
+  name: string,
+  input: unknown,
+  run: () => Promise<T>,
+  metadata: Record<string, unknown> = {},
+): Promise<T> {
+  return RunnableLambda.from<unknown, T>(run).invoke(input, {
+    runName: name,
+    metadata,
+  });
+}
+
+export type ModelRequestOptions = {
+  maxRetries?: number;
+  beforeAttempt?: () => void;
+  metadata?: () => Record<string, unknown>;
+};
 const modelIds = new WeakMap<BaseChatModel, string>();
 export const modelIdentifier = (model: BaseChatModel) =>
   modelIds.get(model) ?? 'configured';
@@ -91,7 +111,7 @@ export async function withConfiguredFallback<T>(
     throw new Error(
       'Fallbacks must explicitly name configured Gemini or Groq free-tier models',
     );
-  const models = [id, ...fallbacks.filter((s) => s !== id)];
+  const models = [...new Set([id, ...fallbacks])];
   let failure: unknown;
   for (const candidate of models) {
     try {
@@ -265,6 +285,7 @@ export function modelRequest<T>(
   stage: string,
   payload: unknown,
   run: (signal: AbortSignal) => Promise<T>,
+  options: ModelRequestOptions = {},
 ): Promise<T> {
   const task = tail.then(async () => {
     const budget = modelBudget(model);
@@ -272,6 +293,7 @@ export function modelRequest<T>(
     if (bytes > budget.inputBytes) {
       console.warn(
         JSON.stringify({
+          ...options.metadata?.(),
           model,
           stage,
           bytes,
@@ -284,18 +306,36 @@ export function modelRequest<T>(
       );
     }
     for (let attempt = 0; ; attempt++) {
+      // Local size checks do not spend an invocation; every provider attempt does.
+      options.beforeAttempt?.();
+      const metadata = {
+        ...options.metadata?.(),
+        ...(attempt ? { reason: 'transient_retry' } : {}),
+      };
       const start = Date.now();
       try {
-        const result = await run(AbortSignal.timeout(budget.timeoutMs));
+        const result = await generationStage(
+          stage,
+          payload,
+          () => run(AbortSignal.timeout(budget.timeoutMs)),
+          { ...metadata, model, stage, bytes, attempt },
+        );
         console.info(
           JSON.stringify({
             model,
+            ...metadata,
             stage,
             bytes,
             durationMs: Date.now() - start,
             attempt,
             status: 'succeeded',
             budget,
+            effectiveModel: record(result).response_metadata
+              ? (record(record(result).response_metadata).model_name ??
+                record(record(result).response_metadata).model ??
+                model)
+              : (record(record(record(result).raw).response_metadata)
+                  .model_name ?? model),
             usage:
               record(result).usage_metadata ??
               record(record(result).raw).usage_metadata,
@@ -307,12 +347,13 @@ export function modelRequest<T>(
         const { message: _message, ...details } = generationErrorDetails(error);
         const delay = details.retryAfterMs ?? 1000 * 2 ** attempt;
         const retry =
-          attempt < 2 &&
+          attempt < (options.maxRetries ?? 2) &&
           ['rate_limited', 'timeout', 'transient'].includes(code) &&
           delay <= 60000;
         console.warn(
           JSON.stringify({
             model,
+            ...metadata,
             stage,
             bytes,
             durationMs: Date.now() - start,

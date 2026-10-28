@@ -16,6 +16,24 @@ Server configuration is documented in `backend/.env.example`:
   `groq:openai/gpt-oss-20b` or `google-genai:<model>`.
 - Supply `GROQ_API_KEY` and/or `GOOGLE_GENERATIVE_AI_API_KEY` only to the backend.
 - `TASK_ANALYSIS_MODEL` selects the task classifier; it defaults to the rule-summary model.
+- `TEAM_ANALYSIS_MODEL=openrouter:openrouter/free` optionally analyzes evidence blocks
+  and consolidates them as untrusted text before one final structured factual review
+  with `RULE_SUMMARY_MODEL`. Supply `OPENROUTER_API_KEY` to enable this path.
+  Without it, synthesis uses the structured model directly.
+- `TEAM_STRUCTURED_MAX_CALLS=3` caps all structured invocations per team synthesis,
+  including HTTP failures, rejected output, repairs, transient retries and fallbacks.
+  Local size checks do not consume calls. Each request permits at most one transient
+  retry or repair before moving to a fallback. Rule assessments are outside this cap.
+  Unreviewed drafts are never published: insufficient input/call budgets preserve
+  the factual summary and explain the limitation. Evidence is not truncated to fit.
+  Text consolidation has at most four levels (initial plus three reductions), with
+  content caches scoped to the generation. Serialized messages are measured before
+  sending; a 413 never retries the unchanged payload against the same model.
+  Evaluation requests form one LangChain trace with rule and team synthesis children;
+  attempt metadata includes stage, block, requested/effective model, bytes and call count.
+  One structured call is the expected normal path with text analysis enabled; confirm
+  it with an authorized live run. Compilation and static review do not establish
+  observed provider call counts or reduce the separate rule-assessment calls.
 - `FREE_TIER_FALLBACK_MODELS` is empty by default. Only explicitly listed Gemini/Groq
   services are eligible; configure accounts with the intended free-tier limits.
 - `GENERATION_INPUT_BYTES`, `GENERATION_OUTPUT_TOKENS`, and `GENERATION_TIMEOUT_MS`
