@@ -1,5 +1,11 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { initChatModel } from 'langchain/chat_models/universal';
+import {
+  modelIdentifier,
+  configuredModel,
+  withConfiguredFallback,
+  modelRequest,
+  projectEvidence,
+} from '../generation.js';
 import { resourceSelectionAiOutputSchema } from './schemas.js';
 import type { ResourceSelectionInput, ResourceSelector } from './types.js';
 
@@ -25,13 +31,20 @@ export function createLangChainResourceSelector(
 ): ResourceSelector {
   const structuredModel = model.withStructuredOutput(
     resourceSelectionAiOutputSchema,
+    modelIdentifier(model).startsWith('groq') ? { method: 'jsonSchema' } : {},
   );
   return {
     async select(input) {
-      return structuredModel.invoke([
+      const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: createUserPrompt(input) },
-      ]);
+      ];
+      return modelRequest(
+        modelIdentifier(model),
+        'selection',
+        messages,
+        (signal) => structuredModel.invoke(messages, { signal }),
+      );
     },
   };
 }
@@ -45,7 +58,12 @@ export async function createLangChainResourceSelectorFromEnv(
       `${MODEL_ENVIRONMENT_VARIABLE} must contain a LangChain provider:model identifier.`,
     );
   }
-  return createLangChainResourceSelector(await initChatModel(modelId));
+  return {
+    select: (input) =>
+      withConfiguredFallback(modelId, environment, (model) =>
+        createLangChainResourceSelector(model).select(input),
+      ),
+  };
 }
 
 function createUserPrompt(input: ResourceSelectionInput): string {

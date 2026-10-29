@@ -1,3 +1,7 @@
+import { IndividualInsights } from "./IndividualInsights";
+import { GradingControls } from "./GradingControls";
+import { TaskAnalysis } from "./TaskAnalysis";
+import type { GradingSettings } from "@/lib/types";
 import {
   createContext,
   use,
@@ -71,6 +75,7 @@ type WorkbenchState = {
   error?: string;
   isRunning: boolean;
   run: () => Promise<void>;
+  setGradingOverrides: (value?: GradingSettings) => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -105,6 +110,7 @@ function EvaluationProvider({
   const [selectedPackageId, setSelectedPackageId] = useState<string>();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [gradingOverrides, setGradingOverrides] = useState<GradingSettings>();
   const [report, setReport] = useState<EvaluationReport>();
   const [error, setError] = useState<string>();
   const [isRunning, setIsRunning] = useState(false);
@@ -159,6 +165,7 @@ function EvaluationProvider({
           })),
           period: from && to ? { from, to } : undefined,
           groupId,
+          gradingOverrides,
         },
         "report",
       );
@@ -199,6 +206,7 @@ function EvaluationProvider({
     error,
     isRunning,
     run,
+    setGradingOverrides,
   };
 
   return <WorkbenchContext value={value}>{children}</WorkbenchContext>;
@@ -219,6 +227,7 @@ export function EvaluationWorkbench(props: {
         </div>
         <EvaluationHistory />
       </div>
+      <TaskAnalysis workspaceId={props.workspaceId} groupId={props.groupId} />
     </EvaluationProvider>
   );
 }
@@ -267,6 +276,7 @@ function EvaluationSetup() {
     isRunning,
     run,
     error,
+    setGradingOverrides,
   } = useWorkbench();
   const queryClient = useQueryClient();
   const [packageSearch, setPackageSearch] = useState("");
@@ -347,6 +357,11 @@ function EvaluationSetup() {
       aria-labelledby="evaluation-brief-title"
       className="border-b border-slate-200 p-5 sm:p-7 lg:border-b-0 lg:border-r dark:border-slate-700"
     >
+      <GradingControls
+        workspaceId={workspaceId}
+        onChange={setGradingOverrides}
+        disabled={isRunning}
+      />
       <div className="mb-6 border-b border-slate-200 pb-6 dark:border-slate-700">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -542,7 +557,7 @@ function EvaluationSetup() {
         {!isRunning ? <ArrowRight aria-hidden="true" className="ml-auto" /> : null}
       </Button>
       <p className="mt-2 text-center text-[11px] leading-4 text-muted-foreground">
-        Packages are saved. Generated results are not.
+        Packages and completed evaluation results are saved.
       </p>
 
       <ConfirmDialog
@@ -1070,6 +1085,7 @@ function EvaluationLoading() {
 }
 
 function ReportView({ report }: { report: EvaluationReport }) {
+  const { workspaceId } = useWorkbench();
   const assessments = Object.values(report.assessments);
   const diagnosticCount = Object.values(report.diagnostics).reduce(
     (total, entries) => total + entries.length,
@@ -1094,6 +1110,7 @@ function ReportView({ report }: { report: EvaluationReport }) {
           icon={<AlertCircle aria-hidden="true" />}
         />
       </div>
+      <IndividualInsights report={report} workspaceId={workspaceId} />
       {assessments.length ? (
         assessments.map((assessment, index) => (
           <AssessmentCard key={`${assessment.ruleName}-${index}`} assessment={assessment} />

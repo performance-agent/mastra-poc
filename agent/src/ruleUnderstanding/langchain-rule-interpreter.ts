@@ -1,5 +1,11 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import { initChatModel } from 'langchain/chat_models/universal';
+import {
+  modelIdentifier,
+  configuredModel,
+  withConfiguredFallback,
+  modelRequest,
+  projectEvidence,
+} from '../generation.js';
 import {
   ruleUnderstandingAiOutputSchema,
   ruleUnderstandingProviderOutputSchema,
@@ -46,14 +52,21 @@ export function createLangChainRuleInterpreter(
 ): RuleInterpreter {
   const structuredModel = model.withStructuredOutput(
     ruleUnderstandingProviderOutputSchema,
+    modelIdentifier(model).startsWith('groq') ? { method: 'jsonSchema' } : {},
   );
 
   return {
     async interpret(input) {
-      const output = await structuredModel.invoke([
+      const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: createUserPrompt(input) },
-      ]);
+      ];
+      const output = await modelRequest(
+        modelIdentifier(model),
+        'understanding',
+        messages,
+        (signal) => structuredModel.invoke(messages, { signal }),
+      );
       return normalizeProviderOutput(output);
     },
   };
@@ -69,8 +82,12 @@ export async function createLangChainRuleInterpreterFromEnv(
     );
   }
 
-  const model = await initChatModel(modelId);
-  return createLangChainRuleInterpreter(model);
+  return {
+    interpret: (input) =>
+      withConfiguredFallback(modelId, environment, (model) =>
+        createLangChainRuleInterpreter(model).interpret(input),
+      ),
+  };
 }
 
 function normalizeProviderOutput(

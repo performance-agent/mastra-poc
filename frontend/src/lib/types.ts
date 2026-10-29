@@ -146,6 +146,7 @@ export interface DataType {
 export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface EvaluationRequest {
+  gradingOverrides?: GradingSettings;
   rules: Array<{ name: string; description?: string; valuation: number }>;
   period?: { from: string; to: string };
   groupId?: string;
@@ -186,6 +187,74 @@ export interface RulePackageInput {
 }
 
 export interface EvaluationReport {
+  individualInsightsJobId?: string;
+  individualInsightsJobStatus?: "queued" | "running" | "succeeded" | "failed";
+  individualInsights?: {
+    schemaVersion: 1 | 2;
+    generationStatus: "succeeded" | "partial" | "unavailable";
+    limitations: string[];
+    people: Array<{
+      identifier: string;
+      provider: string;
+      installationId: string;
+      actorId: string;
+      name: string;
+      generationStatus: "succeeded" | "partial" | "unavailable";
+      contentKind?: "model_synthesis" | "factual_fallback";
+      evidenceAvailability?: "available" | "partial" | "unavailable";
+      diagnostics?: Array<{ stage: string; code: string; paths: string[] }>;
+      blockFindings?: Array<{
+        synthesis: Array<{ text: string; references: string[] }>;
+        nextAction: { text: string; references: string[] };
+        limitations: string[];
+      }>;
+      status: "on_track" | "needs_follow_up" | "needs_support" | "insufficient_evidence" | null;
+      synthesis: Array<{ text: string; references: string[] }>;
+      nextAction: { text: string; references: string[] } | null;
+      references: Array<{
+        id: string;
+        identifier: string;
+        resourceId: string;
+        recordId: string;
+        role: string;
+        label: string;
+        url: string | null;
+        date: string | null;
+        facts: string;
+      }>;
+      limitations: string[];
+    }>;
+  };
+  period?: { from: string; to: string } | null;
+  studentSummaries?: {
+    schemaVersion: 1 | 2;
+    settings: GradingSettings;
+    students: Array<{
+      identifier: string;
+      name: string;
+      grade: number | null;
+      coverage: number;
+      status: string;
+      summary?: string;
+      overview?: {
+        conclusion: string;
+        contributions: string[];
+        strengths: string[];
+        attention: string[];
+        limitations: string[];
+      };
+      details: Array<{
+        ruleId: string;
+        ruleName: string;
+        valuation?: number;
+        score?: number | null;
+        rationale: string;
+        limitations?: string[];
+        criteria: AssessmentCriterion[];
+        evidence: Array<{ source: string; observation: string; relevance: string }>;
+      }>;
+    }>;
+  };
   evaluationId?: string;
   createdAt?: string;
   status: string;
@@ -201,7 +270,7 @@ export interface SavedEvaluation {
   groupId: string | null;
   createdAt: string;
   data: {
-    schemaVersion: 1;
+    schemaVersion: 1 | 2;
     rules: EvaluationRequest["rules"];
     period: EvaluationRequest["period"] | null;
     report: EvaluationReport;
@@ -519,4 +588,16 @@ interface ReportWorkItem {
   title: string;
   url: string;
   reason: string;
+}
+
+export interface GradingSettings {
+  minimum: number;
+  maximum: number;
+  passingGrade: number;
+  minimumCoverage: number;
+  summaryLength: number;
+  met: number;
+  partially_met: number;
+  not_met: number;
+  rounding: "integer" | "one_decimal" | "two_decimals" | "none";
 }

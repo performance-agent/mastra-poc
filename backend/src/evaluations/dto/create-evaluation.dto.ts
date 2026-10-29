@@ -1,3 +1,4 @@
+import { GradingSettingsDto } from './grading-settings.dto';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -40,6 +41,10 @@ export class EvaluationPeriodDto {
 }
 
 export class CreateEvaluationDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GradingSettingsDto)
+  gradingOverrides?: GradingSettingsDto;
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

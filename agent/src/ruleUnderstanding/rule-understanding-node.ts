@@ -1,3 +1,4 @@
+import { generationError } from '../generation.js';
 import type { PreparedRuleInput } from '../ruleInput/types.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 import { ZodError } from 'zod';
@@ -17,7 +18,7 @@ import type {
   UnderstoodRule,
 } from './types.js';
 
-const DEFAULT_MAX_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 1;
 
 type RuleOutcome =
   | { kind: 'understood'; value: UnderstoodRule }
@@ -62,7 +63,7 @@ async function interpretRule(
     return failedOutcome(
       preparedRule,
       'ai_generation_failed',
-      'The AI model could not interpret this rule.',
+      generationError(error),
     );
   }
 

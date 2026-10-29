@@ -1,3 +1,4 @@
+import { GenerationModule } from './generation/generation.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -25,6 +26,7 @@ import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
 @Module({
   imports: [
+    GenerationModule,
     ConfigModule.forRoot(),
     OrganizationsModule,
     WorkspacesModule,
