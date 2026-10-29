@@ -113,18 +113,7 @@ function expandAssessment(
       memberIdentifier: member.memberIdentifier,
       memberName: member.memberName,
       summary: member.summary,
-      criteria: member.criteria.map((criterion) => {
-        const expanded = expandCriterion(criterion);
-        return criterion.responsibility === 'collective' ||
-          criterion.responsibility === 'unknown'
-          ? {
-              ...expanded,
-              status: 'unknown' as const,
-              evidenceReferences: [],
-              finding: `Individual responsibility is not established. ${criterion.finding}`,
-            }
-          : expanded;
-      }),
+      criteria: member.criteria.map(expandCriterion),
       evidence: expandEvidence(member.evidenceIds),
       rationale: member.rationale,
       verdict: member.verdict,

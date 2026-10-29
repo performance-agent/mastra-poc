@@ -38,68 +38,12 @@ export function studentSummaries(
   settings: ReturnType<typeof gradingSettings>,
   requestedRules: Array<{ valuation: number }>,
 ) {
-  const assessments = result.ruleAssessmentResult?.assessments ?? {};
   const plans =
     result.evaluationPlanResult &&
     result.evaluationPlanResult.status !== 'invalid'
       ? result.evaluationPlanResult.plan.rules
       : [];
-  const identities = new Map<string, Set<string>>();
-  for (const call of result.resourceExecutionResult?.calls ?? []) {
-    if (call.status !== 'succeeded') continue;
-    const data = call.rawData as {
-      sourceNamespace?: string;
-      records?: Array<Record<string, unknown>>;
-    };
-    if (!data || typeof data !== 'object') continue;
-    const visit = (value: unknown) => {
-      if (!value || typeof value !== 'object') return;
-      if (Array.isArray(value)) {
-        value.forEach(visit);
-        return;
-      }
-      const record = value as Record<string, unknown>;
-      for (const [field, actor] of Object.entries(record)) {
-        if (
-          ['author', 'assignee', 'reporter'].includes(field) &&
-          typeof actor === 'string' &&
-          actor.trim().length > 0
-        ) {
-          const canonical = `${data.sourceNamespace ?? call.resourceId}:${actor}`;
-          for (const alias of [actor, canonical]) {
-            const ids = identities.get(alias) ?? new Set<string>();
-            ids.add(canonical);
-            identities.set(alias, ids);
-          }
-        } else if (typeof actor === 'object') visit(actor);
-      }
-    };
-    visit(data.records);
-  }
-  const students = new Map<
-    string,
-    {
-      name: string;
-      rules: Map<
-        string,
-        (typeof assessments)[string]['memberAssessments'][number]
-      >;
-    }
-  >();
-  for (const [ruleId, assessment] of Object.entries(assessments))
-    for (const member of assessment.memberAssessments) {
-      const ids = identities.get(member.memberIdentifier);
-      if (!ids || ids.size !== 1) continue; // Never manufacture identity from display names.
-      const id = [...ids][0];
-      const student = students.get(id) ?? {
-        name: member.memberName,
-        rules: new Map(),
-      };
-      student.name = member.memberName;
-      if (student.rules.has(ruleId)) continue;
-      student.rules.set(ruleId, member);
-      students.set(id, student);
-    }
+  const students = resolvedMembers(result);
   return {
     schemaVersion: 1 as const,
     settings,
@@ -193,4 +137,78 @@ export function studentSummaries(
       };
     }),
   };
+}
+
+export function resolvedMembers(
+  result: EvaluationFlowResult,
+  includeUnassessed = false,
+) {
+  const assessments = result.ruleAssessmentResult?.assessments ?? {};
+  const identities = new Map<string, Set<string>>();
+  for (const call of result.resourceExecutionResult?.calls ?? []) {
+    if (call.status !== 'succeeded') continue;
+    const data = call.rawData as {
+      sourceNamespace?: string;
+      records?: Array<Record<string, unknown>>;
+    };
+    if (!data || typeof data !== 'object') continue;
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      const record = value as Record<string, unknown>;
+      for (const [field, actor] of Object.entries(record)) {
+        if (
+          ['author', 'assignee', 'reporter'].includes(field) &&
+          typeof actor === 'string' &&
+          actor.trim().length > 0
+        ) {
+          const canonical = `${data.sourceNamespace ?? call.resourceId}:${actor}`;
+          for (const alias of [actor, canonical]) {
+            const ids = identities.get(alias) ?? new Set<string>();
+            ids.add(canonical);
+            identities.set(alias, ids);
+          }
+        } else if (typeof actor === 'object') visit(actor);
+      }
+    };
+    visit(data.records);
+  }
+  const students = new Map<
+    string,
+    {
+      name: string;
+      rules: Map<
+        string,
+        (typeof assessments)[string]['memberAssessments'][number]
+      >;
+    }
+  >();
+  for (const [ruleId, assessment] of Object.entries(assessments))
+    for (const member of assessment.memberAssessments) {
+      const ids = identities.get(member.memberIdentifier);
+      if (!ids || ids.size !== 1) continue; // Never manufacture identity from display names.
+      const id = [...ids][0];
+      const student = students.get(id) ?? {
+        name: member.memberName,
+        rules: new Map(),
+      };
+      student.name = member.memberName;
+      if (student.rules.has(ruleId)) continue;
+      student.rules.set(ruleId, member);
+      students.set(id, student);
+    }
+  if (includeUnassessed) {
+    for (const ids of identities.values())
+      for (const identifier of ids) {
+        if (!students.has(identifier))
+          students.set(identifier, {
+            name: identifier.split(':').at(-1) ?? identifier,
+            rules: new Map(),
+          });
+      }
+  }
+  return students;
 }

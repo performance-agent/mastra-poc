@@ -187,6 +187,8 @@ export interface RulePackageInput {
 }
 
 export interface EvaluationReport {
+  individualInsightsJobId?: string;
+  individualInsightsJobStatus?: "queued" | "running" | "succeeded" | "failed";
   individualInsights?: {
     schemaVersion: 1 | 2;
     generationStatus: "succeeded" | "partial" | "unavailable";

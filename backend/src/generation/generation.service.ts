@@ -51,11 +51,15 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
         expiresAt: new Date(Date.now() + 30 * 60 * 1000),
       },
     });
+    this.schedule(job.id, run);
+    return { jobId: job.id, status: job.status };
+  }
+  schedule(jobId: string, run: () => Promise<unknown>) {
     this.tail = this.tail
       .then(async () => {
         const claimed = await this.prisma.generationJob.updateMany({
           where: {
-            id: job.id,
+            id: jobId,
             status: 'queued',
             expiresAt: { gt: new Date() },
           },
@@ -70,7 +74,7 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
             'status' in result &&
             result.status === 'failed';
           await this.prisma.generationJob.updateMany({
-            where: { id: job.id, status: 'running' },
+            where: { id: jobId, status: 'running' },
             data: {
               status: failed ? 'failed' : 'succeeded',
               result: json(result),
@@ -82,13 +86,12 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
         } catch (error) {
           const { generationError } = await import('@pa/agent');
           await this.prisma.generationJob.updateMany({
-            where: { id: job.id, status: 'running' },
+            where: { id: jobId, status: 'running' },
             data: { status: 'failed', error: generationError(error) },
           });
         }
       })
       .catch(() => undefined);
-    return { jobId: job.id, status: job.status };
   }
   async status(id: string, scope: { workspaceId?: string; groupId?: string }) {
     await this.expire();

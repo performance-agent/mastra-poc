@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import type { EvaluationReport } from "@/lib/types";
 import { displayInsight, gradeLabel } from "@/lib/individual-insights";
 import { Button } from "@/components/ui/button";
@@ -36,8 +38,37 @@ function sourceLink(source: string, label: string) {
   return <span>{label}</span>;
 }
 
-export function IndividualInsights({ report }: { report: EvaluationReport }) {
-  const holistic = report.individualInsights;
+export function IndividualInsights({
+  report,
+  workspaceId,
+}: {
+  report: EvaluationReport;
+  workspaceId: string;
+}) {
+  const job = useQuery({
+    queryKey: ["individual-insights", workspaceId, report.individualInsightsJobId],
+    queryFn: () => api.getIndividualInsightsJob(workspaceId, report.individualInsightsJobId!),
+    enabled: !!report.individualInsightsJobId && !report.individualInsights,
+    refetchInterval: (query) =>
+      query.state.status === "error" ||
+      ["succeeded", "failed"].includes(query.state.data?.status ?? "")
+        ? false
+        : 2000,
+    retry: 2,
+  });
+  const holistic =
+    job.data?.status === "succeeded" ? (job.data.result ?? undefined) : report.individualInsights;
+  const individualStatus = holistic
+    ? holistic.generationStatus === "unavailable"
+      ? "Unavailable"
+      : "Completed"
+    : job.data?.status === "failed" ||
+        job.isError ||
+        report.individualInsightsJobStatus === "failed"
+      ? "Unavailable"
+      : (job.data?.status ?? report.individualInsightsJobStatus) === "running"
+        ? "Generating"
+        : "Pending";
   const grades = report.studentSummaries?.students ?? [];
   const people = holistic?.people ?? [];
   const ids = new Set(people.map((p) => p.identifier));
@@ -63,10 +94,24 @@ export function IndividualInsights({ report }: { report: EvaluationReport }) {
   return (
     <section aria-label="Individual insights" className="space-y-4">
       <h4 className="font-semibold">Individual insights</h4>
+      {report.individualInsightsJobId && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {individualStatus}
+          {individualStatus === "Unavailable"
+            ? ". The saved evaluation and grades remain available."
+            : ""}
+        </p>
+      )}
+      {job.data?.status === "failed" && job.data.error && (
+        <p className="text-sm text-muted-foreground">{job.data.error}</p>
+      )}
+      {holistic?.generationStatus === "unavailable" && (
+        <p className="text-sm text-muted-foreground">{holistic.limitations.at(-1)}</p>
+      )}
       <p className="text-sm text-muted-foreground">
         {report.period
-          ? `Stored activity from ${report.period.from} through ${report.period.to} (UTC).`
-          : "Analyzes the available stored activity; no period was specified."}
+          ? `Synthesis of saved evaluations from ${report.period.from} through ${report.period.to} (UTC).`
+          : "Synthesis of saved evaluations; no period was specified."}
       </p>
       {!holistic && (
         <p className="text-sm text-muted-foreground">
@@ -82,7 +127,9 @@ export function IndividualInsights({ report }: { report: EvaluationReport }) {
             <h5 className="font-semibold">
               {grade?.name && grade.name !== person?.actorId ? grade.name : name}
             </h5>
-            {person?.generationStatus === "succeeded" && person.status ? (
+            {(person?.generationStatus === "succeeded" ||
+              person?.status === "insufficient_evidence") &&
+            person.status ? (
               <Badge variant="secondary">{statuses[person.status]}</Badge>
             ) : (
               <span className="text-sm text-muted-foreground">
@@ -101,7 +148,7 @@ export function IndividualInsights({ report }: { report: EvaluationReport }) {
                 person.evidenceAvailability === "partial" ||
                 person.evidenceAvailability === "unavailable") && (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Partial evidence summary; a complete review is unavailable.
+                  Narrative synthesis unavailable; saved observations remain available.
                 </p>
               )}
               <p className="text-sm leading-6">

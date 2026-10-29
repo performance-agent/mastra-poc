@@ -1,8 +1,8 @@
-import { gradingSettings, studentSummaries } from './grading';
+import { randomUUID } from 'node:crypto';
+import { gradingSettings, studentSummaries, resolvedMembers } from './grading';
 import {
   IndividualInsightsService,
-  unavailable,
-  type IndividualInsights,
+  type SynthesisInput,
 } from './individual-insights.service';
 import { GenerationService } from '../generation/generation.service';
 import {
@@ -43,9 +43,7 @@ export class EvaluationsService {
     private readonly flowFactory: EvaluationFlowFactory,
     private readonly prisma: PrismaService,
     private readonly jobs: GenerationService,
-    private readonly insights: IndividualInsightsService = new IndividualInsightsService(
-      prisma,
-    ),
+    private readonly insights: IndividualInsightsService = new IndividualInsightsService(),
   ) {}
 
   async enqueue(
@@ -68,12 +66,18 @@ export class EvaluationsService {
     dto: CreateEvaluationDto,
     view: EvaluationView = EvaluationView.REPORT,
   ) {
+    const evaluationId = randomUUID();
     const { generationStage } = await import('@pa/agent');
     return generationStage(
       'evaluation-request',
       { workspaceId, dto, view },
-      () => this.evaluateRequest(workspaceId, dto, view),
-      { workspaceId, groupId: dto.groupId, runner: langSmithRunnerTag() },
+      () => this.evaluateRequest(workspaceId, dto, view, evaluationId),
+      {
+        evaluationId,
+        workspaceId,
+        groupId: dto.groupId,
+        runner: langSmithRunnerTag(),
+      },
     );
   }
 
@@ -81,6 +85,7 @@ export class EvaluationsService {
     workspaceId: string,
     dto: CreateEvaluationDto,
     view: EvaluationView,
+    evaluationId: string,
   ) {
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
@@ -126,6 +131,7 @@ export class EvaluationsService {
         runName: 'group-evaluation-flow',
         tags: [langSmithRunnerTag()],
         metadata: {
+          evaluationId,
           workspaceId,
           ...(dto.groupId ? { groupId: dto.groupId } : {}),
           view,
@@ -134,81 +140,6 @@ export class EvaluationsService {
     )) as EvaluationFlowResult;
 
     const summaries = studentSummaries(result, settings, rules);
-    let individualInsights: IndividualInsights;
-    try {
-      const { generationStage } = await import('@pa/agent');
-      individualInsights = await generationStage(
-        'team-synthesis',
-        { workspaceId, period },
-        () =>
-          this.insights.generate(
-            workspaceId,
-            {
-              ...dto,
-              rules,
-            },
-            summaries.students,
-          ),
-      );
-    } catch {
-      individualInsights = {
-        schemaVersion: 2,
-        generationStatus: 'unavailable',
-        people: summaries.students.map((person) => {
-          const [provider, installationId, ...actor] =
-            person.identifier.split(':');
-          return unavailable(
-            {
-              identifier: person.identifier,
-              name: person.name,
-              provider,
-              installationId: installationId ?? '',
-              actorId: actor.join(':'),
-              evidence: [],
-            },
-            ['Stored individual evidence could not be read or synthesized.'],
-            'unavailable',
-            [{ stage: 'generation', code: 'generation_failed', paths: [] }],
-          );
-        }),
-        limitations: [
-          'Synthesis unavailable. No performance conclusion was generated.',
-        ],
-      };
-    }
-    // Persist a factual fallback for guideline-only identities using their explicitly
-    // attributed details. Never use another person's evidence or numeric grade.
-    individualInsights.people = individualInsights.people.map((person) => {
-      if (person.references.length || person.contentKind !== 'factual_fallback')
-        return person;
-      const grade = summaries.students.find(
-        (s) => s.identifier === person.identifier,
-      );
-      const evidence = (grade?.details ?? []).flatMap((rule) =>
-        rule.evidence.map((e, i) => ({
-          id: `guideline:${rule.ruleId}:${i}`,
-          identifier: person.identifier,
-          resourceId: '',
-          recordId: '',
-          role: 'stored guideline observation',
-          label: `${e.source}: ${e.observation}`,
-          url: /^https?:\/\//i.test(e.source) ? e.source : null,
-          date: null,
-          facts: e.observation,
-        })),
-      );
-      if (!evidence.length) return person;
-      const { identifier, provider, installationId, actorId, name } = person;
-      return unavailable(
-        { identifier, provider, installationId, actorId, name, evidence },
-        [
-          ...individualInsights.limitations,
-          'Only explicitly attributed guideline observations are available; raw individual activity is unavailable.',
-        ],
-        'partial',
-        person.diagnostics,
-      );
-    });
     const freshness =
       result.resourceExecutionResult?.calls
         .filter((c) => c.status === 'succeeded')
@@ -221,37 +152,98 @@ export class EvaluationsService {
     const report = {
       ...toReportResponse(result),
       studentSummaries: summaries,
-      individualInsights,
+      individualInsightsJobId: randomUUID(),
       period: period ?? null,
       evidenceFreshness: freshness,
     };
+    const synthesisInput: SynthesisInput = {
+      period: period ?? null,
+      limitations: [
+        ...report.limitations,
+        ...freshness.flatMap((f) => f.limitations),
+      ],
+      groupContext: Object.entries(report.assessments).map(([ruleId, a]) => ({
+        ruleId,
+        ruleName: a.ruleName,
+        overview: a.overview,
+        rationale: a.rationale,
+        limitations: a.limitations,
+      })),
+      people: [...resolvedMembers(result, true)].map(
+        ([identifier, person]) => ({
+          identifier,
+          name: person.name,
+          rules: [...person.rules].map(([ruleId, assessment]) => ({
+            ruleId,
+            assessment,
+          })),
+        }),
+      ),
+    };
     let saved: { id: string; createdAt: Date };
     try {
-      saved = await this.prisma.performanceReport.create({
-        data: {
-          organizationId: workspace.organizationId,
-          workspaceId,
-          groupId: dto.groupId ?? null,
-          type: 'AGENT_EVALUATION',
-          data: JSON.parse(
-            JSON.stringify({
-              schemaVersion: 2,
-              gradingSettings: settings,
-              evidenceFreshness: freshness,
-              rules,
-              period: period ?? null,
-              report,
-            }),
-          ) as Prisma.InputJsonValue,
-        },
-        select: { id: true, createdAt: true },
+      saved = await this.prisma.$transaction(async (tx) => {
+        const saved = await tx.performanceReport.create({
+          data: {
+            id: evaluationId,
+            organizationId: workspace.organizationId,
+            workspaceId,
+            groupId: dto.groupId ?? null,
+            type: 'AGENT_EVALUATION',
+            data: JSON.parse(
+              JSON.stringify({
+                schemaVersion: 2,
+                synthesisInput,
+                gradingSettings: settings,
+                evidenceFreshness: freshness,
+                rules,
+                period: period ?? null,
+                report,
+              }),
+            ) as Prisma.InputJsonValue,
+          },
+          select: { id: true, createdAt: true },
+        });
+        await tx.generationJob.create({
+          data: {
+            id: report.individualInsightsJobId,
+            workspaceId,
+            groupId: dto.groupId,
+            kind: 'individual-synthesis',
+            input: { evaluationId },
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          },
+        });
+        return saved;
       });
     } catch {
       throw new ServiceUnavailableException(
         'The evaluation finished but could not be saved. Evaluation storage is unavailable.',
       );
     }
+    this.jobs.schedule(report.individualInsightsJobId, async () => {
+      const stored = await this.prisma.performanceReport.findFirst({
+        where: { id: evaluationId, workspaceId, type: 'AGENT_EVALUATION' },
+      });
+      if (!stored) throw new NotFoundException('Evaluation not found');
+      const input = (
+        stored.data as unknown as { synthesisInput: SynthesisInput }
+      ).synthesisInput;
+      const { generationStage } = await import('@pa/agent');
+      return generationStage(
+        'individual-synthesis',
+        { evaluationId },
+        () => this.insights.generate(input, evaluationId),
+        {
+          evaluationId,
+          workspaceId,
+          groupId: dto.groupId,
+          runner: langSmithRunnerTag(),
+        },
+      );
+    });
     return {
+      individualInsightsJobId: report.individualInsightsJobId,
       ...(view === EvaluationView.FULL ? result : report),
       evaluationId: saved.id,
       createdAt: saved.createdAt,
@@ -297,7 +289,26 @@ export class EvaluationsService {
       where: { id: evaluationId, workspaceId, type: 'AGENT_EVALUATION' },
     });
     if (!saved) throw new NotFoundException('Evaluation not found');
-    return saved;
+    const data = saved.data as unknown as SavedEvaluationData & {
+      report: ReturnType<typeof toReportResponse> & {
+        individualInsightsJobId?: string;
+        individualInsights?: unknown;
+        individualInsightsJobStatus?: string;
+      };
+    };
+    if (data.report.individualInsightsJobId) {
+      const job = await this.jobs
+        .status(data.report.individualInsightsJobId, { workspaceId })
+        .catch(() => null);
+      data.report = {
+        ...data.report,
+        individualInsightsJobStatus: job?.status ?? 'failed',
+        ...(job?.status === 'succeeded'
+          ? { individualInsights: job.result }
+          : {}),
+      };
+    }
+    return { ...saved, data };
   }
 
   private async validateGroup(workspaceId: string, groupId?: string) {

@@ -38,20 +38,7 @@ export const ruleAssessmentAiOutputSchema = z
           memberIdentifier: nonEmptyText,
           memberName: nonEmptyText,
           summary: nonEmptyText,
-          criteria: z
-            .array(
-              compactCriterionSchema.extend({
-                responsibility: z.enum([
-                  'author',
-                  'reviewer',
-                  'assignee',
-                  'other_individual',
-                  'collective',
-                  'unknown',
-                ]),
-              }),
-            )
-            .min(1),
+          criteria: z.array(compactCriterionSchema).min(1),
           evidenceIds: z.array(nonEmptyText),
           rationale: nonEmptyText,
           verdict: verdictSchema,

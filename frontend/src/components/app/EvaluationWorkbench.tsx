@@ -1085,6 +1085,7 @@ function EvaluationLoading() {
 }
 
 function ReportView({ report }: { report: EvaluationReport }) {
+  const { workspaceId } = useWorkbench();
   const assessments = Object.values(report.assessments);
   const diagnosticCount = Object.values(report.diagnostics).reduce(
     (total, entries) => total + entries.length,
@@ -1109,7 +1110,7 @@ function ReportView({ report }: { report: EvaluationReport }) {
           icon={<AlertCircle aria-hidden="true" />}
         />
       </div>
-      <IndividualInsights report={report} />
+      <IndividualInsights report={report} workspaceId={workspaceId} />
       {assessments.length ? (
         assessments.map((assessment, index) => (
           <AssessmentCard key={`${assessment.ruleName}-${index}`} assessment={assessment} />

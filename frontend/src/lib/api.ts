@@ -95,6 +95,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getIndividualInsightsJob: (workspaceId: string, jobId: string) =>
+    request<{
+      status: "queued" | "running" | "succeeded" | "failed";
+      result: EvaluationReport["individualInsights"] | null;
+      error?: string;
+    }>(`/workspaces/${workspaceId}/evaluations/jobs/${jobId}`),
   getGradingSettings: (id: string) =>
     request<GradingSettings>(`/workspaces/${id}/evaluations/grading-settings`),
   saveGradingSettings: (id: string, settings: GradingSettings) =>

@@ -23,8 +23,8 @@ const SYSTEM_PROMPT = `You assess one performance rule using only the supplied e
 Return a concise, display-ready assessment:
 - overview: summarize what the evidence indicates.
 - evidence: define each table-ready source, observation, and relevance row exactly once. Give it a unique evidence ID and list the stable source record IDs or precise aggregate references in recordReferences.
-- memberAssessments: one assessment per distinct member attributable from the evidence. Use an exact actor ID, login or email present in source evidence as memberIdentifier; never use a display name as an identifier; use the best evidence-backed display value as memberName. Reference the shared evidence registry through evidenceIds instead of repeating evidence rows. Do not merge identities unless the evidence explicitly links them. Return an empty array when no member can be identified.
-- criteria: for both the rule and every member, include exactly one criterion for EVERY evaluationQuestions entry, copying its exact text into criterion. Missing evidence must produce unknown, never omit a question. Use expected signals as supporting context.
+- memberAssessments: one assessment per distinct member attributable from the evidence. Use a stable actor ID, login, email, or other source identifier as memberIdentifier; use the best evidence-backed display value as memberName. Reference the shared evidence registry through evidenceIds instead of repeating evidence rows. Do not merge identities unless the evidence explicitly links them. Return an empty array when no member can be identified.
+- criteria: assess each evaluation question or expected signal separately for the overall rule.
 - rationale: provide a concise evidence synthesis using the rubric below; do not expose hidden chain-of-thought. The overall rationale may be detailed enough to resolve mixed evidence, while each member rationale must be brief and specific.
 - verdict: supported, partially_supported, not_supported, or not_evaluable.
 - limitations: state missing, failed, truncated, or otherwise insufficient evidence.
@@ -79,9 +79,6 @@ Member rationale style:
   immediately naming the records and criterion that make the statement relevant.
 
 For each criterion:
-- For member criteria, set responsibility to author, reviewer, assignee, or other_individual only when records establish that person's responsibility for the practice being judged. Otherwise use collective or unknown and status unknown.
-- Separate PR authorship from review authorship and task assignment. Missing reviews by others are never a failure of the PR author. Receiving reviews does not prove that the author performed reviews. A collective review policy without established individual responsibility is unknown for that member, even when the team criterion can be evaluated.
-- Keep each finding to one or two short complete sentences, with the observation first. Preserve nuance and full justification in rationale.
 - Use met only when direct evidence supports it, partially_met for incomplete or mixed support, not_met for direct contrary evidence, and unknown when evidence is absent or insufficient.
 - evidenceIds must reference entries from the shared evidence registry. Use an empty array for unknown criteria. Stable record IDs and precise aggregate references belong in each evidence entry's recordReferences.
 
