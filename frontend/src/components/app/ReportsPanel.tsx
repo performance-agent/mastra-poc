@@ -68,6 +68,9 @@ export function ReportsPanel({
   const [picked, setPicked] = useState<string[]>([]);
   const seeded = useRef(false);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [cancelling, setCancelling] = useState(false);
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
   const [focus, setFocus] = useState<string>("general");
   const [openedReportId, setOpenedReportId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -81,6 +84,37 @@ export function ReportsPanel({
     seeded.current = true;
     setPicked(evaluatorsQ.data.map((evaluator) => evaluator.id));
   }, [evaluatorsQ.data]);
+
+  const activeJobsQ = useQuery({
+    queryKey: ["group", groupId, "active-jobs"],
+    queryFn: () => api.listActiveGroupReports(groupId),
+    refetchOnMount: "always",
+  });
+
+  useEffect(() => {
+    if (!activeJobsQ.isFetched || activeJobsQ.isFetching) return;
+    const incoming = activeJobsQ.data ?? [];
+    const known = new Set(runsRef.current.map((run) => run.jobId));
+    const added = incoming.filter((job) => !known.has(job.jobId));
+    if (added.length === 0) return;
+    setRuns((current) => {
+      const ids = new Set(current.map((run) => run.jobId));
+      const extra = added.filter((job) => !ids.has(job.jobId));
+      if (extra.length === 0) return current;
+      return [
+        ...current,
+        ...extra.map((job) => ({
+          evaluatorId: job.evaluatorId,
+          jobId: job.jobId,
+          startedAt: Date.now(),
+        })),
+      ];
+    });
+    if (runsRef.current.length === 0) {
+      setOpenedReportId(null);
+      setFocus(added[0].evaluatorId);
+    }
+  }, [activeJobsQ.data, activeJobsQ.isFetched, activeJobsQ.isFetching]);
 
   const jobQueries = useQueries({
     queries: runs.map((run) => ({
@@ -143,6 +177,26 @@ export function ReportsPanel({
   const focusRun = runs.find((run) => run.evaluatorId === focus) ?? null;
   const focusJob = focusRun ? jobs.get(focusRun.evaluatorId) : undefined;
   const showProgress = Boolean(focusRun) && focusJob?.status !== "succeeded";
+
+  const cancelQueued = async () => {
+    if (!focusRun || focusJob?.status !== "queued") return;
+    setCancelling(true);
+    try {
+      await api.cancelQueuedGroupReport(groupId, focusRun.jobId);
+      const jobId = focusRun.jobId;
+      setRuns((current) => current.filter((run) => run.jobId !== jobId));
+      qc.setQueryData(
+        ["group", groupId, "active-jobs"],
+        (current: Array<{ jobId: string }> | undefined) =>
+          current?.filter((job) => job.jobId !== jobId) ?? [],
+      );
+      toast.success("Report cancelled");
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const generate = async () => {
     if (picked.length === 0) {
@@ -291,7 +345,11 @@ export function ReportsPanel({
                         {entry.label}
                       </span>
                       <span className="block text-[11px]">
-                        {generating ? "Generating" : `${count} reports`}
+                        {status === "queued"
+                          ? "Queued"
+                          : status === "running"
+                            ? "Generating"
+                            : `${count} reports`}
                       </span>
                     </span>
                   </button>
@@ -367,6 +425,19 @@ export function ReportsPanel({
                         }
                       }
                     />
+                    {focusJob?.status === "queued" && canDelete && (
+                      <div className="-mt-3 mb-4 flex justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={cancelling}
+                          onClick={() => void cancelQueued()}
+                        >
+                          {cancelling ? "Cancelling..." : "Cancel"}
+                        </Button>
+                      </div>
+                    )}
                     {focusJob?.status === "failed" && (
                       <p className="-mt-3 mb-2 text-sm text-red-700">
                         {focusJob.error ?? "Generation failed"}

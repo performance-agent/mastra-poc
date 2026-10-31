@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   OnModuleDestroy,
@@ -154,6 +155,47 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
     });
     if (!job) throw new NotFoundException('Generation job not found');
     return job;
+  }
+
+  async activeGroupReports(groupId: string) {
+    const jobs = await this.prisma.generationJob.findMany({
+      where: {
+        groupId,
+        kind: 'group_report',
+        status: { in: ['queued', 'running'] },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, status: true, input: true, createdAt: true },
+    });
+    return jobs.flatMap((job) => {
+      const input = job.input as { evaluatorId?: unknown };
+      if (typeof input?.evaluatorId !== 'string' || input.evaluatorId.length === 0)
+        return [];
+      return [
+        {
+          jobId: job.id,
+          evaluatorId: input.evaluatorId,
+          status: job.status,
+          createdAt: job.createdAt,
+        },
+      ];
+    });
+  }
+
+  async cancelQueued(id: string, groupId: string) {
+    const cancelled = await this.prisma.generationJob.updateMany({
+      where: { id, groupId, kind: 'group_report', status: 'queued' },
+      data: { status: 'failed', error: 'Cancelled' },
+    });
+    if (cancelled.count === 1) return { status: 'failed' as const };
+    const job = await this.prisma.generationJob.findFirst({
+      where: { id, groupId, kind: 'group_report' },
+      select: { status: true },
+    });
+    if (!job) throw new NotFoundException('Generation job not found');
+    if (job.status === 'running')
+      throw new ConflictException('This report is already being written');
+    throw new ConflictException('This report can no longer be cancelled');
   }
 
   async latestEvaluation(workspaceId: string, groupId: string) {

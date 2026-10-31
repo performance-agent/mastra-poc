@@ -46,6 +46,26 @@ export class GroupsController {
     param: 'id',
     roles: ['OWNER', 'ADMIN', 'VIEWER'],
   })
+  @Get(':id/generation-jobs')
+  activeJobs(@Param('id') id: string) {
+    return this.reportsService.activeGroupReports(id);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/generation-jobs/:jobId/cancel')
+  cancelJob(@Param('id') id: string, @Param('jobId') jobId: string) {
+    return this.reportsService.cancelQueuedGroupReport(id, jobId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.groupsService.findOne(id);

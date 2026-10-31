@@ -366,6 +366,14 @@ export const api = {
     ),
   getGroupGenerationJob: (groupId: string, jobId: string, signal?: AbortSignal) =>
     request<GenerationJob<unknown>>(`/groups/${groupId}/generation-jobs/${jobId}`, { signal }),
+  listActiveGroupReports: (groupId: string) =>
+    request<Array<{ jobId: string; evaluatorId: string; status: "queued" | "running" }>>(
+      `/groups/${groupId}/generation-jobs`,
+    ),
+  cancelQueuedGroupReport: (groupId: string, jobId: string) =>
+    request<{ status: "failed" }>(`/groups/${groupId}/generation-jobs/${jobId}/cancel`, {
+      method: "POST",
+    }),
   listEvaluators: (groupId: string) => request<Evaluator[]>(`/groups/${groupId}/evaluators`),
   createEvaluator: (groupId: string, body: EvaluatorInput) =>
     request<Evaluator>(`/groups/${groupId}/evaluators`, {

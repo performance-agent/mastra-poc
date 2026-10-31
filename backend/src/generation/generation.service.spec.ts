@@ -139,6 +139,41 @@ it('expires interrupted work and prevents further progress updates', async () =>
   expect(jobs.get(jobId).progress.stage).toBe('rule_understanding');
 });
 
+it('cancels a queued report and refuses once it is already running', async () => {
+  const { service, jobs, drain } = setup();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const first = await service.enqueue(
+    'w',
+    'g',
+    'group_report',
+    { evaluatorId: 'a' },
+    async () => {
+      await gate;
+      return { status: 'ready' };
+    },
+  );
+  const second = await service.enqueue(
+    'w',
+    'g',
+    'group_report',
+    { evaluatorId: 'b' },
+    async () => ({ status: 'ready' }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  await expect(service.cancelQueued(first.jobId, 'g')).rejects.toThrow(
+    'already being written',
+  );
+  await service.cancelQueued(second.jobId, 'g');
+  expect(jobs.get(second.jobId).status).toBe('failed');
+  expect(jobs.get(second.jobId).error).toBe('Cancelled');
+  release();
+  await drain();
+  expect(jobs.get(second.jobId).status).toBe('failed');
+});
+
 it('scopes recovery to evaluation jobs in the exact workspace and group', async () => {
   const { service, generationJob } = setup();
   await service.latestEvaluation('workspace', 'group');

@@ -11,7 +11,7 @@ describe('report effort', () => {
 
   it('keeps the current sample and token budget at medium effort', () => {
     expect(reportEffortPreset('MEDIUM', budget)).toMatchObject({
-      sample: 12,
+      sample: 15,
       inputBytes: 48000,
       outputTokens: 4096,
     });
@@ -23,7 +23,7 @@ describe('report effort', () => {
   it('reads a smaller sample at low effort and keeps room to finish the report', () => {
     const preset = reportEffortPreset('LOW', budget);
     expect(preset).toMatchObject({
-      sample: 6,
+      sample: 9,
       inputBytes: 48000,
       outputTokens: 4096,
     });
@@ -32,7 +32,7 @@ describe('report effort', () => {
 
   it('raises sample, input, and output at high effort without lowering an already larger budget', () => {
     expect(reportEffortPreset('HIGH', budget)).toMatchObject({
-      sample: 24,
+      sample: 30,
       inputBytes: 64800,
       outputTokens: 7168,
     });

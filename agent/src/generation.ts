@@ -389,14 +389,32 @@ export function modelRequest<T>(
   return task;
 }
 
+const NESTED_SAMPLE_CAP = 8;
+const AGGREGATE_PEOPLE_CAP = 24;
+const OPEN_PARENT_CAP = 12;
+const TIME_KEYS = [
+  'createdAt',
+  'authoredAt',
+  'committedAt',
+  'submittedAt',
+  'updatedAt',
+] as const;
+
 /** Projection keeps source identity, text, metrics and nested evidence, with explicit omissions. */
 export function projectEvidence(value: unknown, sample = 12): unknown {
-  if (Array.isArray(value))
+  return projectNode(value, sample, true);
+}
+
+function projectNode(value: unknown, sample: number, wide: boolean): unknown {
+  if (Array.isArray(value)) {
+    const take = wide ? sample : Math.min(sample, NESTED_SAMPLE_CAP);
+    const picked = spreadAcross(orderByTime(value), take);
     return {
       total: value.length,
-      omitted: Math.max(0, value.length - sample),
-      sample: value.slice(0, sample).map((v) => projectEvidence(v, sample)),
+      omitted: Math.max(0, value.length - picked.length),
+      sample: picked.map((item) => projectNode(item, sample, wide)),
     };
+  }
   if (!value || typeof value !== 'object')
     return typeof value === 'string' && value.length > 1200
       ? `${value.slice(0, 1200)} [text omitted]`
@@ -409,9 +427,10 @@ export function projectEvidence(value: unknown, sample = 12): unknown {
     'configuration',
   ]);
   const record = value as Record<string, unknown>;
+  const nextWide = wide && !isEvidenceRecord(record);
   const result: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(record))
-    if (!excluded.has(key)) result[key] = projectEvidence(item, sample);
+    if (!excluded.has(key)) result[key] = projectNode(item, sample, nextWide);
   if (Array.isArray(record.records)) {
     const actors: Record<string, number> = {};
     for (const item of record.records as Array<Record<string, unknown>>) {
@@ -431,6 +450,218 @@ export function projectEvidence(value: unknown, sample = 12): unknown {
       0,
       entries.length - Math.max(12, sample * 4),
     );
+    const aggregates = summarizeStoredRecords(record.records);
+    if (aggregates) result.aggregates = aggregates;
   }
   return result;
+}
+
+function orderByTime(items: unknown[]): unknown[] {
+  const times = items.map(timeOf);
+  const dated = times.filter((time) => time !== null).length;
+  if (dated === 0 || dated * 2 < items.length) return items;
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      time: times[index] ?? Number.POSITIVE_INFINITY,
+    }))
+    .sort((a, b) => a.time - b.time || a.index - b.index)
+    .map((entry) => entry.item);
+}
+
+function spreadAcross(items: unknown[], take: number): unknown[] {
+  if (take <= 0 || items.length === 0) return [];
+  if (items.length <= take) return items;
+  if (take === 1) return [items[Math.floor((items.length - 1) / 2)]];
+  const picked: unknown[] = [];
+  const seen = new Set<number>();
+  for (let slot = 0; slot < take; slot += 1) {
+    const index = Math.round((slot * (items.length - 1)) / (take - 1));
+    if (seen.has(index)) continue;
+    seen.add(index);
+    picked.push(items[index]);
+  }
+  return picked;
+}
+
+function timeOf(value: unknown): number | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  for (const key of TIME_KEYS) {
+    if (typeof record[key] !== 'string') continue;
+    const time = Date.parse(record[key]);
+    if (!Number.isNaN(time)) return time;
+  }
+  return null;
+}
+
+function isEvidenceRecord(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.sha === 'string' ||
+    typeof record.number === 'number' ||
+    typeof record.issueType === 'string' ||
+    typeof record.filename === 'string' ||
+    typeof record.parentKey === 'string' ||
+    typeof record.additions === 'number'
+  );
+}
+
+function summarizeStoredRecords(
+  records: unknown[],
+): Record<string, unknown> | undefined {
+  const objects = records.filter(
+    (item): item is Record<string, unknown> =>
+      !!item && typeof item === 'object' && !Array.isArray(item),
+  );
+  const pullRequests = objects.filter(isPullRequest);
+  const commits = objects.filter(isCommit);
+  const tickets = objects.filter(isTicket);
+  const summary: Record<string, unknown> = {};
+  if (pullRequests.length > 0)
+    summary.pullRequests = summarizePullRequests(pullRequests);
+  if (commits.length > 0) summary.commits = summarizeCommits(commits);
+  if (tickets.length > 0) summary.tickets = summarizeTickets(tickets);
+  return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function isPullRequest(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.number === 'number' &&
+    ('mergedAt' in record ||
+      'reviews' in record ||
+      'additions' in record ||
+      'changedFiles' in record ||
+      'baseBranch' in record)
+  );
+}
+
+function isCommit(record: Record<string, unknown>): boolean {
+  return typeof record.sha === 'string' && typeof record.message === 'string';
+}
+
+function isTicket(record: Record<string, unknown>): boolean {
+  return typeof record.key === 'string' && typeof record.status === 'string';
+}
+
+function summarizePullRequests(pullRequests: Record<string, unknown>[]) {
+  let merged = 0;
+  let closedUnmerged = 0;
+  let open = 0;
+  let mergedWithApproval = 0;
+  const byAuthor: Record<string, number> = {};
+  const reviewsByAuthor: Record<string, number> = {};
+  for (const pullRequest of pullRequests) {
+    const mergedAt =
+      typeof pullRequest.mergedAt === 'string' ? pullRequest.mergedAt : null;
+    const state =
+      typeof pullRequest.state === 'string' ? pullRequest.state : '';
+    const didMerge = state === 'merged' || Boolean(mergedAt);
+    if (didMerge) merged += 1;
+    else if (state === 'closed') closedUnmerged += 1;
+    else open += 1;
+    if (didMerge && approvedBeforeMerge(pullRequest, mergedAt))
+      mergedWithApproval += 1;
+    addCount(byAuthor, pullRequest.author);
+    if (!Array.isArray(pullRequest.reviews)) continue;
+    for (const review of pullRequest.reviews) {
+      if (!review || typeof review !== 'object' || Array.isArray(review))
+        continue;
+      addCount(reviewsByAuthor, (review as Record<string, unknown>).author);
+    }
+  }
+  return {
+    total: pullRequests.length,
+    merged,
+    closedUnmerged,
+    open,
+    mergedWithApprovalBeforeMerge: mergedWithApproval,
+    mergedWithoutApproval: merged - mergedWithApproval,
+    byAuthor: topCounts(byAuthor),
+    reviewsByAuthor: topCounts(reviewsByAuthor),
+  };
+}
+
+function approvedBeforeMerge(
+  pullRequest: Record<string, unknown>,
+  mergedAt: string | null,
+): boolean {
+  if (!Array.isArray(pullRequest.reviews)) return false;
+  const mergedTime = mergedAt ? Date.parse(mergedAt) : Number.NaN;
+  return pullRequest.reviews.some((review) => {
+    if (!review || typeof review !== 'object' || Array.isArray(review))
+      return false;
+    const state = (review as Record<string, unknown>).state;
+    if (typeof state !== 'string' || state.toUpperCase() !== 'APPROVED')
+      return false;
+    const submittedAt = (review as Record<string, unknown>).submittedAt;
+    if (typeof submittedAt !== 'string' || Number.isNaN(mergedTime))
+      return true;
+    const submittedTime = Date.parse(submittedAt);
+    return Number.isNaN(submittedTime) || submittedTime <= mergedTime;
+  });
+}
+
+function summarizeCommits(commits: Record<string, unknown>[]) {
+  const byAuthor: Record<string, number> = {};
+  for (const commit of commits) addCount(byAuthor, commit.author);
+  return { total: commits.length, byAuthor: topCounts(byAuthor) };
+}
+
+function summarizeTickets(tickets: Record<string, unknown>[]) {
+  const byKey = new Map<string, Record<string, unknown>>();
+  const children = new Map<string, Record<string, unknown>[]>();
+  let done = 0;
+  for (const ticket of tickets) {
+    if (isDoneTicket(ticket)) done += 1;
+    if (typeof ticket.key === 'string') byKey.set(ticket.key, ticket);
+    if (typeof ticket.parentKey !== 'string') continue;
+    const group = children.get(ticket.parentKey) ?? [];
+    group.push(ticket);
+    children.set(ticket.parentKey, group);
+  }
+  const parentsOpenWithDoneChildren = [...children.entries()]
+    .map(([parentKey, kids]) => {
+      const parent = byKey.get(parentKey);
+      const doneChildren = kids.filter(isDoneTicket).length;
+      if (!parent || isDoneTicket(parent) || doneChildren === 0) return null;
+      return {
+        parent: parentKey,
+        parentStatus: typeof parent.status === 'string' ? parent.status : '',
+        doneChildren,
+        childCount: kids.length,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort(
+      (a, b) =>
+        b.doneChildren - a.doneChildren || a.parent.localeCompare(b.parent),
+    )
+    .slice(0, OPEN_PARENT_CAP);
+  return {
+    total: tickets.length,
+    done,
+    notDone: tickets.length - done,
+    parentsOpenWithDoneChildren,
+  };
+}
+
+function isDoneTicket(ticket: Record<string, unknown>): boolean {
+  if (typeof ticket.resolvedAt === 'string' && ticket.resolvedAt.length > 0)
+    return true;
+  const label = `${ticket.statusCategory ?? ''} ${ticket.status ?? ''}`;
+  return /done|listo|hecho|closed|resolved|complete|finaliz/i.test(label);
+}
+
+function addCount(counts: Record<string, number>, name: unknown) {
+  if (typeof name !== 'string' || name.length === 0) return;
+  counts[name] = (counts[name] ?? 0) + 1;
+}
+
+function topCounts(counts: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(counts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, AGGREGATE_PEOPLE_CAP),
+  );
 }

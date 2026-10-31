@@ -59,7 +59,7 @@ export function reportEffortPreset(
 ): ReportEffortPreset {
   if (effort === 'LOW') {
     return {
-      sample: 6,
+      sample: 9,
       inputBytes: budget.inputBytes,
       outputTokens: budget.outputTokens,
       instruction:
@@ -69,7 +69,7 @@ export function reportEffortPreset(
   if (effort === 'HIGH') {
     const expanded = Math.floor(budget.outputTokens * 1.75);
     return {
-      sample: 24,
+      sample: 30,
       inputBytes: Math.floor(budget.inputBytes * 1.35),
       outputTokens: Math.max(
         budget.outputTokens,
@@ -80,7 +80,7 @@ export function reportEffortPreset(
     };
   }
   return {
-    sample: 12,
+    sample: 15,
     inputBytes: budget.inputBytes,
     outputTokens: budget.outputTokens,
     instruction:

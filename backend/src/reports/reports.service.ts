@@ -92,6 +92,14 @@ export class ReportsService {
     return this.jobs.status(jobId, { groupId });
   }
 
+  activeGroupReports(groupId: string) {
+    return this.jobs.activeGroupReports(groupId);
+  }
+
+  cancelQueuedGroupReport(groupId: string, jobId: string) {
+    return this.jobs.cancelQueued(jobId, groupId);
+  }
+
   private async createSoftwareReport(
     groupId: string,
     options: { evaluatorId?: string; progress?: ReportProgress } = {},
@@ -273,7 +281,7 @@ export class ReportsService {
 
     const coverage = buildCoverage(providerData);
     coverage.limitations.push(
-      'Model input uses bounded evidence samples; aggregate counts cover available stored records. Sample omissions are disclosed in the input.',
+      'Model input uses evidence samples spread across the stored period; aggregate counts cover the full stored history. Sample omissions are disclosed in the input.',
     );
     const reportInput = {
       group: { id: group.id, name: group.name },
