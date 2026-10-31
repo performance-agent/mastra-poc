@@ -5,6 +5,7 @@ import {
   type SynthesisInput,
 } from './individual-insights.service';
 import { GenerationService } from '../generation/generation.service';
+import type { ReportProgress } from '../generation/progress';
 import {
   BadRequestException,
   Inject,
@@ -53,25 +54,36 @@ export class EvaluationsService {
   ) {
     validatePeriod(dto.period);
     await this.validateGroup(workspaceId, dto.groupId);
-    return this.jobs.enqueue(workspaceId, dto.groupId, 'evaluation', dto, () =>
-      this.evaluate(workspaceId, dto, view),
+    return this.jobs.enqueue(
+      workspaceId,
+      dto.groupId,
+      'evaluation',
+      dto,
+      (progress) => this.evaluate(workspaceId, dto, view, progress),
     );
   }
   jobStatus(workspaceId: string, jobId: string) {
     return this.jobs.status(jobId, { workspaceId });
   }
 
+  async latestJob(workspaceId: string, groupId: string) {
+    await this.validateGroup(workspaceId, groupId);
+    return this.jobs.latestEvaluation(workspaceId, groupId);
+  }
+
   async evaluate(
     workspaceId: string,
     dto: CreateEvaluationDto,
     view: EvaluationView = EvaluationView.REPORT,
+    progress?: ReportProgress,
   ) {
     const evaluationId = randomUUID();
     const { generationStage } = await import('@pa/agent');
     return generationStage(
       'evaluation-request',
       { workspaceId, dto, view },
-      () => this.evaluateRequest(workspaceId, dto, view, evaluationId),
+      () =>
+        this.evaluateRequest(workspaceId, dto, view, evaluationId, progress),
       {
         evaluationId,
         workspaceId,
@@ -86,7 +98,9 @@ export class EvaluationsService {
     dto: CreateEvaluationDto,
     view: EvaluationView,
     evaluationId: string,
+    progress?: ReportProgress,
   ) {
+    await progress?.('preparing');
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
@@ -118,6 +132,7 @@ export class EvaluationsService {
       );
     }
 
+    await progress?.('preparing', 'completed');
     const result = (await flow.invoke(
       {
         context: {
@@ -130,6 +145,9 @@ export class EvaluationsService {
       {
         runName: 'group-evaluation-flow',
         tags: [langSmithRunnerTag()],
+        ...(progress
+          ? { configurable: { onEvaluationProgress: progress } }
+          : {}),
         metadata: {
           evaluationId,
           workspaceId,
@@ -139,6 +157,7 @@ export class EvaluationsService {
       },
     )) as EvaluationFlowResult;
 
+    await progress?.('saving');
     const summaries = studentSummaries(result, settings, rules);
     const freshness =
       result.resourceExecutionResult?.calls
@@ -221,27 +240,31 @@ export class EvaluationsService {
         'The evaluation finished but could not be saved. Evaluation storage is unavailable.',
       );
     }
-    this.jobs.schedule(report.individualInsightsJobId, async () => {
-      const stored = await this.prisma.performanceReport.findFirst({
-        where: { id: evaluationId, workspaceId, type: 'AGENT_EVALUATION' },
-      });
-      if (!stored) throw new NotFoundException('Evaluation not found');
-      const input = (
-        stored.data as unknown as { synthesisInput: SynthesisInput }
-      ).synthesisInput;
-      const { generationStage } = await import('@pa/agent');
-      return generationStage(
-        'individual-synthesis',
-        { evaluationId },
-        () => this.insights.generate(input, evaluationId),
-        {
-          evaluationId,
-          workspaceId,
-          groupId: dto.groupId,
-          runner: langSmithRunnerTag(),
-        },
-      );
-    });
+    await progress?.('saving', 'completed');
+    this.jobs.schedule(
+      report.individualInsightsJobId,
+      async (synthesisProgress) => {
+        const stored = await this.prisma.performanceReport.findFirst({
+          where: { id: evaluationId, workspaceId, type: 'AGENT_EVALUATION' },
+        });
+        if (!stored) throw new NotFoundException('Evaluation not found');
+        const input = (
+          stored.data as unknown as { synthesisInput: SynthesisInput }
+        ).synthesisInput;
+        const { generationStage } = await import('@pa/agent');
+        return generationStage(
+          'individual-synthesis',
+          { evaluationId },
+          () => this.insights.generate(input, evaluationId, synthesisProgress),
+          {
+            evaluationId,
+            workspaceId,
+            groupId: dto.groupId,
+            runner: langSmithRunnerTag(),
+          },
+        );
+      },
+    );
     return {
       individualInsightsJobId: report.individualInsightsJobId,
       ...(view === EvaluationView.FULL ? result : report),

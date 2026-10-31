@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
+import {
+  evaluationStages,
+  synthesisStages,
+  type GenerationProgress,
+  type ReportProgress,
+} from './progress';
 
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
@@ -40,7 +46,7 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
     groupId: string | undefined,
     kind: string,
     input: unknown,
-    run: () => Promise<unknown>,
+    run: (reportProgress: ReportProgress) => Promise<unknown>,
   ) {
     const job = await this.prisma.generationJob.create({
       data: {
@@ -54,7 +60,10 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
     this.schedule(job.id, run);
     return { jobId: job.id, status: job.status };
   }
-  schedule(jobId: string, run: () => Promise<unknown>) {
+  schedule(
+    jobId: string,
+    run: (reportProgress: ReportProgress) => Promise<unknown>,
+  ) {
     this.tail = this.tail
       .then(async () => {
         const claimed = await this.prisma.generationJob.updateMany({
@@ -67,7 +76,35 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
         });
         if (!claimed.count) return;
         try {
-          const result = await run();
+          const job = await this.prisma.generationJob.findUniqueOrThrow({
+            where: { id: jobId },
+          });
+          const stages =
+            job.kind === 'evaluation' ? evaluationStages : synthesisStages;
+          const completed = new Set<string>();
+          const reportProgress: ReportProgress = async (
+            stage,
+            state = 'started',
+          ) => {
+            if (state === 'completed') completed.add(stage);
+            const progress: GenerationProgress = {
+              stage,
+              completed: [...completed],
+              total: stages.length,
+              updatedAt: new Date().toISOString(),
+            };
+            const updated = await this.prisma.generationJob.updateMany({
+              where: {
+                id: jobId,
+                status: 'running',
+                expiresAt: { gt: new Date() },
+              },
+              data: { progress: json(progress) },
+            });
+            if (!updated.count)
+              throw new Error('Generation expired or is no longer running');
+          };
+          const result = await run(reportProgress);
           const failed =
             result &&
             typeof result === 'object' &&
@@ -84,10 +121,12 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
             },
           });
         } catch (error) {
-          const { generationError } = await import('@pa/agent');
+          const message = await import('@pa/agent')
+            .then(({ generationError }) => generationError(error))
+            .catch(() => 'Generation failed. Submit a new job.');
           await this.prisma.generationJob.updateMany({
             where: { id: jobId, status: 'running' },
-            data: { status: 'failed', error: generationError(error) },
+            data: { status: 'failed', error: message },
           });
         }
       })
@@ -101,6 +140,7 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
         id: true,
         status: true,
         result: true,
+        progress: true,
         error: true,
         createdAt: true,
         updatedAt: true,
@@ -109,5 +149,23 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
     });
     if (!job) throw new NotFoundException('Generation job not found');
     return job;
+  }
+
+  async latestEvaluation(workspaceId: string, groupId: string) {
+    await this.expire();
+    return this.prisma.generationJob.findFirst({
+      where: { workspaceId, groupId, kind: 'evaluation' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        status: true,
+        progress: true,
+        result: true,
+        error: true,
+        createdAt: true,
+        updatedAt: true,
+        expiresAt: true,
+      },
+    });
   }
 }

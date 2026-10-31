@@ -1,4 +1,4 @@
-import type { GradingSettings } from "./types";
+import type { GradingSettings, GenerationJob } from "./types";
 import type {
   Organization,
   Workspace,
@@ -96,11 +96,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getIndividualInsightsJob: (workspaceId: string, jobId: string) =>
-    request<{
-      status: "queued" | "running" | "succeeded" | "failed";
-      result: EvaluationReport["individualInsights"] | null;
-      error?: string;
-    }>(`/workspaces/${workspaceId}/evaluations/jobs/${jobId}`),
+    request<GenerationJob<EvaluationReport["individualInsights"]>>(
+      `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
+    ),
+  getEvaluationJob: (workspaceId: string, jobId: string, signal?: AbortSignal) =>
+    request<GenerationJob<EvaluationReport>>(
+      `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
+      { signal },
+    ),
+  getLatestEvaluationJob: (workspaceId: string, groupId: string, signal?: AbortSignal) =>
+    request<GenerationJob<EvaluationReport> | null>(
+      `/workspaces/${workspaceId}/evaluations/jobs/latest?${new URLSearchParams({ groupId })}`,
+      { signal },
+    ),
+  startEvaluationWorkspace: (workspaceId: string, body: EvaluationRequest) =>
+    request<{ jobId: string; status: string }>(
+      `/workspaces/${workspaceId}/evaluations?view=report`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
   getGradingSettings: (id: string) =>
     request<GradingSettings>(`/workspaces/${id}/evaluations/grading-settings`),
   saveGradingSettings: (id: string, settings: GradingSettings) =>

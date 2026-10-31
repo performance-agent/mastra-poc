@@ -1,0 +1,131 @@
+{
+  "groupId": "cmvsjutyz000hock5x46qsf90",
+  "workspaceId": "cmvsjuk04000gock5qash576b",
+  "jobId": "cmvwjgvqg0000swk5ny3mr17n",
+  "posts": 1,
+  "reloaded": true,
+  "evaluation": {
+    "status": "succeeded",
+    "progress": {
+      "stage": "saving",
+      "total": 10,
+      "completed": [
+        "preparing",
+        "rule_input",
+        "resource_catalog",
+        "rule_understanding",
+        "resource_selection",
+        "resource_operation_deduplication",
+        "evaluation_plan",
+        "resource_execution",
+        "rule_assessment",
+        "saving"
+      ],
+      "updatedAt": "2026-10-31T15:16:01.892Z"
+    },
+    "error": null,
+    "evaluationId": "23379be3-d83f-45c8-8c55-6b69c7c3aedb",
+    "reportStatus": "constrained",
+    "limitations": [
+      "Direct linkage between commit SHA and specific requirement tickets in an external project management system outside of GitHub repository context.: While pull requests can be linked to GitHub issues, commits may refer to external Jira or proprietary ticketing systems which cannot be verified with the provided catalog.",
+      "Specific identification or classification of pull requests as 'high-risk' or 'critical' beyond simple line-count-based volume metrics.: Without a clear definition of risk, it is difficult to isolate the PRs that require the most stringent review standards.",
+      "Direct tracking of issue 'reopening' status or lifecycle events indicating a state transition from 'closed' back to 'open' specifically due to regression.: Cannot definitively conclude if bugs are recurring based solely on issue state transitions without metadata flagging 'reopened' status.",
+      "Pull request activity is not equivalent to commit activity.",
+      "Pull request totals and current state are not historical snapshots or period-only counts.",
+      "Counts commits, not pull requests.",
+      "GitHub repository statistics exclude merge commits."
+    ]
+  },
+  "synthesis": {
+    "status": "succeeded",
+    "progress": {
+      "stage": "finalizing",
+      "total": 4,
+      "completed": [
+        "preparing",
+        "generating",
+        "validating",
+        "finalizing"
+      ],
+      "updatedAt": "2026-10-31T15:16:31.778Z"
+    },
+    "error": null,
+    "generationStatus": "succeeded",
+    "limitations": [
+      "Direct linkage between commit SHA and specific requirement tickets in an external project management system outside of GitHub repository context.: While pull requests can be linked to GitHub issues, commits may refer to external Jira or proprietary ticketing systems which cannot be verified with the provided catalog.",
+      "Specific identification or classification of pull requests as 'high-risk' or 'critical' beyond simple line-count-based volume metrics.: Without a clear definition of risk, it is difficult to isolate the PRs that require the most stringent review standards.",
+      "Direct tracking of issue 'reopening' status or lifecycle events indicating a state transition from 'closed' back to 'open' specifically due to regression.: Cannot definitively conclude if bugs are recurring based solely on issue state transitions without metadata flagging 'reopened' status.",
+      "Pull request activity is not equivalent to commit activity.",
+      "Pull request totals and current state are not historical snapshots or period-only counts.",
+      "Counts commits, not pull requests.",
+      "GitHub repository statistics exclude merge commits.",
+      "Evidence synchronized through 2026-10-31T15:11:33.178Z. Deletions and rewritten history may not be detectable.",
+      "Evidence synchronized through 2026-10-31T15:15:28.078Z. Deletions and rewritten history may not be detectable.",
+      "Evidence synchronized through 2026-10-31T15:15:30.027Z. Deletions and rewritten history may not be detectable.",
+      "Synthesis of previous evaluations; original sources were not independently verified."
+    ]
+  },
+  "events": [
+    {
+      "at": "2026-10-31T15:11:20.524Z",
+      "panel": "evaluation-progress",
+      "headline": "Submitting evaluation",
+      "screenshot": "01-evaluation-progress-Submitting-evaluation.png"
+    },
+    {
+      "at": "2026-10-31T15:11:20.963Z",
+      "panel": "evaluation-progress",
+      "headline": "Recovering evaluation progress",
+      "screenshot": "02-evaluation-progress-Recovering-evaluation-progress.png"
+    },
+    {
+      "at": "2026-10-31T15:11:23.156Z",
+      "panel": "evaluation-progress",
+      "headline": "Interpreting rules\n\n3 of 10 steps completed",
+      "screenshot": "03-evaluation-progress-Interpreting-rules.png"
+    },
+    {
+      "at": "2026-10-31T15:11:27.494Z",
+      "panel": "evaluation-progress",
+      "headline": "Selecting resources\n\n4 of 10 steps completed",
+      "screenshot": "04-evaluation-progress-Selecting-resources.png"
+    },
+    {
+      "at": "2026-10-31T15:11:34.452Z",
+      "panel": "evaluation-progress",
+      "headline": "Collecting evidence\n\n7 of 10 steps completed",
+      "screenshot": "05-evaluation-progress-Collecting-evidence.png"
+    },
+    {
+      "at": "2026-10-31T15:15:32.161Z",
+      "panel": "evaluation-progress",
+      "headline": "Assessing rules and contributions\n\n8 of 10 steps completed",
+      "screenshot": "06-evaluation-progress-Assessing-rules-and-contributions.png"
+    },
+    {
+      "at": "2026-10-31T15:16:04.161Z",
+      "panel": "synthesis-progress",
+      "headline": "Recovering evaluation progress",
+      "screenshot": "07-synthesis-progress-Recovering-evaluation-progress.png"
+    },
+    {
+      "at": "2026-10-31T15:16:04.845Z",
+      "panel": "evaluation-progress",
+      "headline": "Completed with limitations\n\n10 of 10 steps completed",
+      "screenshot": "08-evaluation-progress-Completed-with-limitations.png"
+    },
+    {
+      "at": "2026-10-31T15:16:05.371Z",
+      "panel": "synthesis-progress",
+      "headline": "Generating individual insights\n\n1 of 4 steps completed",
+      "screenshot": "09-synthesis-progress-Generating-individual-insights.png"
+    },
+    {
+      "at": "2026-10-31T15:16:33.628Z",
+      "panel": "synthesis-progress",
+      "headline": "Completed with limitations\n\n4 of 4 steps completed",
+      "screenshot": "10-synthesis-progress-Completed-with-limitations.png"
+    }
+  ],
+  "browserErrors": []
+}

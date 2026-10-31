@@ -1,5 +1,20 @@
 export type Role = "OWNER" | "ADMIN" | "VIEWER";
 
+export type GenerationProgress = {
+  stage: string;
+  completed: string[];
+  total: number;
+  updatedAt: string;
+};
+
+export type GenerationJob<T> = {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  progress: GenerationProgress | null;
+  result: T | null;
+  error: string | null;
+};
+
 export interface Organization {
   id: string;
   name: string;

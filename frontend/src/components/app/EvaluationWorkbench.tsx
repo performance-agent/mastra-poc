@@ -1,3 +1,4 @@
+import { GenerationProgressPanel } from "./GenerationProgress";
 import { IndividualInsights } from "./IndividualInsights";
 import { GradingControls } from "./GradingControls";
 import { TaskAnalysis } from "./TaskAnalysis";
@@ -9,6 +10,7 @@ import {
   useId,
   useMemo,
   useState,
+  useRef,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
@@ -33,8 +35,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { api, errorMessage } from "@/lib/api";
+import { api, ApiError, errorMessage } from "@/lib/api";
 import type {
+  GenerationJob,
   AssessmentCriterion,
   AssessmentVerdict,
   EvaluationReport,
@@ -74,6 +77,11 @@ type WorkbenchState = {
   report?: EvaluationReport;
   error?: string;
   isRunning: boolean;
+  submitting: boolean;
+  job?: GenerationJob<EvaluationReport>;
+  reconnecting: boolean;
+  trackingError?: string;
+  retryTracking: () => void;
   run: () => Promise<void>;
   setGradingOverrides: (value?: GradingSettings) => void;
 };
@@ -88,6 +96,10 @@ function useWorkbench() {
 
 function newRule(name = "", description = "", valuation = 5): EvaluationRule {
   return { id: crypto.randomUUID(), name, description, valuation };
+}
+
+function isTrackingAccessError(error: unknown) {
+  return error instanceof ApiError && [401, 403, 404].includes(error.statusCode);
 }
 
 function EvaluationProvider({
@@ -111,9 +123,59 @@ function EvaluationProvider({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [gradingOverrides, setGradingOverrides] = useState<GradingSettings>();
-  const [report, setReport] = useState<EvaluationReport>();
+  const [jobId, setJobId] = useState<string>();
+  const submittedJobId = useRef<string | undefined>(undefined);
   const [error, setError] = useState<string>();
-  const [isRunning, setIsRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const latestJobQ = useQuery({
+    queryKey: ["workspace", workspaceId, "latest-evaluation-job", groupId],
+    queryFn: ({ signal }) => api.getLatestEvaluationJob(workspaceId, groupId, signal),
+    enabled: !jobId && !submitting,
+    staleTime: 0,
+    refetchOnMount: "always",
+    retry: (count, error) => !isTrackingAccessError(error) && count < 2,
+    refetchInterval: (query) =>
+      !isTrackingAccessError(query.state.error) && query.state.status === "error" ? 5000 : false,
+  });
+  useEffect(() => {
+    if (!jobId && !submitting && !latestJobQ.isFetching && latestJobQ.data)
+      setJobId(latestJobQ.data.id);
+  }, [jobId, submitting, latestJobQ.isFetching, latestJobQ.data]);
+  const jobQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluation-job", groupId, jobId],
+    queryFn: ({ signal }) => api.getEvaluationJob(workspaceId, jobId!, signal),
+    enabled: !!jobId,
+    retry: (count, error) =>
+      !(error instanceof ApiError && [401, 403, 404].includes(error.statusCode)) && count < 2,
+    refetchInterval: (query) => {
+      if (
+        query.state.error instanceof ApiError &&
+        [401, 403, 404].includes(query.state.error.statusCode)
+      )
+        return false;
+      return ["succeeded", "failed"].includes(query.state.data?.status ?? "") ? false : 2000;
+    },
+  });
+  const job = jobQ.data;
+  const trackingError = [jobQ.error, latestJobQ.error].find(
+    (error) => error instanceof ApiError && [401, 403, 404].includes(error.statusCode),
+  );
+  const report = submitting ? undefined : (job?.result ?? undefined);
+  const isRunning =
+    submitting ||
+    (!jobId && (latestJobQ.isPending || latestJobQ.isFetching)) ||
+    (Boolean(jobId) && (!job || ["queued", "running"].includes(job.status)));
+  useEffect(() => {
+    if (!job || !["succeeded", "failed"].includes(job.status)) return;
+    void queryClient.invalidateQueries({
+      queryKey: ["workspace", workspaceId, "evaluations", groupId],
+    });
+    if (submittedJobId.current === job.id) {
+      submittedJobId.current = undefined;
+      if (job.status === "succeeded") toast.success("Evaluation saved");
+      else toast.error("Evaluation could not be completed");
+    }
+  }, [job, queryClient, workspaceId, groupId]);
   const selectedPackage = packagesQ.data?.find((value) => value.id === selectedPackageId);
 
   const selectPackage = (value: RulePackage) => {
@@ -151,29 +213,26 @@ function EvaluationProvider({
       return;
     }
 
-    setIsRunning(true);
+    if (isRunning) return;
+    setSubmitting(true);
     setSelectedEvaluationId(undefined);
     setError(undefined);
     try {
-      const response = await api.evaluateWorkspace(
-        workspaceId,
-        {
-          rules: rules.map(({ name, description, valuation }) => ({
-            name: name.trim(),
-            description: description.trim() || undefined,
-            valuation,
-          })),
-          period: from && to ? { from, to } : undefined,
-          groupId,
-          gradingOverrides,
-        },
-        "report",
-      );
-      setReport(response as EvaluationReport);
+      const response = await api.startEvaluationWorkspace(workspaceId, {
+        rules: rules.map(({ name, description, valuation }) => ({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          valuation,
+        })),
+        period: from && to ? { from, to } : undefined,
+        groupId,
+        gradingOverrides,
+      });
+      submittedJobId.current = response.jobId;
+      setJobId(response.jobId);
       void queryClient.invalidateQueries({
         queryKey: ["workspace", workspaceId, "evaluations", groupId],
       });
-      toast.success("Evaluation saved");
     } catch (caught) {
       const message = errorMessage(caught);
       setError(
@@ -181,7 +240,7 @@ function EvaluationProvider({
       );
       toast.error("Evaluation could not be completed");
     } finally {
-      setIsRunning(false);
+      setSubmitting(false);
     }
   };
 
@@ -205,6 +264,13 @@ function EvaluationProvider({
     report,
     error,
     isRunning,
+    submitting,
+    job,
+    reconnecting: !trackingError && (jobQ.isError || latestJobQ.isError),
+    trackingError: trackingError ? errorMessage(trackingError) : undefined,
+    retryTracking: () => {
+      void (jobId ? jobQ.refetch() : latestJobQ.refetch());
+    },
     run,
     setGradingOverrides,
   };
@@ -892,7 +958,17 @@ function DateField({
 }
 
 function EvaluationOutput() {
-  const { report: latestReport, isRunning, workspaceId, selectedEvaluationId } = useWorkbench();
+  const {
+    report: latestReport,
+    isRunning,
+    submitting,
+    job,
+    reconnecting,
+    trackingError,
+    retryTracking,
+    workspaceId,
+    selectedEvaluationId,
+  } = useWorkbench();
   const savedQ = useQuery({
     queryKey: ["workspace", workspaceId, "evaluation", selectedEvaluationId],
     queryFn: () => api.getEvaluation(workspaceId, selectedEvaluationId!),
@@ -903,8 +979,6 @@ function EvaluationOutput() {
   return (
     <section
       aria-labelledby="evaluation-report-title"
-      aria-live="polite"
-      aria-busy={isRunning}
       className="min-w-0 bg-white/70 p-5 sm:p-7 dark:bg-slate-950/25"
     >
       <div className="mb-5 flex items-center justify-between gap-3">
@@ -918,6 +992,22 @@ function EvaluationOutput() {
         </div>
         {report ? <StatusMark status={report.status} /> : null}
       </div>
+      {!selectedEvaluationId && (isRunning || job || reconnecting || trackingError) && (
+        <GenerationProgressPanel
+          job={submitting ? undefined : job}
+          submitting={submitting}
+          reconnecting={reconnecting}
+          trackingError={trackingError}
+          limited={
+            !!latestReport && (latestReport.status !== "ready" || !!latestReport.limitations.length)
+          }
+        />
+      )}
+      {!selectedEvaluationId && trackingError && (
+        <Button variant="outline" className="mb-4" onClick={retryTracking}>
+          Retry progress updates
+        </Button>
+      )}
       {saved ? (
         <div className="mb-5 rounded-xl border p-4 text-sm">
           <p className="font-semibold">
@@ -952,7 +1042,9 @@ function EvaluationOutput() {
           Loading saved evaluation…
         </p>
       ) : isRunning ? (
-        <EvaluationLoading />
+        <p className="text-sm text-muted-foreground">
+          You can leave this group and return to follow the evaluation.
+        </p>
       ) : report ? (
         <ReportView report={report} />
       ) : (

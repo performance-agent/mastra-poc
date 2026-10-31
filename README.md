@@ -1,5 +1,44 @@
 # mastra-poc
 
+## Evaluation progress
+
+Apply `20261031000000_generation_progress` through the normal Prisma migration
+deployment workflow before starting the updated backend. It adds a nullable JSON
+progress field to generation jobs; existing jobs remain readable.
+
+Evaluation status responses now include `progress` with the current stage,
+completed stage identifiers, total steps, and update time. The authenticated
+`GET /workspaces/:workspaceId/evaluations/jobs/latest?groupId=...` endpoint
+recovers the latest evaluation for that workspace and group. The frontend polls
+every two seconds, resumes tracking after reload/navigation, and keeps the saved
+report available while individual synthesis runs. Counts represent completed
+steps, not elapsed-time percentages. Interrupted jobs retain the existing
+expiration behavior and are not replayed after a backend restart.
+
+Run `npm run test:progress` in `frontend` with the local Vite server running
+(default `http://127.0.0.1:5173`; override `PROGRESS_TEST_BASE_URL`). The browser
+checks use installed Chrome by default (`PLAYWRIGHT_CHANNEL` can override it).
+They cover polling, reload, group navigation, reconnection, terminal errors and
+individual synthesis. Screenshots are written to
+`artifacts/evaluation-progress/ui-tests/` and visibly labeled as simulated API
+responses, not live evaluations.
+
+Verification on 2026-10-31: 78 agent tests, 14 targeted backend tests and four
+browser scenarios passed; frontend/backend compilation and frontend type/lint
+checks passed. The full backend suite also exposes existing ESM-loading and
+outdated dependency-mock failures.
+
+After the local database was restarted, migration
+`20261031000000_generation_progress` was applied successfully. A live evaluation
+of Atenzia (`lab3-atenti`) on 2026-10-31 completed all 10 evaluation steps and all
+four individual-synthesis steps. Both jobs succeeded; the saved report is
+`23379be3-d83f-45c8-8c55-6b69c7c3aedb`. The report is constrained by the available
+evidence and the UI correctly displays “Completed with limitations.” Reloading
+during rule interpretation recovered the same job; exactly one evaluation was
+submitted and no browser runtime errors were observed. Actual screenshots and
+the observed state transitions are in `artifacts/evaluation-progress/live/`;
+these are separate from the simulated browser-test screenshots.
+
 ## Evidence, generation jobs and grading
 
 Build `core` and `agent` before building the backend. The additive migration
