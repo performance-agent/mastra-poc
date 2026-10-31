@@ -161,10 +161,11 @@ function EvaluationProvider({
     (error) => error instanceof ApiError && [401, 403, 404].includes(error.statusCode),
   );
   const report = submitting ? undefined : (job?.result ?? undefined);
+  const missingJob = jobQ.error instanceof ApiError && jobQ.error.statusCode === 404;
   const isRunning =
     submitting ||
     (!jobId && (latestJobQ.isPending || latestJobQ.isFetching)) ||
-    (Boolean(jobId) && (!job || ["queued", "running"].includes(job.status)));
+    (!missingJob && Boolean(jobId) && (!job || ["queued", "running"].includes(job.status)));
   useEffect(() => {
     if (!job || !["succeeded", "failed"].includes(job.status)) return;
     void queryClient.invalidateQueries({

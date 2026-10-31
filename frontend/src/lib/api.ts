@@ -99,11 +99,24 @@ export const api = {
     request<GenerationJob<EvaluationReport["individualInsights"]>>(
       `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
     ),
-  getEvaluationJob: (workspaceId: string, jobId: string, signal?: AbortSignal) =>
-    request<GenerationJob<EvaluationReport>>(
+  getEvaluationJob: async (workspaceId: string, jobId: string, signal?: AbortSignal) => {
+    const job = await request<GenerationJob<EvaluationReport | { evaluationId: string }>>(
       `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
       { signal },
-    ),
+    );
+    // Full-view jobs store graph state, while the workbench renders saved reports.
+    if (job.result && !("assessments" in job.result)) {
+      const saved = await request<SavedEvaluation>(
+        `/workspaces/${workspaceId}/evaluations/${job.result.evaluationId}`,
+        { signal },
+      );
+      return {
+        ...job,
+        result: { ...saved.data.report, evaluationId: saved.id, createdAt: saved.createdAt },
+      };
+    }
+    return { ...job, result: job.result };
+  },
   getLatestEvaluationJob: (workspaceId: string, groupId: string, signal?: AbortSignal) =>
     request<GenerationJob<EvaluationReport> | null>(
       `/workspaces/${workspaceId}/evaluations/jobs/latest?${new URLSearchParams({ groupId })}`,

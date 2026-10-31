@@ -69,6 +69,7 @@ async function setup(t, initialJob) {
     posts: 0,
     failPolls: false,
     forbidden: false,
+    missing: false,
     pollCount: 0,
   };
   const errors = [];
@@ -112,7 +113,10 @@ async function setup(t, initialJob) {
       body = state.jobs[url.searchParams.get("groupId")];
     else if (url.pathname.includes("/jobs/")) {
       state.pollCount++;
-      if (state.forbidden) {
+      if (state.missing) {
+        status = 404;
+        body = { message: "Generation job not found" };
+      } else if (state.forbidden) {
         status = 403;
         body = { message: "Insufficient permissions" };
       } else if (state.failPolls) {
@@ -125,9 +129,11 @@ async function setup(t, initialJob) {
     } else if (url.pathname.endsWith("/evaluations") && request.method() === "POST") {
       state.posts++;
       const group = request.postDataJSON().groupId;
-      state.jobs[group] = job();
+      state.jobs[group] = job(`evaluation-test-${state.posts}`);
       body = { jobId: state.jobs[group].id, status: "queued" };
-    } else if (url.pathname.endsWith("/evaluations")) body = { items: [], nextCursor: null };
+    } else if (url.pathname.endsWith("/evaluations/report-test"))
+      body = { id: "report-test", createdAt: report().createdAt, data: { report: report() } };
+    else if (url.pathname.endsWith("/evaluations")) body = { items: [], nextCursor: null };
     await route.fulfill({
       status,
       contentType: "application/json",
@@ -206,6 +212,35 @@ test(
     await screenshot(page, "06-completed-simulated");
   },
 );
+
+test("recovers a full-view job through its saved report", { timeout: 20000 }, async (t) => {
+  const evaluation = job();
+  evaluation.status = "succeeded";
+  evaluation.result = { evaluationId: "report-test", status: "ready", ruleAssessmentResult: {} };
+  const { page } = await setup(t, evaluation);
+  await visible(page, "Evaluation saved");
+  await page
+    .getByText("Saved report remains available during individual synthesis.", { exact: true })
+    .waitFor();
+});
+
+test("a missing job allows a replacement evaluation", { timeout: 25000 }, async (t) => {
+  const evaluation = job();
+  progress(evaluation, "resource_execution");
+  const { page, state } = await setup(t, evaluation);
+  await visible(page, "7 of 10 steps completed");
+  state.missing = true;
+  await visible(page, "Progress unavailable");
+  const generate = page.getByRole("button", { name: "Generate Evaluation Report" });
+  assert.equal(await generate.isEnabled(), true);
+  const count = state.pollCount;
+  await page.waitForTimeout(2500);
+  assert.equal(state.pollCount, count);
+  state.missing = false;
+  await generate.click();
+  await visible(page, "Queued — waiting to start");
+  assert.equal(state.posts, 1);
+});
 
 test(
   "navigation isolates groups and restores the active evaluation",
