@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AVATAR_COUNT } from '../../evaluators/default-evaluators';
 import { EVALUATION_EMPHASIS_VALUES } from '../evaluation-guidelines';
 
 const reportStatusSchema = z
@@ -207,6 +208,23 @@ export const groupReportContentSchema = z.object({
       action: z.string(),
     }),
   ),
+
+  questionAnswers: z
+    .array(
+      z.object({
+        question: z
+          .string()
+          .describe('Texto exacto de una pregunta del evaluador.'),
+        answer: z
+          .string()
+          .describe(
+            'Respuesta breve basada solo en la evidencia. Si no alcanza, decirlo.',
+          ),
+      }),
+    )
+    .describe(
+      'Una entrada por cada pregunta suministrada, en el mismo orden. Array vacío si no hay preguntas.',
+    ),
 });
 
 const coverageSchema = z.object({
@@ -223,9 +241,32 @@ const evaluationGuidelinesSnapshotSchema = z.object({
   notes: z.string().nullable(),
 });
 
+const evaluatorSnapshotSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  scope: z.enum(['WORKSPACE', 'GROUP']),
+  effort: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+  avatar: z
+    .number()
+    .int()
+    .min(0)
+    .max(AVATAR_COUNT - 1),
+  personality: z.enum(['demanding', 'direct', 'careful']),
+  guidelines: evaluationGuidelinesSnapshotSchema,
+  rules: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string().nullable(),
+      valuation: z.number().int(),
+    }),
+  ),
+  questions: z.array(z.string()),
+});
+
 export const groupReportSchema = groupReportContentSchema.extend({
   coverage: coverageSchema,
   evaluationGuidelines: evaluationGuidelinesSnapshotSchema.nullable(),
+  evaluator: evaluatorSnapshotSchema.nullable(),
 });
 
 export type GroupReportContent = z.infer<typeof groupReportContentSchema>;

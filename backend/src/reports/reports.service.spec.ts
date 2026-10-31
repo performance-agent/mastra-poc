@@ -56,6 +56,7 @@ const minimalReportContent = {
   people: [],
   evidence: [],
   recommendations: [],
+  questionAnswers: [],
 };
 
 describe('ReportsService', () => {
@@ -149,12 +150,14 @@ describe('ReportsService', () => {
     );
     expect(groupGenerate).toHaveBeenCalled();
     expect(prisma.performanceReport.create).toHaveBeenCalledWith({
-      data: {
+        data: {
         groupId: 'group-1',
+        evaluatorId: null,
         type: 'GROUP_REPORT',
         data: expect.objectContaining({
           summary: 'group',
           evaluationGuidelines: null,
+          evaluator: null,
           coverage: expect.objectContaining({
             resourcesAnalyzed: 1,
             datasetsAnalyzed: 1,

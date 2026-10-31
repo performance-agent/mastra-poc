@@ -3,6 +3,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
+import { defaultWorkspaceEvaluators } from '../evaluators/default-evaluators';
 
 @Injectable()
 export class WorkspacesService {
@@ -13,7 +14,7 @@ export class WorkspacesService {
   async create(organizationId: string, createWorkspaceDto: CreateWorkspaceDto) {
     await this.ensureOrganizationExists(organizationId);
 
-    return this.prismaService.workspace.create({
+    const workspace = await this.prismaService.workspace.create({
       data: {
         ...createWorkspaceDto,
         organization: {
@@ -21,6 +22,12 @@ export class WorkspacesService {
         },
       },
     });
+    await this.prismaService.$transaction(
+      defaultWorkspaceEvaluators(workspace.id).map((data) =>
+        this.prismaService.evaluator.create({ data }),
+      ),
+    );
+    return workspace;
   }
 
   async findAll(organizationId: string, userId: string) {

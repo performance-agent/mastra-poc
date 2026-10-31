@@ -1,0 +1,84 @@
+model Evaluator {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  scope  EvaluatorScope
+  effort EvaluatorEffort @default(MEDIUM)
+  avatar Int             @default(0)
+
+  personality EvaluatorPersonality @default(direct)
+
+  evaluationEmphasis GroupEvaluationEmphasis[] @default([])
+  evaluationNotes    String?
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  groupId String?
+  group   Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  ownerId String?
+  owner   User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  rules              EvaluatorRule[]
+  questions          EvaluatorQuestion[]
+  performanceReports PerformanceReport[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([scope])
+  @@index([workspaceId])
+  @@index([groupId])
+  @@index([ownerId])
+}
+
+model EvaluatorRule {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  valuation   Int
+  position    Int
+
+  evaluatorId String
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([evaluatorId, position])
+  @@index([evaluatorId])
+}
+
+model EvaluatorQuestion {
+  id       String @id @default(cuid())
+  text     String
+  position Int
+
+  evaluatorId String
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([evaluatorId, position])
+  @@index([evaluatorId])
+}
+
+enum EvaluatorPersonality {
+  demanding
+  direct
+  careful
+}
+
+enum EvaluatorScope {
+  WORKSPACE
+  GROUP
+}
+
+enum EvaluatorEffort {
+  LOW
+  MEDIUM
+  HIGH
+}

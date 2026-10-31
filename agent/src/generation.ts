@@ -19,6 +19,8 @@ export function generationStage<T>(
 
 export type ModelRequestOptions = {
   maxRetries?: number;
+  /** When set, this request may exceed the model default. The caller already bounded the payload to this size. */
+  inputBytes?: number;
   beforeAttempt?: () => void;
   metadata?: () => Record<string, unknown>;
 };
@@ -279,6 +281,16 @@ class GenerationFailure extends Error {
   }
 }
 
+function allowedInputBytes(fallback: number, override?: number) {
+  if (
+    override === undefined ||
+    !Number.isSafeInteger(override) ||
+    override <= 0
+  )
+    return fallback;
+  return override;
+}
+
 let tail: Promise<unknown> = Promise.resolve();
 export function modelRequest<T>(
   model: string,
@@ -289,8 +301,10 @@ export function modelRequest<T>(
 ): Promise<T> {
   const task = tail.then(async () => {
     const budget = modelBudget(model);
+    const inputBytes = allowedInputBytes(budget.inputBytes, options.inputBytes);
+    const enforced = { ...budget, inputBytes };
     const bytes = Buffer.byteLength(JSON.stringify(payload));
-    if (bytes > budget.inputBytes) {
+    if (bytes > enforced.inputBytes) {
       console.warn(
         JSON.stringify({
           ...options.metadata?.(),
@@ -299,6 +313,7 @@ export function modelRequest<T>(
           bytes,
           durationMs: 0,
           code: 'context_overflow',
+          budget: enforced,
         }),
       );
       throw new Error(
@@ -317,7 +332,7 @@ export function modelRequest<T>(
         const result = await generationStage(
           stage,
           payload,
-          () => run(AbortSignal.timeout(budget.timeoutMs)),
+          () => run(AbortSignal.timeout(enforced.timeoutMs)),
           { ...metadata, model, stage, bytes, attempt },
         );
         console.info(
@@ -329,7 +344,7 @@ export function modelRequest<T>(
             durationMs: Date.now() - start,
             attempt,
             status: 'succeeded',
-            budget,
+            budget: enforced,
             effectiveModel: record(result).response_metadata
               ? (record(record(result).response_metadata).model_name ??
                 record(record(result).response_metadata).model ??
@@ -359,7 +374,7 @@ export function modelRequest<T>(
             durationMs: Date.now() - start,
             attempt,
             code,
-            budget,
+            budget: enforced,
             ...details,
             waitMs: retry ? delay : undefined,
             retry,

@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check, Users, FileText, RefreshCw, Sparkles } from "lucide-react";
+import { Plus, Boxes, Check, Users, Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -19,11 +19,8 @@ import { MemberList } from "@/components/app/MemberList";
 import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
-import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
-import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
-import { EvaluationWorkbench } from "@/components/app/EvaluationWorkbench";
-import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
-import { EvaluationGuidelinesCard } from "@/components/app/EvaluationGuidelinesCard";
+import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
+import { ReportsPanel } from "@/components/app/ReportsPanel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -36,13 +33,7 @@ import {
   findCurrentMembership,
   highestRole,
 } from "@/lib/membership-role";
-import type {
-  GroupGithubActivityReport,
-  GroupGithubHistoryReport,
-  GroupReport,
-  PerformanceReport,
-  Role,
-} from "@/lib/types";
+import type { Role } from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.enum(["overview", "members", "resources", "reports", "evaluation"]).optional(),
@@ -78,9 +69,6 @@ function GroupPage() {
   const [role, setRole] = useState<Role>("VIEWER");
   const [resSearch, setResSearch] = useState("");
   const [pending, setPending] = useState<Record<string, "assign" | "unassign" | undefined>>({});
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [isCreatingReport, setIsCreatingReport] = useState(false);
-  const [reportStartedAt, setReportStartedAt] = useState<string | null>(null);
 
   const orgQ = useQuery({
     queryKey: ["organization", organizationId],
@@ -117,7 +105,6 @@ function GroupPage() {
   const reportsQ = useQuery({
     queryKey: ["group", groupId, "reports"],
     queryFn: () => api.listGroupReports(groupId),
-    refetchInterval: reportStartedAt ? 5000 : false,
   });
 
   const assignedResourceIds = useMemo(
@@ -152,21 +139,6 @@ function GroupPage() {
         )
       : list;
   }, [assignedResourceIds, orgResourcesQ.data, resSearch]);
-  const selectedReport = useMemo(() => {
-    const reports = reportsQ.data ?? [];
-    return reports.find((report) => report.id === selectedReportId) ?? reports[0] ?? null;
-  }, [reportsQ.data, selectedReportId]);
-
-  useEffect(() => {
-    if (!reportStartedAt) return;
-    const createdReport = (reportsQ.data ?? []).find(
-      (report) => report.createdAt && new Date(report.createdAt) >= new Date(reportStartedAt),
-    );
-    if (createdReport) {
-      setSelectedReportId(createdReport.id);
-      setReportStartedAt(null);
-    }
-  }, [reportStartedAt, reportsQ.data]);
 
   const refreshMembers = () => {
     qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
@@ -216,20 +188,6 @@ function GroupPage() {
     }
   };
 
-  const createReport = async () => {
-    setIsCreatingReport(true);
-    try {
-      await api.createGroupReport(groupId, { type: "GROUP_REPORT" });
-      setReportStartedAt(null);
-      toast.success("Report saved");
-      reportsQ.refetch();
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setIsCreatingReport(false);
-    }
-  };
-
   const group = groupQ.data;
 
   return (
@@ -265,7 +223,7 @@ function GroupPage() {
               { value: "overview", label: "Overview" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
-              { value: "evaluation", label: "Agent evaluation" },
+              { value: "evaluation", label: "Evaluators" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
             ]}
           />
@@ -274,13 +232,13 @@ function GroupPage() {
             <div className="space-y-6">
               <Card className="flex flex-col gap-3 rounded-xl border-primary/20 bg-primary/5 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="font-semibold">Evaluate this group</h2>
+                  <h2 className="font-semibold">Set up evaluators</h2>
                   <p className="text-sm text-muted-foreground">
-                    Turn group evidence into an explainable, rule-by-rule report.
+                    Choose how this project should be read, then generate a report for each one.
                   </p>
                 </div>
                 <Button onClick={() => setTab("evaluation")}>
-                  <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Start evaluation
+                  <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Open evaluators
                 </Button>
               </Card>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -295,14 +253,6 @@ function GroupPage() {
                   value={groupResourcesQ.data?.length ?? 0}
                 />
               </div>
-
-              <EvaluationGuidelinesCard
-                group={group}
-                canEdit={canManageRoles}
-                onSaved={(updated) => {
-                  qc.setQueryData(["group", groupId], updated);
-                }}
-              />
 
               {(groupResourcesQ.data ?? []).length > 0 && (
                 <section className="space-y-3">
@@ -319,22 +269,13 @@ function GroupPage() {
             </div>
           )}
 
-          {tab === "evaluation" &&
-            (canEvaluate ? (
-              <EvaluationWorkbench
-                workspaceId={workspaceId}
-                groupName={group.name}
-                groupId={groupId}
-              />
-            ) : (
-              <Card className="rounded-xl p-8 text-center">
-                <Sparkles aria-hidden="true" className="mx-auto h-8 w-8 text-muted-foreground" />
-                <h2 className="mt-3 font-semibold">Evaluation access is restricted</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Workspace owners and admins can run evaluations and manage rule packages.
-                </p>
-              </Card>
-            ))}
+          {tab === "evaluation" && (
+            <EvaluatorsTab
+              groupId={groupId}
+              canManageGroup={canManageRoles}
+              canManageWorkspace={canEvaluate}
+            />
+          )}
 
           {tab === "members" && (
             <div className="space-y-4">
@@ -498,17 +439,10 @@ function GroupPage() {
           )}
 
           {tab === "reports" && (
-            <ReportsTab
-              reports={reportsQ.data ?? []}
-              selectedReport={selectedReport}
-              selectedReportId={selectedReportId}
-              isLoading={reportsQ.isLoading}
-              error={reportsQ.error}
-              isCreating={isCreatingReport}
-              isWaitingForReport={Boolean(reportStartedAt)}
-              onCreate={createReport}
-              onRefresh={() => reportsQ.refetch()}
-              onSelect={setSelectedReportId}
+            <ReportsPanel
+              groupId={groupId}
+              canDelete={canManageRoles}
+              onOpenEvaluators={() => setTab("evaluation")}
             />
           )}
         </div>
@@ -564,129 +498,6 @@ function GroupPage() {
         }}
       />
     </AppShell>
-  );
-}
-
-function ReportsTab({
-  reports,
-  selectedReport,
-  selectedReportId,
-  isLoading,
-  error,
-  isCreating,
-  isWaitingForReport,
-  onCreate,
-  onRefresh,
-  onSelect,
-}: {
-  reports: Array<
-    PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>
-  >;
-  selectedReport: PerformanceReport<
-    GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport
-  > | null;
-  selectedReportId: string | null;
-  isLoading: boolean;
-  error: unknown;
-  isCreating: boolean;
-  isWaitingForReport: boolean;
-  onCreate: () => Promise<void>;
-  onRefresh: () => void;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div className="min-w-0 space-y-4">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
-          <p className="mt-1 max-w-2xl wrap-break-word text-xs text-muted-foreground">
-            Generate a full historical report from all plugin resources assigned to this group.
-          </p>
-        </div>
-        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
-          <Button className="w-full sm:w-auto" variant="outline" onClick={onRefresh}>
-            <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
-          </Button>
-          <Button className="w-full sm:w-auto" onClick={onCreate} disabled={isCreating}>
-            <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "Group report"}
-          </Button>
-        </div>
-      </div>
-
-      {isWaitingForReport && (
-        <Card className="rounded-xl p-4 shadow-card">
-          <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            <span className="min-w-0 wrap-break-word">
-              Report generation started. Refreshing until the new report is available.
-            </span>
-          </div>
-        </Card>
-      )}
-
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
-        <ErrorState message={errorMessage(error)} onRetry={onRefresh} />
-      ) : reports.length === 0 ? (
-        <EmptyState
-          icon={<FileText className="h-4 w-4" />}
-          title="No reports yet"
-          description="Generate a historical report to analyze the group's delivery signals."
-          actionLabel="Generate group report"
-          onAction={onCreate}
-        />
-      ) : (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
-          <Card className="h-fit min-w-0 overflow-hidden rounded-xl p-2 shadow-card">
-            <div className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
-              {reports.map((report) => (
-                <button
-                  key={report.id}
-                  type="button"
-                  onClick={() => onSelect(report.id)}
-                  className={`w-56 shrink-0 rounded-lg px-3 py-2 text-left transition-colors lg:w-full ${
-                    (selectedReportId ?? reports[0]?.id) === report.id
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <div className="truncate text-sm font-medium">
-                    {report.type === "GROUP_REPORT"
-                      ? "Group report"
-                      : report.type === "GITHUB_HISTORY"
-                        ? "GitHub history"
-                        : "GitHub activity"}
-                  </div>
-                  <div className="truncate text-[11px]">
-                    {report.createdAt
-                      ? new Date(report.createdAt).toLocaleString()
-                      : "Generated report"}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          {selectedReport ? (
-            <div className="min-w-0 overflow-hidden">
-              {selectedReport.type === "GROUP_REPORT" ? (
-                <GroupReportRenderer report={selectedReport as PerformanceReport<GroupReport>} />
-              ) : selectedReport.type === "GITHUB_HISTORY" ? (
-                <GroupGithubHistoryReportRenderer
-                  report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
-                />
-              ) : (
-                <GroupGithubActivityReportRenderer
-                  report={selectedReport as PerformanceReport<GroupGithubActivityReport>}
-                />
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
-    </div>
   );
 }
 

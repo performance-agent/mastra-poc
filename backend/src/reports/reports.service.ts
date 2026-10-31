@@ -1,6 +1,7 @@
 import { RequestContext } from '@mastra/core/request-context';
 import { groupReportModels } from '../mastra/model-configuration';
 import { GenerationService } from '../generation/generation.service';
+import type { ReportProgress } from '../generation/progress';
 import {
   BadRequestException,
   Injectable,
@@ -21,6 +22,14 @@ import { resolveModelFromEnvironment } from '../mastra/model-configuration';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
+import {
+  buildEvaluatorGovernancePrompt,
+  buildEvaluatorQuestionsPrompt,
+  buildEvaluatorVoicePrompt,
+  isEvaluatorVisibleToGroup,
+  reportEffortPreset,
+  type EvaluatorSnapshot,
+} from './evaluator-run';
 
 @Injectable()
 export class ReportsService {
@@ -48,21 +57,58 @@ export class ReportsService {
     const group = await this.prisma.group.findUniqueOrThrow({
       where: { id: groupId },
     });
-    return this.jobs.enqueue(
-      group.workspaceId,
-      groupId,
-      'group_report',
-      dto,
-      () => this.createGroupReport(groupId, dto),
-    );
+    const evaluatorIds = [...new Set(dto.evaluatorIds ?? [])];
+    if (evaluatorIds.length === 0) {
+      return this.jobs.enqueue(
+        group.workspaceId,
+        groupId,
+        'group_report',
+        dto,
+        (progress) => this.createSoftwareReport(groupId, { progress }),
+      );
+    }
+    for (const evaluatorId of evaluatorIds) {
+      await this.assertEvaluatorVisible(group, evaluatorId);
+    }
+    const jobs: Array<{
+      jobId: string;
+      evaluatorId: string;
+      status: string;
+    }> = [];
+    for (const evaluatorId of evaluatorIds) {
+      const job = await this.jobs.enqueue(
+        group.workspaceId,
+        groupId,
+        'group_report',
+        { type: 'GROUP_REPORT', evaluatorId },
+        (progress) =>
+          this.createSoftwareReport(groupId, { evaluatorId, progress }),
+      );
+      jobs.push({ jobId: job.jobId, evaluatorId, status: job.status });
+    }
+    return { jobs };
   }
   jobStatus(groupId: string, jobId: string) {
     return this.jobs.status(jobId, { groupId });
   }
 
-  private async createSoftwareReport(groupId: string) {
+  private async createSoftwareReport(
+    groupId: string,
+    options: { evaluatorId?: string; progress?: ReportProgress } = {},
+  ) {
+    const progress = options.progress;
+    await progress?.('preparing');
+    await progress?.('preparing', 'completed');
+    await progress?.('collecting_evidence');
     const prepared = await this.prepareGroupReport(groupId);
-    const { group, providerData, reportInput, evaluationGuidelines } = prepared;
+    const source = await this.loadEvaluatorSource(
+      prepared.group,
+      options.evaluatorId,
+    );
+    const { group, providerData, reportInput } = prepared;
+    const evaluationGuidelines = source.guidelines;
+    await progress?.('collecting_evidence', 'completed');
+    await progress?.('generating');
 
     const configuredModel = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
     if (typeof configuredModel !== 'string') {
@@ -99,19 +145,31 @@ export class ReportsService {
 
     const guidelinesPrefix =
       buildEvaluationGuidelinesPrompt(evaluationGuidelines);
+    const governancePrefix = buildEvaluatorGovernancePrompt(
+      source.snapshot?.rules ?? [],
+    );
+    const voicePrefix = buildEvaluatorVoicePrompt(
+      source.snapshot?.personality ?? null,
+    );
+    const questionsPrefix = buildEvaluatorQuestionsPrompt(
+      source.snapshot?.questions ?? [],
+    );
     const { modelRequest, modelBudget, projectEvidence, generationError } =
       await import('@pa/agent');
     let generatedReport: unknown;
     let failure: unknown;
     for (const model of groupReportModels()) {
       const budget = modelBudget(model);
-      let sample = 12;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      const effort = reportEffortPreset(source.effort, budget);
+      let sample = effort.sample;
+      const effortLine = effort.instruction ? `${effort.instruction}\n\n` : '';
       const prompt = () =>
-        `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(projectEvidence(reportInput, sample))}`;
+        `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(projectEvidence(reportInput, sample))}`;
       let boundedPrompt = prompt();
       while (
         sample > 1 &&
-        Buffer.byteLength(JSON.stringify(boundedPrompt)) > budget.inputBytes
+        Buffer.byteLength(JSON.stringify(boundedPrompt)) > effort.inputBytes
       ) {
         sample = Math.max(1, Math.floor(sample / 2));
         boundedPrompt = prompt();
@@ -131,7 +189,7 @@ export class ReportsService {
                 abortSignal: signal,
                 maxSteps: 1,
                 modelSettings: {
-                  maxOutputTokens: budget.outputTokens,
+                  maxOutputTokens: effort.outputTokens,
                   maxRetries: 0,
                 },
                 structuredOutput: { schema: groupReportContentSchema },
@@ -139,6 +197,7 @@ export class ReportsService {
             );
             return groupReportContentSchema.parse(response.object);
           },
+          { inputBytes: effort.inputBytes },
         );
         break;
       } catch (error) {
@@ -147,13 +206,18 @@ export class ReportsService {
       }
     }
     if (!generatedReport) throw failure;
+    await progress?.('generating', 'completed');
+    await progress?.('saving');
 
-    return this.persistGroupReport(
+    const saved = await this.persistGroupReport(
       groupId,
       generatedReport,
       prepared.coverage,
       evaluationGuidelines,
+      source.snapshot,
     );
+    await progress?.('saving', 'completed');
+    return saved;
   }
 
   async prepareGroupReport(groupId: string) {
@@ -202,8 +266,7 @@ export class ReportsService {
     const evaluationGuidelines: EvaluationGuidelines | null =
       group.evaluationEmphasis.length > 0 || group.evaluationNotes
         ? {
-            emphasis:
-              group.evaluationEmphasis as EvaluationGuidelines['emphasis'],
+            emphasis: group.evaluationEmphasis,
             notes: group.evaluationNotes ?? null,
           }
         : null;
@@ -232,7 +295,80 @@ export class ReportsService {
       content,
       prepared.coverage,
       prepared.evaluationGuidelines,
+      null,
     );
+  }
+
+  private async loadEvaluatorSource(
+    group: {
+      id: string;
+      workspaceId: string;
+      evaluationEmphasis: EvaluationGuidelines['emphasis'];
+      evaluationNotes: string | null;
+    },
+    evaluatorId?: string,
+  ): Promise<{
+    guidelines: EvaluationGuidelines | null;
+    snapshot: EvaluatorSnapshot | null;
+    effort: 'LOW' | 'MEDIUM' | 'HIGH';
+  }> {
+    if (!evaluatorId) {
+      const guidelines =
+        group.evaluationEmphasis.length > 0 || group.evaluationNotes
+          ? {
+              emphasis: group.evaluationEmphasis,
+              notes: group.evaluationNotes ?? null,
+            }
+          : null;
+      return { guidelines, snapshot: null, effort: 'MEDIUM' };
+    }
+    const evaluator = await this.assertEvaluatorVisible(group, evaluatorId);
+    const guidelines =
+      evaluator.evaluationEmphasis.length > 0 || evaluator.evaluationNotes
+        ? {
+            emphasis: evaluator.evaluationEmphasis,
+            notes: evaluator.evaluationNotes ?? null,
+          }
+        : null;
+    return {
+      guidelines,
+      effort: evaluator.effort,
+      snapshot: {
+        id: evaluator.id,
+        name: evaluator.name,
+        scope: evaluator.scope,
+        effort: evaluator.effort,
+        avatar: evaluator.avatar,
+        personality: evaluator.personality,
+        guidelines: {
+          emphasis: guidelines?.emphasis ?? [],
+          notes: guidelines?.notes ?? null,
+        },
+        rules: evaluator.rules.map((rule) => ({
+          name: rule.name,
+          description: rule.description,
+          valuation: rule.valuation,
+        })),
+        questions: evaluator.questions.map((question) => question.text),
+      },
+    };
+  }
+
+  private async assertEvaluatorVisible(
+    group: { id: string; workspaceId: string },
+    evaluatorId: string,
+  ) {
+    const evaluator = await this.prisma.evaluator.findUnique({
+      where: { id: evaluatorId },
+      include: {
+        rules: { orderBy: { position: 'asc' } },
+        questions: { orderBy: { position: 'asc' } },
+      },
+    });
+    if (!evaluator || !isEvaluatorVisibleToGroup(evaluator, group)) {
+      throw new NotFoundException('Evaluator not found for this project');
+    }
+    return evaluator;
   }
 
   private persistGroupReport(
@@ -240,16 +376,23 @@ export class ReportsService {
     content: unknown,
     coverage: ReturnType<typeof buildCoverage>,
     evaluationGuidelines: EvaluationGuidelines | null,
+    evaluator: EvaluatorSnapshot | null,
   ) {
     const generatedReport = groupReportContentSchema.parse(content);
     const reportData = groupReportSchema.parse({
       ...generatedReport,
       coverage,
       evaluationGuidelines: evaluationGuidelines ?? null,
+      evaluator,
     });
 
     return this.prisma.performanceReport.create({
-      data: { groupId, type: 'GROUP_REPORT', data: reportData },
+      data: {
+        groupId,
+        evaluatorId: evaluator?.id ?? null,
+        type: 'GROUP_REPORT',
+        data: reportData,
+      },
     });
   }
 
@@ -263,6 +406,30 @@ export class ReportsService {
     return this.prisma.performanceReport.findMany({
       where: { groupId, type: { not: 'AGENT_EVALUATION' } },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async remove(id: string) {
+    const report = await this.prisma.performanceReport.findUnique({
+      where: { id },
+    });
+    if (!report || report.type === 'AGENT_EVALUATION') {
+      throw new NotFoundException('Report not found');
+    }
+    await this.prisma.performanceReport.delete({ where: { id } });
+  }
+
+  async rename(id: string, title: string | null) {
+    const report = await this.prisma.performanceReport.findUnique({
+      where: { id },
+    });
+    if (!report || report.type === 'AGENT_EVALUATION') {
+      throw new NotFoundException('Report not found');
+    }
+    const next = title?.trim() ? title.trim().slice(0, 120) : null;
+    return this.prisma.performanceReport.update({
+      where: { id },
+      data: { title: next },
     });
   }
 }

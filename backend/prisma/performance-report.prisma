@@ -10,7 +10,12 @@ model PerformanceReport {
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
+  evaluatorId String?
+  evaluator   Evaluator? @relation(fields: [evaluatorId], references: [id], onDelete: SetNull)
+
   type PerformanceReportType
+
+  title String?
 
   data Json
 
@@ -20,6 +25,7 @@ model PerformanceReport {
   @@index([organizationId])
   @@index([workspaceId])
   @@index([groupId])
+  @@index([evaluatorId])
   @@index([type])
   @@index([createdAt])
 }

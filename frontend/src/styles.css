@@ -143,3 +143,37 @@
     text-rendering: optimizeLegibility;
   }
 }
+
+.only-print {
+  display: none;
+}
+
+#print-root {
+  display: none;
+}
+
+@media print {
+  body.printing-report > *:not(#print-root) {
+    display: none !important;
+  }
+
+  #print-root {
+    display: block !important;
+    width: 100%;
+    height: auto;
+    overflow: visible !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  #print-root,
+  #print-root * {
+    visibility: visible !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  #print-root .no-print {
+    display: none !important;
+  }
+}

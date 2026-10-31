@@ -15,6 +15,8 @@ import type {
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
   GroupReport,
+  Evaluator,
+  EvaluatorInput,
   Role,
   EvaluationRequest,
   EvaluationReport,
@@ -354,6 +356,34 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
       `/groups/${groupId}/generation-jobs`,
     ),
+  startEvaluatorReports: (groupId: string, evaluatorIds: string[]) =>
+    request<{ jobs: Array<{ jobId: string; evaluatorId: string; status: string }> }>(
+      `/groups/${groupId}/reports`,
+      {
+        method: "POST",
+        body: JSON.stringify({ type: "GROUP_REPORT", evaluatorIds }),
+      },
+    ),
+  getGroupGenerationJob: (groupId: string, jobId: string, signal?: AbortSignal) =>
+    request<GenerationJob<unknown>>(`/groups/${groupId}/generation-jobs/${jobId}`, { signal }),
+  listEvaluators: (groupId: string) => request<Evaluator[]>(`/groups/${groupId}/evaluators`),
+  createEvaluator: (groupId: string, body: EvaluatorInput) =>
+    request<Evaluator>(`/groups/${groupId}/evaluators`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateEvaluator: (id: string, body: Partial<EvaluatorInput>) =>
+    request<Evaluator>(`/evaluators/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteEvaluator: (id: string) => request<void>(`/evaluators/${id}`, { method: "DELETE" }),
+  deleteReport: (id: string) => request<void>(`/reports/${id}`, { method: "DELETE" }),
+  updateReport: (id: string, body: { title: string | null }) =>
+    request<PerformanceReport>(`/reports/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   listGroupReports: (groupId: string) =>
     request<
       Array<PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>>

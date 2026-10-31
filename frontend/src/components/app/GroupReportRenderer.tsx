@@ -1,4 +1,5 @@
-import { ExternalLink } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type {
   GroupReport,
@@ -10,10 +11,14 @@ import type {
   PerformanceReport,
 } from "@/lib/types";
 import { EMPHASIS_LABELS, type EvaluationEmphasis } from "@/lib/evaluation-guidelines";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type Props = {
   report: PerformanceReport<GroupReport>;
+  onBack?: () => void;
+  onDelete?: () => void;
+  canDelete?: boolean;
+  onRename?: (title: string | null) => void;
 };
 
 type CommitReview = GroupReport["engineeringAssessment"]["commitsToReview"][number];
@@ -134,7 +139,7 @@ function EvidenceContent({ evidence }: { evidence: GroupReportEvidence }) {
         </p>
       </div>
       {evidence.url ? (
-        <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+        <ExternalLink className="no-print mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
       ) : null}
     </div>
   );
@@ -255,7 +260,9 @@ function CommitContent({ commit }: { commit: CommitReview }) {
             {confidenceLabels[commit.confidence]}
           </Badge>
         </div>
-        {commit.url ? <ExternalLink className="h-4 w-4 text-muted-foreground" /> : null}
+        {commit.url ? (
+          <ExternalLink className="no-print h-4 w-4 text-muted-foreground" />
+        ) : null}
       </div>
       <h4 className="mt-3 wrap-break-word text-sm font-semibold">{commit.message}</h4>
       <p className="mt-1 break-all text-xs text-muted-foreground">
@@ -292,7 +299,31 @@ function CommitCard({ commit }: { commit: CommitReview }) {
   );
 }
 
-export function GroupReportRenderer({ report }: Props) {
+const effortLabels = { LOW: "Bajo", MEDIUM: "Medio", HIGH: "Alto" } as const;
+const personalityLabels = {
+  demanding: "Exigente",
+  direct: "Directo",
+  careful: "Cuidadoso",
+} as const;
+
+function pdfFileName(title: string) {
+  const cleaned = title
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  if (cleaned) return cleaned;
+  const day = new Date().toLocaleDateString("en-CA");
+  return `Report ${day}`;
+}
+
+export function GroupReportRenderer({
+  report,
+  onBack,
+  onDelete,
+  canDelete,
+  onRename,
+}: Props) {
   const data = report.data;
   const overall = data.overallAssessment;
   const evidenceForSection = (section: GroupReportEvidence["section"]) =>
@@ -307,14 +338,137 @@ export function GroupReportRenderer({ report }: Props) {
       !data.people.some((person) => person.displayName === evidence.subject),
   );
   const generatedAt = report.createdAt ? new Date(report.createdAt).toLocaleString("es-AR") : "";
+  const savedTitle = report.title ?? "";
+  const [name, setName] = useState(savedTitle);
+
+  useEffect(() => {
+    setName(savedTitle);
+  }, [report.id, savedTitle]);
+
+  function commitName() {
+    const next = name.trim();
+    if (next === savedTitle.trim()) return;
+    onRename?.(next ? next : null);
+  }
+
+  function downloadPdf() {
+    const source = document.getElementById("group-report");
+    if (!source) return;
+    const previousTitle = document.title;
+    document.title = pdfFileName(name);
+
+    const host = document.createElement("div");
+    host.id = "print-root";
+    const clone = source.cloneNode(true) as HTMLElement;
+    clone.removeAttribute("id");
+    const input = clone.querySelector("input");
+    const title = name.trim();
+    if (input) {
+      if (title) {
+        const heading = document.createElement("h2");
+        heading.className = "min-w-0 text-xl font-semibold";
+        heading.textContent = title;
+        input.replaceWith(heading);
+      } else {
+        input.remove();
+      }
+    }
+    clone.querySelectorAll(".no-print").forEach((node) => node.remove());
+    host.appendChild(clone);
+    document.body.appendChild(host);
+    document.body.classList.add("printing-report");
+
+    const cleanup = () => {
+      document.body.classList.remove("printing-report");
+      host.remove();
+      document.title = previousTitle;
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+  }
 
   return (
-    <div className="min-w-0 space-y-8 overflow-hidden">
+    <div id="group-report" className="min-w-0 space-y-8 overflow-hidden">
       <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
         <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 max-w-3xl">
-            <div className="text-xs text-muted-foreground">Generado {generatedAt}</div>
-            <h2 className="mt-2 wrap-break-word text-xl font-semibold">Group report</h2>
+            <div className="flex min-w-0 items-center gap-1">
+              {onBack && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="no-print -ml-2 shrink-0"
+                  aria-label="Back"
+                  onClick={onBack}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              )}
+              {onRename ? (
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  onBlur={commitName}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                  placeholder="Report name"
+                  aria-label="Report name"
+                  maxLength={120}
+                  className="min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground"
+                />
+              ) : (
+                <h2 className="min-w-0 wrap-break-word text-xl font-semibold">
+                  {savedTitle || "Report"}
+                </h2>
+              )}
+            </div>
+            {data.evaluator && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Evaluador usado{" "}
+                <span className="font-medium text-foreground">{data.evaluator.name}</span>
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="text-xs text-muted-foreground">Generado {generatedAt}</div>
+              {canDelete && onDelete && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="no-print hover:bg-red-600 hover:text-white"
+                  onClick={onDelete}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="no-print"
+                onClick={downloadPdf}
+              >
+                <Download className="mr-1 h-3.5 w-3.5" /> Download PDF
+              </Button>
+            </div>
+            {data.evaluator && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {data.evaluator.scope === "WORKSPACE" ? "Workspace" : "Proyecto"}
+                </span>
+                <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  Esfuerzo {effortLabels[data.evaluator.effort]}
+                </span>
+                {data.evaluator.personality && (
+                  <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {personalityLabels[data.evaluator.personality]}
+                  </span>
+                )}
+              </div>
+            )}
             <p className="mt-2 wrap-break-word text-sm text-muted-foreground">{data.summary}</p>
             <div className="mt-3">
               <AssessmentBadges assessment={overall} />
@@ -332,6 +486,22 @@ export function GroupReportRenderer({ report }: Props) {
           <EvidenceList items={evidenceForSection("OVERALL")} />
         </div>
       </Card>
+
+      {(data.questionAnswers ?? []).length > 0 && (
+        <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Preguntas
+          </p>
+          <div className="mt-3 space-y-4">
+            {data.questionAnswers?.map((item) => (
+              <div key={item.question}>
+                <p className="text-sm font-medium">{item.question}</p>
+                <p className="mt-1 wrap-break-word text-sm text-muted-foreground">{item.answer}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {data.evaluationGuidelines &&
         (data.evaluationGuidelines.emphasis.length > 0 || data.evaluationGuidelines.notes) && (

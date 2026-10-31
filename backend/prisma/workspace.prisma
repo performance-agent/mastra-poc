@@ -19,6 +19,7 @@ model Workspace {
   performanceReports  PerformanceReport[]
   invitations         Invitation[]
   rulePackages        RulePackage[]
+  evaluators          Evaluator[]
 
   @@index([organizationId])
 }

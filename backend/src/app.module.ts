@@ -21,6 +21,7 @@ import { DataTypesModule } from './data-types/data-types.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { PluginInstallationsModule } from './plugin-installations/plugin-installations.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
+import { EvaluatorsModule } from './evaluators/evaluators.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
@@ -43,6 +44,7 @@ import { PerformanceMcpModule } from './mcp/performance-mcp.module';
     PluginsModule,
     PluginInstallationsModule,
     EvaluationsModule,
+    EvaluatorsModule,
     InvitationsModule,
     PerformanceMcpModule,
   ],

@@ -350,10 +350,60 @@ export interface PerformanceReport<TData = unknown> {
   organizationId?: string | null;
   workspaceId?: string | null;
   groupId?: string | null;
+  evaluatorId?: string | null;
   type: PerformanceReportType;
+  title?: string | null;
   data: TData;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type EvaluatorScope = "WORKSPACE" | "GROUP";
+export type EvaluatorEffort = "LOW" | "MEDIUM" | "HIGH";
+export type EvaluatorPersonality = "demanding" | "direct" | "careful";
+
+export interface EvaluatorRule {
+  id: string;
+  name: string;
+  description: string | null;
+  valuation: number;
+  position: number;
+}
+
+export interface EvaluatorQuestion {
+  id: string;
+  text: string;
+  position: number;
+}
+
+export interface Evaluator {
+  id: string;
+  name: string;
+  description: string | null;
+  scope: EvaluatorScope;
+  effort: EvaluatorEffort;
+  avatar: number;
+  personality: EvaluatorPersonality;
+  evaluationEmphasis: string[];
+  evaluationNotes: string | null;
+  workspaceId: string;
+  groupId: string | null;
+  rules: EvaluatorRule[];
+  questions: EvaluatorQuestion[];
+}
+
+export interface EvaluatorInput {
+  name: string;
+  description?: string | null;
+  scope: EvaluatorScope;
+  effort: EvaluatorEffort;
+  avatar?: number;
+  personality?: EvaluatorPersonality;
+  evaluationEmphasis: string[];
+  evaluationNotes?: string | null;
+  rules: Array<{ name: string; description?: string | null; valuation: number }>;
+  questions?: Array<{ text: string }>;
+  groupId?: string;
 }
 
 export type GroupReportStatus = "GOOD" | "WATCH" | "RISK" | "INSUFFICIENT_DATA";
@@ -454,6 +504,7 @@ export interface GroupReport {
     description: string;
     action: string;
   }>;
+  questionAnswers?: Array<{ question: string; answer: string }>;
   coverage: {
     resourcesAnalyzed: number;
     datasetsAnalyzed: number;
@@ -465,6 +516,17 @@ export interface GroupReport {
   evaluationGuidelines?: {
     emphasis: string[];
     notes: string | null;
+  } | null;
+  evaluator?: {
+    id: string;
+    name: string;
+    scope: "WORKSPACE" | "GROUP";
+    effort: "LOW" | "MEDIUM" | "HIGH";
+    avatar: number;
+    personality?: "demanding" | "direct" | "careful";
+    guidelines: { emphasis: string[]; notes: string | null };
+    rules: Array<{ name: string; description: string | null; valuation: number }>;
+    questions?: string[];
   } | null;
 }
 

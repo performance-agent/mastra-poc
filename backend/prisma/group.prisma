@@ -16,6 +16,7 @@ model Group {
   resourceAssignments PluginInstallationResourceAssignment[]
   performanceReports  PerformanceReport[]
   invitations         Invitation[]
+  evaluators          Evaluator[]
 
   @@index([workspaceId])
 }

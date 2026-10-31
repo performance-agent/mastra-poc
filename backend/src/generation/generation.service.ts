@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import {
   evaluationStages,
+  groupReportStages,
   synthesisStages,
   type GenerationProgress,
   type ReportProgress,
@@ -80,7 +81,11 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
             where: { id: jobId },
           });
           const stages =
-            job.kind === 'evaluation' ? evaluationStages : synthesisStages;
+            job.kind === 'evaluation'
+              ? evaluationStages
+              : job.kind === 'group_report'
+                ? groupReportStages
+                : synthesisStages;
           const completed = new Set<string>();
           const reportProgress: ReportProgress = async (
             stage,

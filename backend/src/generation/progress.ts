@@ -29,3 +29,10 @@ export const synthesisStages = [
   'validating',
   'finalizing',
 ] as const;
+
+export const groupReportStages = [
+  'preparing',
+  'collecting_evidence',
+  'generating',
+  'saving',
+] as const;
