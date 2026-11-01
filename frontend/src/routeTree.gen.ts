@@ -17,6 +17,7 @@ import { Route as OrganizationsOrganizationIdRouteImport } from './routes/organi
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as IntegrationsGithubSetupRouteImport } from './routes/integrations.github.setup'
 import { Route as OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteImport } from './routes/organizations.$organizationId.workspaces.$workspaceId'
+import { Route as OrganizationsOrganizationIdSetupStepRouteImport } from './routes/organizations.$organizationId.setup.$step'
 import { Route as OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRouteImport } from './routes/organizations.$organizationId.workspaces.$workspaceId.groups.$groupId'
 
 const UsersRoute = UsersRouteImport.update({
@@ -61,6 +62,12 @@ const OrganizationsOrganizationIdWorkspacesWorkspaceIdRoute =
     path: '/workspaces/$workspaceId',
     getParentRoute: () => OrganizationsOrganizationIdRoute,
   } as any)
+const OrganizationsOrganizationIdSetupStepRoute =
+  OrganizationsOrganizationIdSetupStepRouteImport.update({
+    id: '/setup/$step',
+    path: '/setup/$step',
+    getParentRoute: () => OrganizationsOrganizationIdRoute,
+  } as any)
 const OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute =
   OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRouteImport.update(
     {
@@ -79,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations/': typeof OrganizationsIndexRoute
   '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
+  '/organizations/$organizationId/setup/$step': typeof OrganizationsOrganizationIdSetupStepRoute
   '/organizations/$organizationId/workspaces/$workspaceId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
   '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute
 }
@@ -90,6 +98,7 @@ export interface FileRoutesByTo {
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations': typeof OrganizationsIndexRoute
   '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
+  '/organizations/$organizationId/setup/$step': typeof OrganizationsOrganizationIdSetupStepRoute
   '/organizations/$organizationId/workspaces/$workspaceId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
   '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute
 }
@@ -102,6 +111,7 @@ export interface FileRoutesById {
   '/organizations/$organizationId': typeof OrganizationsOrganizationIdRouteWithChildren
   '/organizations/': typeof OrganizationsIndexRoute
   '/integrations/github/setup': typeof IntegrationsGithubSetupRoute
+  '/organizations/$organizationId/setup/$step': typeof OrganizationsOrganizationIdSetupStepRoute
   '/organizations/$organizationId/workspaces/$workspaceId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
   '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdGroupsGroupIdRoute
 }
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/organizations/$organizationId'
     | '/organizations/'
     | '/integrations/github/setup'
+    | '/organizations/$organizationId/setup/$step'
     | '/organizations/$organizationId/workspaces/$workspaceId'
     | '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
   fileRoutesByTo: FileRoutesByTo
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/organizations/$organizationId'
     | '/organizations'
     | '/integrations/github/setup'
+    | '/organizations/$organizationId/setup/$step'
     | '/organizations/$organizationId/workspaces/$workspaceId'
     | '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
   id:
@@ -137,6 +149,7 @@ export interface FileRouteTypes {
     | '/organizations/$organizationId'
     | '/organizations/'
     | '/integrations/github/setup'
+    | '/organizations/$organizationId/setup/$step'
     | '/organizations/$organizationId/workspaces/$workspaceId'
     | '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
   fileRoutesById: FileRoutesById
@@ -209,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteImport
       parentRoute: typeof OrganizationsOrganizationIdRoute
     }
+    '/organizations/$organizationId/setup/$step': {
+      id: '/organizations/$organizationId/setup/$step'
+      path: '/setup/$step'
+      fullPath: '/organizations/$organizationId/setup/$step'
+      preLoaderRoute: typeof OrganizationsOrganizationIdSetupStepRouteImport
+      parentRoute: typeof OrganizationsOrganizationIdRoute
+    }
     '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId': {
       id: '/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId'
       path: '/groups/$groupId'
@@ -235,11 +255,14 @@ const OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren =
   )
 
 interface OrganizationsOrganizationIdRouteChildren {
+  OrganizationsOrganizationIdSetupStepRoute: typeof OrganizationsOrganizationIdSetupStepRoute
   OrganizationsOrganizationIdWorkspacesWorkspaceIdRoute: typeof OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren
 }
 
 const OrganizationsOrganizationIdRouteChildren: OrganizationsOrganizationIdRouteChildren =
   {
+    OrganizationsOrganizationIdSetupStepRoute:
+      OrganizationsOrganizationIdSetupStepRoute,
     OrganizationsOrganizationIdWorkspacesWorkspaceIdRoute:
       OrganizationsOrganizationIdWorkspacesWorkspaceIdRouteWithChildren,
   }

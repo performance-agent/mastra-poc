@@ -1,3 +1,6 @@
+import { Type } from 'class-transformer';
+import { ValidateNested } from 'class-validator';
+import { EvaluationPeriodDto } from '../../evaluations/dto/create-evaluation.dto';
 import {
   ArrayMinSize,
   IsArray,
@@ -9,6 +12,11 @@ import {
 import { PerformanceReportType } from '../../../generated/prisma/enums';
 
 export class CreateReportDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EvaluationPeriodDto)
+  period?: EvaluationPeriodDto;
+
   @IsNotEmpty()
   @IsEnum(PerformanceReportType)
   type!: PerformanceReportType;

@@ -1,3 +1,4 @@
+import { normalizeSetup } from "./experience";
 import type { Appearance, Preferences, Setup } from "./experience";
 import type { GradingSettings, GenerationJob } from "./types";
 import type {
@@ -139,7 +140,7 @@ export const api = {
         blocks: body.blocks,
       }),
     }),
-  setup: (org: string) => request<Setup>(`/organizations/${org}/me/setup`),
+  setup: (org: string) => request<Setup>(`/organizations/${org}/me/setup`).then(normalizeSetup),
   saveSetup: (org: string, body: Setup) =>
     request<Setup>(`/organizations/${org}/me/setup`, {
       method: "PATCH",
@@ -404,12 +405,16 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
       `/groups/${groupId}/generation-jobs`,
     ),
-  startEvaluatorReports: (groupId: string, evaluatorIds: string[]) =>
+  startEvaluatorReports: (
+    groupId: string,
+    evaluatorIds: string[],
+    period?: { from: string; to: string },
+  ) =>
     request<{ jobs: Array<{ jobId: string; evaluatorId: string; status: string }> }>(
       `/groups/${groupId}/reports`,
       {
         method: "POST",
-        body: JSON.stringify({ type: "GROUP_REPORT", evaluatorIds }),
+        body: JSON.stringify({ type: "GROUP_REPORT", evaluatorIds, ...(period ? { period } : {}) }),
       },
     ),
   getGroupGenerationJob: (groupId: string, jobId: string, signal?: AbortSignal) =>

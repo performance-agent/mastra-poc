@@ -1,3 +1,4 @@
+import { reportAgentTools } from './report-agent-tools';
 import type { EvidenceReceipt } from '@pa/agent';
 import { RequestContext } from '@mastra/core/request-context';
 import { groupReportModels } from '../mastra/model-configuration';
@@ -50,12 +51,15 @@ export class ReportsService {
         'Only GROUP_REPORT can be generated. Legacy report types are read-only.',
       );
     }
-    return this.createSoftwareReport(groupId);
+    return this.createSoftwareReport(groupId, {
+      period: validateReportPeriod(dto.period),
+    });
   }
 
   async createGroupReportAsync(groupId: string, dto: CreateReportDto) {
     if (dto.type !== 'GROUP_REPORT')
       throw new BadRequestException('Only GROUP_REPORT can be generated');
+    const period = validateReportPeriod(dto.period);
     const group = await this.prisma.group.findUniqueOrThrow({
       where: { id: groupId },
     });
@@ -66,13 +70,13 @@ export class ReportsService {
         groupId,
         'group_report',
         dto,
-        (progress) => this.createSoftwareReport(groupId, { progress }),
+        (progress) => this.createSoftwareReport(groupId, { progress, period }),
       );
     }
     for (const evaluatorId of evaluatorIds) {
       await this.assertEvaluatorVisible(group, evaluatorId);
     }
-    const prepared = this.prepareGroupReport(groupId);
+    const prepared = this.prepareGroupReport(groupId, period);
     void prepared.catch(() => undefined);
     const jobs: Array<{
       jobId: string;
@@ -84,10 +88,11 @@ export class ReportsService {
         group.workspaceId,
         groupId,
         'group_report',
-        { type: 'GROUP_REPORT', evaluatorId },
+        { type: 'GROUP_REPORT', evaluatorId, ...(period ? { period } : {}) },
         (progress) =>
           this.createSoftwareReport(groupId, {
             evaluatorId,
+            period,
             progress,
             prepared,
           }),
@@ -112,6 +117,7 @@ export class ReportsService {
     groupId: string,
     options: {
       evaluatorId?: string;
+      period?: { from: string; to: string };
       progress?: ReportProgress;
       prepared?: ReturnType<ReportsService['prepareGroupReport']>;
     } = {},
@@ -120,7 +126,8 @@ export class ReportsService {
     await progress?.('preparing');
     await progress?.('preparing', 'completed');
     await progress?.('collecting_evidence');
-    const prepared = await (options.prepared ?? this.prepareGroupReport(groupId));
+    const prepared = await (options.prepared ??
+      this.prepareGroupReport(groupId, options.period));
     const source = await this.loadEvaluatorSource(
       prepared.group,
       options.evaluatorId,
@@ -173,7 +180,7 @@ export class ReportsService {
       source.snapshot?.questions ?? [],
     );
     const { modelRequest, modelBudget, packEvidence, generationError } =
-      await import('@pa/agent');
+      await reportAgentTools();
     let generatedReport: unknown;
     let failure: unknown;
     let packed: ReturnType<typeof packEvidence> | undefined;
@@ -181,7 +188,6 @@ export class ReportsService {
       null;
     for (const model of groupReportModels()) {
       const budget = modelBudget(model);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       const effort = reportEffortPreset(source.effort, budget);
       const effortLine = effort.instruction ? `${effort.instruction}\n\n` : '';
       const prefix = `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
@@ -264,12 +270,16 @@ export class ReportsService {
       },
       evaluationGuidelines,
       source.snapshot,
+      options.period,
     );
     await progress?.('saving', 'completed');
     return saved;
   }
 
-  async prepareGroupReport(groupId: string) {
+  async prepareGroupReport(
+    groupId: string,
+    period?: { from: string; to: string },
+  ) {
     const [group, assignedResources] = await Promise.all([
       this.prisma.group.findUnique({
         where: { id: groupId },
@@ -301,6 +311,7 @@ export class ReportsService {
       assignedResources,
       'history',
       undefined,
+      period,
     );
     const hasSuccessfulDataset = providerData.resources.some(
       (resource) => resource.datasets.length > 0,
@@ -322,13 +333,15 @@ export class ReportsService {
 
     const coverage = buildCoverage(providerData);
     coverage.limitations.push(
-      'Model input is the stored history. Text and nested lists are shortened only when the package exceeds the input budget. Aggregate counts cover the full stored history.',
+      period
+        ? 'Model input is stored evidence filtered to the requested period. Text and nested lists may be shortened to fit the input budget.'
+        : 'Model input is the stored history. Text and nested lists are shortened only when the package exceeds the input budget. Aggregate counts cover the full stored history.',
     );
     const reportInput = {
       group: { id: group.id, name: group.name },
       reportMode: 'history',
       generatedAt: generatedAt.toISOString(),
-      period: null,
+      period: period ?? null,
       resources: providerData.resources,
       limitations: providerData.limitations,
       coverage,
@@ -431,6 +444,7 @@ export class ReportsService {
     },
     evaluationGuidelines: EvaluationGuidelines | null,
     evaluator: EvaluatorSnapshot | null,
+    period?: { from: string; to: string },
   ) {
     const generatedReport = groupReportContentSchema.parse(content);
     const reportData = groupReportSchema.parse({
@@ -445,7 +459,7 @@ export class ReportsService {
         groupId,
         evaluatorId: evaluator?.id ?? null,
         type: 'GROUP_REPORT',
-        data: reportData,
+        data: { ...reportData, ...(period ? { period } : {}) },
       },
     });
   }
@@ -567,4 +581,19 @@ function recordTimestamp(value: unknown): number | null {
     if (Number.isFinite(timestamp)) return timestamp;
   }
   return null;
+}
+
+export function validateReportPeriod(period?: { from: string; to: string }) {
+  if (!period) return undefined;
+  for (const value of [period.from, period.to]) {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      Number.isNaN(Date.parse(value)) ||
+      new Date(value).toISOString().slice(0, 10) !== value
+    )
+      throw new BadRequestException('period must contain real calendar dates');
+  }
+  if (period.from > period.to)
+    throw new BadRequestException('period.to must be on or after period.from');
+  return { from: period.from, to: period.to };
 }

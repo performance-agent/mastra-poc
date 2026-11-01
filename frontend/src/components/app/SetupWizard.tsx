@@ -1,534 +1,666 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useUnsavedDialog } from "./use-unsaved-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ArrowRight, ArrowLeft, ExternalLink } from "lucide-react";
-import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { ArrowLeft, ArrowRight, Check, Clock3, Loader2, Plug, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { TeamSpaceFields } from "./TeamSpaceDialog";
 import { api, errorMessage } from "@/lib/api";
-import { DEFAULT_SETUP, type Setup } from "@/lib/experience";
+import { SETUP_STEPS, setupUrl, type SetupStep } from "@/lib/experience";
 import { useExperience, shortcutUrl } from "@/lib/experience-context";
-import { EvaluatorMark } from "./EvaluatorMark";
+import { setupPeriod } from "@/lib/setup";
+import { useSetupDraft } from "./use-setup-draft";
+import { SetupPlugins } from "./SetupPlugins";
+import { SetupEvaluator } from "./SetupEvaluator";
+import { SetupTeam, SetupReview } from "./SetupTeam";
+import { ConfirmDialog } from "./ConfirmDialog";
+import isotipo from "@/assets/brand/isotipo.svg";
 
-const STEPS = [
-  "Your organization",
-  "Your team space",
-  "Connect evidence",
-  "Choose an evaluator",
-  "Your next steps",
-];
-export function SetupWizard({
-  open,
-  onOpenChange,
+const LABELS = {
+  team: "Your team",
+  plugins: "Connect plugins",
+  evaluator: "Your evaluator",
+  review: "Review & start",
+  welcome: "Welcome",
+};
+const TITLES = {
+  team: "Give your team a home",
+  plugins: "Connect your team's plugins",
+  evaluator: "Choose your evaluator",
+  review: "Ready for your first evaluation",
+  welcome: "Welcome",
+};
+const DESCRIPTIONS = {
+  team: "Start small. You can organize more teams later.",
+  plugins: "Connect a plugin and choose the resources to include in your evaluation.",
+  evaluator: "Start with an evaluator, then make it yours.",
+  review: "Check the details before you start.",
+  welcome: "",
+};
+
+export function SetupPage({
+  organizationId: org,
+  routeStep,
 }: {
-  open: boolean;
-  onOpenChange: (value: boolean) => void;
+  organizationId: string;
+  routeStep: string;
 }) {
-  const { organizationId: org, appearance, profile } = useExperience();
+  const { profile, appearance, ready: experienceReady, error: experienceError } = useExperience();
+  const navigate = useNavigate();
   const qc = useQueryClient();
-  const saved = useQuery({
-    queryKey: ["setup", profile?.id, org],
-    queryFn: () => api.setup(org!),
-    enabled: open && !!org,
-    refetchOnWindowFocus: true,
-  });
-  const [draft, setDraft] = useState<Setup>(DEFAULT_SETUP);
-  const [workspaceName, setWorkspaceName] = useState("");
-  const [groupName, setGroupName] = useState("");
-  const [description, setDescription] = useState("");
-  const [creating, setCreating] = useState(false);
-
+  const [credentialsDirty, setCredentialsDirty] = useState(false);
+  const state = useSetupDraft(org, profile?.id, credentialsDirty);
+  const { draft, latest, ready, change, flush } = state;
   const [busy, setBusy] = useState(false);
-  const [launched, setLaunched] = useState(false);
-  useEffect(() => {
-    if (saved.data && open) setDraft(saved.data);
-  }, [saved.data, open]);
+  const [pluginBusy, setPluginBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const heading = useRef<HTMLHeadingElement>(null);
+  const submitting = useRef(false);
+  const step = SETUP_STEPS.includes(routeStep as SetupStep) ? (routeStep as SetupStep) : draft.step;
+  const index = SETUP_STEPS.indexOf(step);
+  const organizations = useQuery({ queryKey: ["organizations"], queryFn: api.listOrganizations });
   const workspaces = useQuery({
     queryKey: ["organization", org, "workspaces"],
-    queryFn: () => api.listOrgWorkspaces(org!),
-    enabled: open && !!org,
+    queryFn: () => api.listOrgWorkspaces(org),
   });
   const groups = useQuery({
     queryKey: ["workspace", draft.workspaceId, "groups"],
     queryFn: () => api.listWorkspaceGroups(draft.workspaceId),
-    enabled: open && !!draft.workspaceId,
+    enabled: !!draft.workspaceId,
   });
   const resources = useQuery({
     queryKey: ["organization", org, "resources"],
-    queryFn: () => api.listOrgResources(org!),
-    enabled: open && !!org,
+    queryFn: () => api.listOrgResources(org),
+    refetchInterval: step === "plugins" ? 3000 : false,
   });
   const assigned = useQuery({
     queryKey: ["group", draft.groupId, "resources"],
     queryFn: () => api.listGroupResources(draft.groupId),
-    enabled: open && !!draft.groupId,
+    enabled: !!draft.groupId,
   });
   const evaluators = useQuery({
     queryKey: ["group", draft.groupId, "evaluators"],
     queryFn: () => api.listEvaluators(draft.groupId),
-    enabled: open && !!draft.groupId,
+    enabled: !!draft.groupId,
   });
-  const workspaceMembers = useQuery({
+  const voices = useQuery({
+    queryKey: ["group", draft.groupId, "personalities"],
+    queryFn: () => api.listPersonalities(draft.groupId),
+    enabled: !!draft.groupId,
+  });
+  const memberships = useQuery({
     queryKey: ["workspace", draft.workspaceId, "members"],
     queryFn: () => api.listWorkspaceMembers(draft.workspaceId),
-    enabled: open && !!draft.workspaceId,
+    enabled: !!draft.workspaceId,
   });
-  const groupMembers = useQuery({
+  const groupMemberships = useQuery({
     queryKey: ["group", draft.groupId, "members"],
     queryFn: () => api.listGroupMembers(draft.groupId),
-    enabled: open && !!draft.groupId,
+    enabled: !!draft.groupId,
   });
   const canManageWorkspace =
-    appearance.canEdit ||
-    workspaceMembers.data?.some(
-      (m) => m.userId === profile?.id && (m.role === "OWNER" || m.role === "ADMIN"),
+    !!appearance.canEdit ||
+    !!memberships.data?.some(
+      (member) => member.userId === profile?.id && ["OWNER", "ADMIN"].includes(member.role),
     );
   const canManage =
     canManageWorkspace ||
-    groupMembers.data?.some(
-      (m) => m.userId === profile?.id && (m.role === "OWNER" || m.role === "ADMIN"),
+    !!groupMemberships.data?.some(
+      (member) => member.userId === profile?.id && ["OWNER", "ADMIN"].includes(member.role),
     );
-  const selectedWorkspace = workspaces.data?.find((w) => w.id === draft.workspaceId);
-  const selectedGroup = groups.data?.find((g) => g.id === draft.groupId);
-  const selectedEvaluator = draft.evaluatorId
-    ? evaluators.data?.find((e) => e.id === draft.evaluatorId)
-    : undefined;
-  const groupUrl =
-    org && draft.groupId
-      ? shortcutUrl(org, {
-          kind: "group",
-          id: draft.groupId,
-          workspaceId: draft.workspaceId,
-          name: "",
-        })
-      : "";
-  const persist = async (next: Setup) => {
-    if (!org) return;
-    next = { ...next, seen: true };
-    await api.saveSetup(org, next);
-    setDraft(next);
-    qc.setQueryData(["setup", profile?.id, org], next);
+  const workspace = workspaces.data?.find((item) => item.id === draft.workspaceId);
+  const group = groups.data?.find((item) => item.id === draft.groupId);
+  const evaluator = evaluators.data?.find((item) => item.id === draft.evaluatorId);
+  const organization = organizations.data?.find((item) => item.id === org);
+  const activeResources =
+    resources.data?.filter(
+      (item) =>
+        item.active !== false &&
+        (!item.pluginInstallation || item.pluginInstallation.status === "ACTIVE"),
+    ) ?? [];
+  const selectedResources = activeResources.filter((item) => draft.resourceIds.includes(item.id));
+  const taskLoading =
+    step === "team"
+      ? workspaces.isLoading || groups.isLoading
+      : step === "plugins"
+        ? resources.isLoading || assigned.isLoading
+        : step === "evaluator"
+          ? evaluators.isLoading || voices.isLoading
+          : step === "review"
+            ? resources.isLoading || assigned.isLoading || evaluators.isLoading
+            : false;
+  const taskError =
+    experienceError ||
+    organizations.error ||
+    (step === "team"
+      ? workspaces.error || groups.error
+      : step === "plugins"
+        ? resources.error || assigned.error
+        : step === "evaluator"
+          ? evaluators.error || voices.error
+          : step === "review"
+            ? resources.error || assigned.error || evaluators.error
+            : null);
+  const go = (next: SetupStep) => {
+    void navigate({ to: setupUrl(org, next) } as never);
   };
+  useEffect(() => {
+    if (!ready) return;
+    if (!SETUP_STEPS.includes(routeStep as SetupStep)) {
+      void navigate({ to: setupUrl(org, latest.current.step), replace: true } as never);
+      return;
+    }
+    if (index > 1 && (!draft.workspaceId || !draft.groupId)) {
+      void navigate({ to: setupUrl(org, "team"), replace: true } as never);
+      return;
+    }
+    if (latest.current.step !== step || !latest.current.seen) change({ step, seen: true });
+    heading.current?.focus();
+  }, [
+    ready,
+    routeStep,
+    step,
+    index,
+    draft.workspaceId,
+    draft.groupId,
+    navigate,
+    org,
+    change,
+    latest,
+  ]);
+  useEffect(() => {
+    if (ready && draft.groupId && !draft.resourcesInitialized && assigned.data)
+      change({ resourceIds: assigned.data.map((item) => item.id), resourcesInitialized: true });
+  }, [ready, draft.groupId, draft.resourcesInitialized, assigned.data, change]);
+  useEffect(() => {
+    if (ready && experienceReady && !appearance.canEdit && draft.teamDraft.creating)
+      change({ teamDraft: { ...latest.current.teamDraft, creating: false } });
+  }, [ready, experienceReady, appearance.canEdit, draft.teamDraft.creating, change, latest]);
   const run = async (action: () => Promise<void>) => {
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
+    setActionError("");
     try {
       await action();
-    } catch (error) {
-      toast.error(errorMessage(error));
+    } catch (caught) {
+      setActionError(errorMessage(caught));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
-  const nextAllowed =
-    draft.step === 0 ||
-    (draft.step === 1 &&
-      (creating
-        ? !!workspaceName.trim() && !!groupName.trim()
-        : !!selectedWorkspace && !!selectedGroup)) ||
-    draft.step === 2 ||
-    draft.step === 3;
-  const loadError =
-    saved.error ||
-    workspaces.error ||
-    groups.error ||
-    resources.error ||
-    assigned.error ||
-    evaluators.error;
-  const guard = useUnsavedDialog(
-    open,
-    !!(workspaceName || groupName || description),
-    (next) => {
-      if (next) {
-        onOpenChange(true);
-        return;
-      }
-      void run(async () => {
-        await persist({
-          ...draft,
-          dismissed: true,
-          completed: draft.step === 4 || draft.completed,
+  const exit = async (completed = false) => {
+    change({ dismissed: true, seen: true, completed: completed || latest.current.completed });
+    await flush();
+    void navigate({ to: "/organizations/$organizationId", params: { organizationId: org } });
+  };
+  const advance = async (skip = false) => {
+    let current = latest.current;
+    if (step === "team") {
+      const invitations = [
+        ...new Set(
+          current.teamDraft.invitations
+            .flatMap((value) => value.split(","))
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (invitations.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))
+        throw new Error("Enter valid email addresses for your invitations.");
+      if (current.teamDraft.creating) {
+        if (!appearance.canEdit)
+          throw new Error("An organization admin can create a new team space.");
+        if (!current.teamDraft.workspaceName.trim() || !current.teamDraft.groupName.trim())
+          throw new Error("Enter a workspace and team name.");
+        const created = await api.createTeamSpace(org, {
+          workspaceName: current.teamDraft.workspaceName,
+          groupName: current.teamDraft.groupName,
+          description: current.teamDraft.description,
         });
-        setWorkspaceName("");
-        setGroupName("");
-        setDescription("");
-        onOpenChange(false);
+        change({
+          ...current,
+          workspaceId: created.workspace.id,
+          groupId: created.group.id,
+          evaluatorId: "",
+          resourceIds: [],
+          resourcesInitialized: true,
+          evaluatorDraft: null,
+          teamDraft: { ...current.teamDraft, creating: false },
+        });
+        current = latest.current;
+        await flush();
+        await workspaces.refetch();
+      }
+      if (!current.workspaceId || !current.groupId) throw new Error("Choose a workspace and team.");
+      if (invitations.length && !canManage && !appearance.canEdit)
+        throw new Error("You need team admin access to send invitations.");
+      for (const email of invitations) {
+        await api.createGroupInvitation(current.groupId, email, "VIEWER");
+        change((value) => ({
+          ...value,
+          teamDraft: {
+            ...value.teamDraft,
+            invitations: value.teamDraft.invitations
+              .flatMap((item) => item.split(","))
+              .filter((item) => item.trim() !== email),
+          },
+        }));
+        await flush();
+      }
+    }
+    if (step === "plugins" && !skip && canManage) {
+      const existing = await api.listGroupResources(current.groupId);
+      for (const id of current.resourceIds) {
+        if (!activeResources.some((item) => item.id === id))
+          throw new Error("A selected plugin resource is unavailable. Review your selection.");
+        if (canManageWorkspace) await api.assignWorkspaceResource(current.workspaceId, id);
+        if (!existing.some((item) => item.id === id))
+          await api.assignGroupResource(current.groupId, id);
+      }
+      for (const item of existing)
+        if (!current.resourceIds.includes(item.id))
+          await api.unassignGroupResource(current.groupId, item.id);
+      await assigned.refetch();
+    }
+    if (step === "evaluator" && current.evaluatorDraft && !skip) {
+      if (!canManage) throw new Error("You need team admin access to create an evaluator.");
+      const value = current.evaluatorDraft;
+      if (!value.name.trim() || !value.personalityId)
+        throw new Error("Give your evaluator a name and choose its voice.");
+      if (
+        value.rules.some((rule) => !rule.name.trim() && rule.description.trim()) ||
+        value.questions.some((question) => !question.text.trim())
+      )
+        throw new Error("Complete or remove empty rules and questions.");
+      const created = await api.createEvaluator(current.groupId, {
+        name: value.name.trim(),
+        description: value.description,
+        scope: "GROUP",
+        groupId: current.groupId,
+        effort: value.effort,
+        avatar: value.avatar,
+        personalityId: value.personalityId,
+        evaluationEmphasis: value.evaluationEmphasis,
+        evaluationNotes: value.evaluationNotes,
+        rules: value.rules.filter((rule) => rule.name.trim()),
+        questions: value.questions.filter((question) => question.text.trim()),
       });
-    },
-    busy,
-  );
+      change({ evaluatorId: created.id, evaluatorDraft: null });
+      await flush();
+      await evaluators.refetch();
+    }
+    if (skip && step === "plugins") {
+      const existing = await api.listGroupResources(current.groupId);
+      change({ resourceIds: existing.map((item) => item.id), resourcesInitialized: true });
+    }
+    const skipped = new Set(latest.current.skipped);
+    if (
+      skip ||
+      (step === "plugins" && !latest.current.resourceIds.length) ||
+      (step === "evaluator" && !latest.current.evaluatorId)
+    )
+      skipped.add(step);
+    else skipped.delete(step);
+    const next = SETUP_STEPS[Math.min(index + 1, 4)];
+    change({ step: next, dismissed: false, skipped: [...skipped] });
+    await flush();
+    await go(next);
+  };
+  const launch = async () => {
+    if (!canManage || !group || !evaluator || !selectedResources.length)
+      throw new Error("Choose an available team, plugin resource and evaluator before starting.");
+    const assignedNow = await api.listGroupResources(draft.groupId);
+    if (!selectedResources.every((resource) => assignedNow.some((item) => item.id === resource.id)))
+      throw new Error(
+        "Return to Plugins and continue to apply your resource selection before starting.",
+      );
+    const period = setupPeriod(latest.current.period);
+    await flush();
+    const active = await api.listActiveGroupReports(draft.groupId);
+    if (!active.some((job) => job.evaluatorId === evaluator.id))
+      await api.startEvaluatorReports(draft.groupId, [evaluator.id], period);
+    change({ completed: true, dismissed: true });
+    await flush();
+    window.location.assign(
+      shortcutUrl(org, {
+        kind: "group",
+        id: draft.groupId,
+        workspaceId: draft.workspaceId,
+        name: "",
+      }) + "?tab=reports",
+    );
+  };
+  const nextDisabled =
+    busy ||
+    pluginBusy ||
+    taskLoading ||
+    !!taskError ||
+    !ready ||
+    (step === "team" &&
+      (draft.teamDraft.creating
+        ? !draft.teamDraft.workspaceName.trim() || !draft.teamDraft.groupName.trim()
+        : !workspace || !group)) ||
+    (step === "plugins" && credentialsDirty);
   return (
-    <>
-      <Dialog open={open} onOpenChange={guard.changeOpen}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Make room for your team</DialogTitle>
-            <DialogDescription>
-              Keep your progress and come back whenever you like.
-            </DialogDescription>
-          </DialogHeader>
-          <ol className="flex gap-2" aria-label="Setup progress">
-            {STEPS.map((step, index) => (
-              <li
-                key={step}
-                className="min-w-0 flex-1"
-                aria-current={index === draft.step ? "step" : undefined}
-              >
-                <div
-                  className={`mb-2 h-1.5 rounded-full ${index <= draft.step ? "bg-[var(--brand)]" : "bg-muted"}`}
-                />
-                <span
-                  className={`sr-only whitespace-nowrap sm:not-sr-only sm:block sm:text-xs ${index === draft.step ? "font-semibold" : "text-muted-foreground"}`}
+    <div className="setup-page min-h-dvh bg-background text-foreground">
+      <header className="setup-header flex items-center justify-between gap-3 border-b px-5 py-4 sm:px-8">
+        <div className="flex items-center gap-2.5">
+          <img src={isotipo} alt="" className="size-7" />
+          <span className="text-xl font-semibold tracking-tight">platformance</span>
+        </div>
+        <div className="flex items-center gap-3 sm:gap-6">
+          <span
+            role="status"
+            aria-live="polite"
+            className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"
+          >
+            {state.saving ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : state.error ? null : (
+              <Check className="size-4 text-success" />
+            )}
+            {!ready
+              ? "Loading progress"
+              : state.error
+                ? "Progress not saved"
+                : state.saving
+                  ? "Saving…"
+                  : state.dirty
+                    ? "Changes pending"
+                    : "Progress saved"}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy || pluginBusy || !ready}
+            onClick={() => void run(() => exit())}
+          >
+            {step === "welcome" ? "Explore first" : "Save & exit"}
+          </Button>
+        </div>
+      </header>
+      {!ready ? (
+        <main className="mx-auto max-w-2xl px-6 py-20">
+          {state.loadFailed ? (
+            <div role="alert">
+              <h1 className="text-2xl font-semibold">Your setup could not be loaded</h1>
+              <p className="mt-3 text-sm text-muted-foreground">{state.error}</p>
+              <Button className="mt-5" onClick={() => void state.load()}>
+                Try again
+              </Button>
+            </div>
+          ) : (
+            <p role="status" className="flex items-center gap-2">
+              <Loader2 className="size-4 animate-spin" />
+              Loading your setup…
+            </p>
+          )}
+        </main>
+      ) : step === "welcome" ? (
+        <main className="setup-welcome mx-auto max-w-4xl px-6 py-16 sm:py-24">
+          <div className="setup-enter">
+            <p className="setup-eyebrow">Let's get started</p>
+            <h1
+              ref={heading}
+              tabIndex={-1}
+              className="mt-5 text-4xl font-semibold tracking-tight outline-none sm:text-6xl"
+            >
+              Welcome{profile?.name ? ", " + profile.name.split(" ")[0] : ""}.
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+              Set up your team, connect your plugins, and get your first evidence-backed evaluation.
+            </p>
+            <ol className="my-10 grid gap-5 sm:grid-cols-3">
+              {[
+                { icon: Users, title: "Your team", description: "Create your space" },
+                { icon: Plug, title: "Your plugins", description: "GitHub, Jira and more" },
+                { icon: Sparkles, title: "Your evaluator", description: "Choose what matters" },
+              ].map(({ icon: Icon, title, description }) => (
+                <li key={title} className="setup-welcome-item">
+                  <div className="mb-4 grid size-12 place-items-center rounded-full bg-[var(--brand-soft)] text-[var(--brand)]">
+                    <Icon className="size-6" />
+                  </div>
+                  <p className="font-medium">{title}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+                </li>
+              ))}
+            </ol>
+            <Button size="lg" disabled={busy} onClick={() => void run(() => advance())}>
+              Set up my team
+              <ArrowRight className="ml-3 size-4" />
+            </Button>
+            <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock3 className="size-4" />
+              Continue at your own pace.
+            </p>
+          </div>
+        </main>
+      ) : (
+        <div className="setup-layout">
+          <aside className="setup-rail border-b bg-muted/20 px-5 py-5 md:border-b-0 md:border-r md:px-7 md:py-10">
+            <p className="setup-eyebrow hidden md:block">First evaluation</p>
+            <h2 className="mt-3 hidden max-w-56 text-xl font-semibold leading-snug tracking-tight md:block">
+              A clear picture of your team's work.
+            </h2>
+            <ol className="flex gap-2 md:mt-10 md:flex-col md:gap-1" aria-label="Setup progress">
+              {SETUP_STEPS.slice(1).map((item, i) => (
+                <li
+                  key={item}
+                  className={step === item ? "min-w-0 flex-[3] md:flex-1" : "min-w-0 flex-1"}
                 >
-                  {["Organization", "Team space", "Evidence", "Evaluator", "Next steps"][index]}
-                </span>
-              </li>
-            ))}
-          </ol>
-          <div className="space-y-4 py-3">
-            {loadError ? (
-              <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm">
-                Some setup information could not be loaded.{" "}
-                <button className="underline" onClick={() => void qc.invalidateQueries()}>
-                  Try again
-                </button>
-              </p>
-            ) : null}
-            <h3 className="text-xl font-semibold">{STEPS[draft.step]}</h3>
-            {draft.step === 0 && (
-              <>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  Use your existing organization. Add a logo and cover from Personalize whenever you
-                  like. Next, choose the workspace and group whose work you want to understand.
-                </p>
-                <div className="rounded-xl bg-[var(--brand-soft)] p-4 text-sm">
-                  Your setup is optional. Existing resources and evaluators will be reused.
-                </div>
-              </>
-            )}
-            {draft.step === 1 && (
-              <>
-                <label className="grid gap-2 text-sm">
-                  Workspace
-                  <Select
-                    value={draft.workspaceId}
-                    disabled={busy}
-                    onValueChange={(value) =>
-                      void run(() =>
-                        persist({ ...draft, workspaceId: value, groupId: "", evaluatorId: "" }),
-                      )
-                    }
-                  >
-                    <SelectTrigger aria-label="Workspace">
-                      <SelectValue placeholder="Choose a workspace" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {workspaces.data?.map((w) => (
-                        <SelectItem key={w.id} value={w.id}>
-                          {w.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-                {appearance.canEdit && (
-                  <Button variant="outline" onClick={() => setCreating(!creating)}>
-                    {creating ? "Use an existing workspace" : "Create a new team space"}
-                  </Button>
-                )}
-                {creating && (
-                  <TeamSpaceFields
-                    {...{ workspaceName, groupName, description }}
-                    onWorkspace={setWorkspaceName}
-                    onGroup={setGroupName}
-                    onDescription={setDescription}
-                  />
-                )}
-                {!creating && draft.workspaceId && (
-                  <>
-                    <label className="grid gap-2 text-sm">
-                      Group
-                      <Select
-                        value={draft.groupId}
-                        disabled={busy}
-                        onValueChange={(value) =>
-                          void run(() => persist({ ...draft, groupId: value, evaluatorId: "" }))
-                        }
-                      >
-                        <SelectTrigger aria-label="Group">
-                          <SelectValue placeholder="Choose a group" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {groups.data?.map((g) => (
-                            <SelectItem key={g.id} value={g.id}>
-                              {g.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </label>
-                  </>
-                )}
-              </>
-            )}
-            {draft.step === 2 && (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Select evidence for this group. Connections open in a separate tab, so your place
-                  here is preserved.
-                </p>
-                {appearance.canEdit && (
-                  <a
-                    className="inline-flex items-center gap-2 text-sm font-medium text-[var(--brand-ink)] underline"
-                    href={`/organizations/${org}?tab=plugins`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Connect GitHub or Jira
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                )}
-                {!resources.data?.length && (
-                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                    No resources yet. You can connect a provider later and keep setting up your
-                    space.
-                  </p>
-                )}
-                {resources.data?.map((resource) => (
-                  <label
-                    key={resource.id}
-                    className="flex items-center gap-3 rounded-xl border p-3 text-sm"
-                  >
-                    <Checkbox
-                      aria-label={resource.name}
-                      disabled={busy || !canManage}
-                      checked={assigned.data?.some((r) => r.id === resource.id) ?? false}
-                      onCheckedChange={(value) => {
-                        const checked = value === true;
-                        void run(async () => {
-                          if (checked) {
-                            if (canManageWorkspace)
-                              await api.assignWorkspaceResource(draft.workspaceId, resource.id);
-                            await api.assignGroupResource(draft.groupId, resource.id);
-                          } else await api.unassignGroupResource(draft.groupId, resource.id);
-                          await assigned.refetch();
-                        });
-                      }}
-                    />
-                    {resource.name}
-                  </label>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    void resources.refetch();
-                    void assigned.refetch();
-                  }}
-                >
-                  Refresh resources
-                </Button>
-              </>
-            )}
-            {draft.step === 3 && (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Choose an existing evaluator. Its character, behavior and rules stay exactly as
-                  you configured them.
-                </p>
-                {evaluators.data?.map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void run(() => persist({ ...draft, evaluatorId: e.id }))}
-                    aria-pressed={selectedEvaluator?.id === e.id}
-                    className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left ${selectedEvaluator?.id === e.id ? "border-[var(--brand)] bg-[var(--brand-soft)]" : "bg-card"}`}
-                  >
-                    <EvaluatorMark avatar={e.avatar} name={e.name} size={42} />
-                    <div>
-                      <p className="font-medium">{e.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {e.description || "Ready to review your team's work"}
-                      </p>
-                    </div>
-                    {selectedEvaluator?.id === e.id && <Check className="ml-auto h-4 w-4" />}
-                  </button>
-                ))}
-                <a
-                  className="inline-flex items-center gap-2 text-sm underline"
-                  href={`${groupUrl}?tab=evaluation`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open evaluator configuration
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-                <Button variant="ghost" size="sm" onClick={() => void evaluators.refetch()}>
-                  Refresh evaluators
-                </Button>
-              </>
-            )}
-            {draft.step === 4 && (
-              <>
-                <div className="space-y-3 rounded-2xl border bg-muted/20 p-5">
-                  <p className="text-sm">
-                    <span className="text-muted-foreground">Workspace</span>
-                    <br />
-                    <strong>{selectedWorkspace?.name ?? "Choose a workspace"}</strong>
-                  </p>
-                  <p className="text-sm">
-                    <span className="text-muted-foreground">Group</span>
-                    <br />
-                    <strong>{selectedGroup?.name ?? "Choose a group"}</strong>
-                  </p>
-                  <p className="text-sm">{assigned.data?.length ?? 0} assigned resources</p>
-                  {selectedEvaluator && (
-                    <div className="flex items-center gap-3">
-                      <EvaluatorMark
-                        avatar={selectedEvaluator.avatar}
-                        name={selectedEvaluator.name}
-                        size={36}
-                      />
-                      <span>{selectedEvaluator.name}</span>
-                    </div>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Starting an evaluation uses the connected evidence and the selected evaluator. You
-                  can follow its progress in Reports.
-                </p>
-                {canManage && selectedGroup && selectedEvaluator && !!assigned.data?.length ? (
                   <Button
-                    variant="outline"
-                    disabled={
-                      busy ||
-                      launched ||
-                      !selectedGroup ||
-                      !selectedEvaluator ||
-                      !assigned.data?.length ||
-                      !!loadError
-                    }
+                    type="button"
+                    variant="ghost"
+                    aria-current={step === item ? "step" : undefined}
+                    disabled={busy || pluginBusy || i + 1 > index}
                     onClick={() =>
                       void run(async () => {
-                        const active = await api.listActiveGroupReports(draft.groupId);
-                        if (!active.some((j) => j.evaluatorId === selectedEvaluator!.id))
-                          await api.startEvaluatorReports(draft.groupId, [selectedEvaluator!.id]);
-                        setLaunched(true);
-                        await persist({ ...draft, dismissed: true });
-                        window.location.assign(`${groupUrl}?tab=reports`);
+                        await flush();
+                        await go(item);
                       })
                     }
+                    className={`h-auto w-full justify-start gap-3 rounded-xl px-2 py-3 text-left md:px-3 md:py-4 ${step === item ? "bg-[var(--brand-soft)] text-[var(--brand-ink)]" : ""}`}
                   >
-                    {busy ? "Preparing - " : launched ? "Evaluation started" : "Start evaluation"}
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <span
+                      className={`grid size-7 shrink-0 place-items-center rounded-full border text-xs transition-colors duration-200 ${i + 1 <= index ? "border-[var(--brand)] bg-[var(--brand)] text-[var(--brand-contrast)]" : ""}`}
+                    >
+                      {i + 1 < index ? (
+                        draft.skipped.includes(item) ? (
+                          <span aria-label="Set up later">&ndash;</span>
+                        ) : (
+                          <Check className="size-3.5 animate-in zoom-in-75 duration-200" />
+                        )
+                      ) : (
+                        i + 1
+                      )}
+                    </span>
+                    <span
+                      className={`truncate text-xs font-medium md:text-sm ${step === item ? "" : "hidden md:inline"}`}
+                    >
+                      {LABELS[item]}
+                    </span>
                   </Button>
-                ) : (
-                  <p className="text-sm">
-                    Your space is ready. Connect evidence and choose an evaluator whenever you want
-                    to start evaluating.
+                </li>
+              ))}
+            </ol>
+            <p className="mt-12 hidden text-xs text-muted-foreground md:block">
+              You can finish later.
+            </p>
+          </aside>
+          <main className="setup-main min-w-0 px-5 py-8 sm:px-8 sm:py-10">
+            <div className="mx-auto w-full max-w-4xl">
+              <div key={step} className="setup-enter">
+                <p className="setup-eyebrow">Step {index} of 4</p>
+                <h1
+                  ref={heading}
+                  tabIndex={-1}
+                  className="mt-3 text-2xl font-semibold tracking-tight outline-none sm:text-4xl"
+                >
+                  {TITLES[step]}
+                </h1>
+                <p className="mb-8 mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+                  {DESCRIPTIONS[step]}
+                </p>
+                {taskLoading ? (
+                  <p role="status" className="mb-5 flex gap-2 text-sm">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading this step…
                   </p>
-                )}
-                <a href={`${groupUrl}?tab=reports`} className="ml-3 text-sm underline">
-                  Open reports
-                </a>
-              </>
-            )}
-          </div>
-          <div className="flex justify-between gap-2 border-t pt-4">
-            {draft.step < 4 ? (
-              <Button variant="ghost" disabled={busy} onClick={() => guard.changeOpen(false)}>
-                Finish later
-              </Button>
-            ) : (
-              <span />
-            )}
-            <div className="flex gap-2">
-              {draft.step > 0 && (
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void run(() => persist({ ...draft, step: draft.step - 1 }))}
+                ) : null}
+                {taskError ? (
+                  <p role="alert" className="setup-error mb-5">
+                    This step could not be loaded.{" "}
+                    <Button variant="link" onClick={() => void qc.invalidateQueries()}>
+                      Try again
+                    </Button>
+                  </p>
+                ) : null}
+                <fieldset
+                  disabled={busy || pluginBusy}
+                  className="min-w-0 space-y-6"
+                  onBlurCapture={() => void flush().catch(() => {})}
                 >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back
-                </Button>
-              )}
-              {draft.step === 4 && (
-                <Button disabled={busy} onClick={() => guard.changeOpen(false)}>
-                  Finish setup
-                  <Check className="ml-2 h-4 w-4" />
-                </Button>
-              )}
-              {draft.step < 4 && (
-                <Button
-                  disabled={busy || !nextAllowed || !!saved.error || saved.isLoading}
-                  onClick={() =>
-                    void run(async () => {
-                      let next = { ...draft };
-                      if (draft.step === 1 && creating) {
-                        const result = await api.createTeamSpace(org!, {
-                          workspaceName,
-                          groupName,
-                          description,
-                        });
-                        next = {
-                          ...next,
-                          workspaceId: result.workspace.id,
-                          groupId: result.group.id,
-                          evaluatorId: "",
-                        };
-                        setDraft(next);
-                        setCreating(false);
-                        setWorkspaceName("");
-                        setGroupName("");
-                        setDescription("");
-                        await workspaces.refetch();
+                  {step === "team" && (
+                    <SetupTeam
+                      draft={draft}
+                      onChange={change}
+                      flush={flush}
+                      organization={organization}
+                      workspaces={workspaces.data ?? []}
+                      groups={groups.data ?? []}
+                      canCreate={!!appearance.canEdit}
+                      canInvite={canManage || !!appearance.canEdit}
+                    />
+                  )}
+                  {step === "plugins" && (
+                    <SetupPlugins
+                      org={org}
+                      draft={draft}
+                      resources={resources.data ?? []}
+                      onChange={change}
+                      canConnect={!!appearance.canEdit}
+                      canAssign={canManage}
+                      beforeAuthorize={flush}
+                      onCredentialsChange={setCredentialsDirty}
+                      onBusyChange={setPluginBusy}
+                    />
+                  )}
+                  {step === "evaluator" && (
+                    <SetupEvaluator
+                      draft={draft}
+                      evaluators={evaluators.data ?? []}
+                      voices={voices.data ?? []}
+                      onChange={change}
+                      canManage={canManage}
+                    />
+                  )}
+                  {step === "review" && (
+                    <SetupReview
+                      draft={draft}
+                      onChange={change}
+                      workspace={workspace}
+                      group={group}
+                      evaluator={evaluator}
+                      resourceCount={selectedResources.length}
+                      canManage={canManage}
+                      onEdit={(target) =>
+                        void run(async () => {
+                          await flush();
+                          await go(target);
+                        })
                       }
-                      const skipped = new Set(next.skipped ?? []);
-                      if (
-                        (draft.step === 2 && !assigned.data?.length) ||
-                        (draft.step === 3 && !selectedEvaluator)
-                      )
-                        skipped.add(draft.step);
-                      else skipped.delete(draft.step);
-                      await persist({
-                        ...next,
-                        dismissed: false,
-                        skipped: [...skipped],
-                        step: draft.step + 1,
-                      });
-                    })
-                  }
+                    />
+                  )}
+                </fieldset>
+              </div>
+            </div>
+          </main>
+          <footer className="setup-footer flex flex-wrap items-center justify-between gap-3 border-t bg-background px-5 py-4 sm:px-8">
+            <Button
+              variant="outline"
+              disabled={busy || pluginBusy}
+              onClick={() =>
+                void run(async () => {
+                  await flush();
+                  await go(SETUP_STEPS[Math.max(0, index - 1)]);
+                })
+              }
+            >
+              <ArrowLeft className="mr-2 size-4" />
+              Back
+            </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {["plugins", "evaluator"].includes(step) && (
+                <Button
+                  variant="ghost"
+                  disabled={busy || pluginBusy || credentialsDirty}
+                  onClick={() => void run(() => advance(true))}
                 >
-                  {draft.step === 1 && creating
-                    ? "Create and continue"
-                    : (draft.step === 2 && !assigned.data?.length) ||
-                        (draft.step === 3 && !selectedEvaluator)
-                      ? "Set up later"
-                      : "Continue"}
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  Set up later
+                </Button>
+              )}
+              {step === "review" ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => void run(() => exit(true))}
+                  >
+                    Finish setup only
+                  </Button>
+                  <Button
+                    disabled={
+                      busy ||
+                      taskLoading ||
+                      !!taskError ||
+                      !canManage ||
+                      !evaluator ||
+                      !selectedResources.length
+                    }
+                    onClick={() => void run(launch)}
+                  >
+                    {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}Start evaluation
+                    <ArrowRight className="ml-2 size-4" />
+                  </Button>
+                </>
+              ) : (
+                <Button disabled={nextDisabled} onClick={() => void run(() => advance())}>
+                  {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                  {step === "team" && draft.teamDraft.invitations.some((email) => email.trim())
+                    ? "Continue & invite"
+                    : "Continue"}
+                  <ArrowRight className="ml-2 size-4" />
                 </Button>
               )}
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      {guard.confirmation}
-    </>
+          </footer>
+        </div>
+      )}
+      {(actionError || state.error) && ready && (
+        <div role="alert" className="setup-alert">
+          <p>{actionError || state.error}</p>
+          {state.error && (
+            <Button size="sm" variant="outline" onClick={() => void run(flush)}>
+              Retry saving
+            </Button>
+          )}
+        </div>
+      )}
+      <ConfirmDialog
+        open={state.blocker.status === "blocked"}
+        onOpenChange={(open) => {
+          if (!open) state.blocker.reset?.();
+        }}
+        title="Leave with unsaved changes?"
+        description={
+          credentialsDirty
+            ? "Plugin credentials are not saved until you connect. Saved setup progress will stay."
+            : "Your latest edits could not be saved. Stay to retry, or leave with your previously saved progress."
+        }
+        confirmLabel="Leave anyway"
+        cancelLabel="Keep editing"
+        destructive
+        onConfirm={() => state.blocker.proceed?.()}
+      />
+    </div>
   );
 }

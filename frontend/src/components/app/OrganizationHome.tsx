@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -14,7 +14,8 @@ import {
 import { Avatar } from "@/components/app/Avatar";
 import { Button } from "@/components/ui/button";
 import { PersonalizeDialog } from "@/components/app/PersonalizeDialog";
-import { SetupWizard } from "@/components/app/SetupWizard";
+import { useNavigate } from "@tanstack/react-router";
+import { normalizeSetup, setupUrl } from "@/lib/experience";
 
 import { api } from "@/lib/api";
 import { useExperience, shortcutUrl } from "@/lib/experience-context";
@@ -23,7 +24,6 @@ import { BLOCK_LABELS, type Shortcut } from "@/lib/experience";
 
 export function OrganizationHome() {
   const experience = useExperience();
-  const qc = useQueryClient();
   const opened = useRef<string | null>(null);
   const { organizationId: org, profile, appearance, preferences } = experience;
   const organizations = useQuery({ queryKey: ["organizations"], queryFn: api.listOrganizations });
@@ -33,7 +33,10 @@ export function OrganizationHome() {
     enabled: !!org,
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
+  const navigate = useNavigate();
+  const openSetup = () => {
+    if (org) void navigate({ to: setupUrl(org, normalizeSetup(setup.data ?? {}).step) } as never);
+  };
 
   const cover = useImageSource(appearance.cover);
   const organization = organizations.data?.find((o) => o.id === org);
@@ -50,16 +53,13 @@ export function OrganizationHome() {
       opened.current === org ||
       setup.data.seen ||
       setup.data.dismissed ||
-      setup.data.step > 0
+      normalizeSetup(setup.data).step !== "welcome"
     )
       return;
+    if (!appearance.canEdit || !workspaces.data || workspaces.data.length) return;
     opened.current = org;
-    setSetupOpen(true);
-    void api
-      .saveSetup(org, { ...setup.data, seen: true })
-      .then((saved) => qc.setQueryData(["setup", profile.id, org], saved))
-      .catch(() => {});
-  }, [org, profile, setup.data, qc]);
+    void navigate({ to: setupUrl(org, "welcome"), replace: true } as never);
+  }, [org, profile, setup.data, appearance.canEdit, workspaces.data, navigate]);
   const recentGroups = preferences.recent.filter((s) => s.kind === "group");
   const reports = useQuery({
     queryKey: ["home-reports", profile?.id, org, recentGroups.map((g) => g.id)],
@@ -102,7 +102,10 @@ export function OrganizationHome() {
   const blocks = preferences.blocks ?? appearance.blocks;
   const prepared =
     Number(!!setup.data?.groupId) +
-    Number((setup.data?.step ?? 0) > 2 && !(setup.data?.skipped ?? []).includes(2)) +
+    Number(
+      ["evaluator", "review"].includes(normalizeSetup(setup.data ?? {}).step) &&
+        !normalizeSetup(setup.data ?? {}).skipped.includes("plugins"),
+    ) +
     Number(!!setup.data?.evaluatorId);
   return (
     <>
@@ -130,7 +133,7 @@ export function OrganizationHome() {
           <p className="mb-6 mt-2 text-sm text-muted-foreground">
             Create an organization to connect your work and start exploring.
           </p>
-          <Button onClick={() => setSetupOpen(true)}>Create organization</Button>
+          <Button onClick={openSetup}>Create organization</Button>
         </div>
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_290px]">
@@ -165,7 +168,7 @@ export function OrganizationHome() {
                         evaluators, and discover what comes next.
                       </p>
                       <div className="mt-6 flex flex-wrap gap-3">
-                        <Button disabled={!org} onClick={() => setSetupOpen(true)}>
+                        <Button disabled={!org} onClick={openSetup}>
                           <Sparkles className="mr-2 h-4 w-4" />
                           Prepare an evaluation
                         </Button>
@@ -279,7 +282,7 @@ export function OrganizationHome() {
                       </p>
                     </div>
                   </div>
-                  <Button disabled={!org} onClick={() => setSetupOpen(true)}>
+                  <Button disabled={!org} onClick={openSetup}>
                     {setup.data?.completed ? "Review setup" : "Continue setup"}
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
@@ -351,7 +354,6 @@ export function OrganizationHome() {
         </div>
       )}
       <PersonalizeDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      {org && <SetupWizard key={org} open={setupOpen} onOpenChange={setSetupOpen} />}
     </>
   );
 }

@@ -1,9 +1,32 @@
 import { BadRequestException } from '@nestjs/common';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ReportsService } from './reports.service';
+import { ReportsService, validateReportPeriod } from './reports.service';
 
 const groupGenerate = jest.fn();
+jest.mock('./report-agent-tools', () => ({
+  reportAgentTools: async () => ({
+    modelRequest: async (_model, _purpose, _prompt, request) =>
+      request(new AbortController().signal),
+    modelBudget: () => ({ inputBytes: 100000, outputTokens: 4096 }),
+    generationError: () => 'other',
+    packEvidence: (evidence) => ({
+      evidence,
+      receipt: {
+        budgetBytes: 100000,
+        bytes: 0,
+        counts: [],
+        includedIds: [],
+        nested: {
+          comments: { kept: 0, omitted: 0 },
+          reviews: { kept: 0, omitted: 0 },
+          files: { kept: 0, omitted: 0 },
+        },
+        operations: [],
+      },
+    }),
+  }),
+}));
 
 jest.mock('../mastra', () => ({
   mastra: {
@@ -147,10 +170,11 @@ describe('ReportsService', () => {
       [resource],
       'history',
       undefined,
+      undefined,
     );
     expect(groupGenerate).toHaveBeenCalled();
     expect(prisma.performanceReport.create).toHaveBeenCalledWith({
-        data: {
+      data: {
         groupId: 'group-1',
         evaluatorId: null,
         type: 'GROUP_REPORT',
@@ -258,6 +282,27 @@ describe('ReportsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('filters preparation and stores the requested period in the report', async () => {
+    const period = { from: '2026-10-01', to: '2026-10-31' };
+    await service.createGroupReport('group-1', {
+      type: 'GROUP_REPORT',
+      period,
+    });
+    expect(runtime.provide).toHaveBeenCalledWith(
+      [resource],
+      'history',
+      undefined,
+      period,
+    );
+    expect(prisma.performanceReport.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          data: expect.objectContaining({ period }),
+        }),
+      }),
+    );
+  });
+
   it('returns legacy reports without transforming them', async () => {
     const legacyReports = [
       { id: 'activity-1', type: 'GITHUB_ACTIVITY', data: { summary: 'old' } },
@@ -280,4 +325,15 @@ describe('ReportsService', () => {
       where: { id: 'history-1', type: { not: 'AGENT_EVALUATION' } },
     });
   });
+});
+
+describe('report periods', () => {
+  it.each([
+    { from: '2026-02-30', to: '2026-03-01' },
+    { from: '2026-11-10', to: '2026-11-01' },
+  ])('rejects invalid periods before enqueueing', (period) => {
+    expect(() => validateReportPeriod(period)).toThrow(BadRequestException);
+  });
+  it('keeps legacy all-history requests compatible', () =>
+    expect(validateReportPeriod(undefined)).toBeUndefined());
 });

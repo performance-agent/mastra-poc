@@ -54,6 +54,19 @@ async function setup(t, options = {}) {
     },
     posts: 0,
     noResources: false,
+    setupSaveFails: false,
+    connections: [
+      {
+        id: "inst-a",
+        pluginId: "github",
+        name: "acme-team",
+        status: "ACTIVE",
+        lastSyncedAt: "2026-11-01T00:00:00Z",
+      },
+    ],
+    assigned: ["res-a"],
+    evaluatorCopies: [],
+    activeReports: [],
     saveFails: false,
     createFails: false,
     spaces: [],
@@ -113,6 +126,12 @@ async function setup(t, options = {}) {
       if (patch) Object.assign(state.appearance, req.postDataJSON());
       data = state.appearance;
     } else if (path.endsWith("/me/setup")) {
+      if (patch && state.setupSaveFails)
+        return route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "Setup save unavailable" }),
+        });
       if (patch) state.setup = req.postDataJSON();
       data = state.setup;
     } else if (path === "/organizations")
@@ -132,18 +151,31 @@ async function setup(t, options = {}) {
       };
     else if (path.endsWith("/workspaces"))
       data = [
-        {
-          id: "ws-a",
-          name: "Product & Engineering",
-          description: "A shared space for the next big idea.",
-        },
-        { id: "ws-b", name: "Research lab", description: "Turn curiosity into understanding." },
+        ...(!options.firstVisit
+          ? [
+              {
+                id: "ws-a",
+                name: "Product & Engineering",
+                description: "A shared space for the next big idea.",
+              },
+              {
+                id: "ws-b",
+                name: "Research lab",
+                description: "Turn curiosity into understanding.",
+              },
+            ]
+          : []),
         ...state.spaces,
       ];
     else if (/^\/workspaces\/[^/]+$/.test(path))
       data = { id: "ws-a", organizationId: "org-a", name: "Product & Engineering" };
     else if (path.endsWith("/groups"))
       data = [
+        ...state.spaces.map((space) => ({
+          id: "new-group",
+          name: "Engineering",
+          workspaceId: space.id,
+        })),
         {
           id: "group-a",
           workspaceId: "ws-a",
@@ -164,28 +196,104 @@ async function setup(t, options = {}) {
           photoUrl: ["avatar:iris", "avatar:fern", "avatar:rose", "avatar:sun"][i],
         },
       }));
-    else if (path.endsWith("/resources"))
-      data = state.noResources
-        ? []
-        : [{ id: "res-a", name: "platformance/app", type: "github_repository" }];
-    else if (path.endsWith("/evaluators"))
+    else if (path === "/plugins")
       data = [
         {
-          id: "eva-a",
-          name: "Ada",
-          avatar: 15,
-          scope: "GROUP",
-          effort: "MEDIUM",
-          personality: "direct",
-          rules: [],
-          questions: [],
-          description: "A thoughtful look at collaboration.",
+          id: "github",
+          name: "GitHub",
+          installable: true,
+          setupUrl: "https://github.com/apps/test/installations/new",
+          configurationFields: [],
+          resourceTypes: [],
+          dataTypes: [],
+        },
+        {
+          id: "jira",
+          name: "Jira",
+          installable: true,
+          resourceTypes: [],
+          dataTypes: [],
+          configurationFields: [
+            { key: "siteUrl", label: "Site URL", required: true, configurable: true },
+            { key: "email", label: "Email", required: true, configurable: true },
+            {
+              key: "apiToken",
+              label: "API token",
+              required: true,
+              configurable: true,
+              sensitive: true,
+            },
+          ],
         },
       ];
-    else if (path.endsWith("/generation-jobs")) data = [];
+    else if (path.endsWith("/plugin-installations")) data = state.connections;
+    else if (path.endsWith("/jira/setup")) {
+      data = { id: "inst-jira", pluginId: "jira", name: "Jira", status: "ACTIVE" };
+      state.connections.push(data);
+    } else if (path.endsWith("/sync"))
+      data = state.connections.find((item) => path.includes(item.id));
+    else if (/\/resources\/[^/]+$/.test(path) && req.method() === "PUT") {
+      if (path.startsWith("/groups/")) state.assigned.push(path.split("/").pop());
+      data = {};
+    } else if (/\/resources\/[^/]+$/.test(path) && req.method() === "DELETE") {
+      state.assigned = state.assigned.filter((id) => id !== path.split("/").pop());
+      data = {};
+    } else if (path.endsWith("/resources")) {
+      data = state.noResources
+        ? []
+        : [
+            {
+              id: "res-a",
+              name: "platformance/app",
+              type: "github_repository",
+              installationId: "inst-a",
+              active: true,
+            },
+            ...(state.connections.some((item) => item.pluginId === "jira")
+              ? [
+                  {
+                    id: "res-jira",
+                    name: "Engineering tickets",
+                    installationId: "inst-jira",
+                    active: true,
+                  },
+                ]
+              : []),
+          ];
+      if (path.startsWith("/groups/"))
+        data = data.filter((item) => state.assigned.includes(item.id));
+    } else if (path.endsWith("/personalities"))
+      data = [
+        { id: "voice-direct", name: "Direct", instruction: "Be direct" },
+        { id: "voice-careful", name: "Careful", instruction: "Be careful" },
+      ];
+    else if (path.endsWith("/evaluators")) {
+      if (req.method() === "POST") {
+        const body = req.postDataJSON();
+        data = { ...body, id: "copy-" + state.evaluatorCopies.length };
+        state.evaluatorCopies.push(data);
+      } else
+        data = ["Ada", "Grace"]
+          .map((name, i) => ({
+            id: i ? "eva-b" : "eva-a",
+            name,
+            avatar: i ? 24 : 15,
+            scope: "GROUP",
+            effort: "MEDIUM",
+            personalityId: "voice-direct",
+            personality: { id: "voice-direct", name: "Direct" },
+            evaluationEmphasis: ["ENGINEERING"],
+            evaluationNotes: "",
+            rules: [],
+            questions: [],
+            description: "A thoughtful look at collaboration.",
+          }))
+          .concat(state.evaluatorCopies);
+    } else if (path.endsWith("/generation-jobs")) data = state.activeReports;
     else if (path.endsWith("/reports")) {
       if (req.method() === "POST") {
         state.posts++;
+        state.reportBody = req.postDataJSON();
         data = { jobs: [{ jobId: "job-a", evaluatorId: "eva-a", status: "queued" }] };
       } else data = [];
     } else if (path === "/media") {
@@ -202,14 +310,12 @@ async function setup(t, options = {}) {
         ),
       });
     } else data = [];
-    if (path.endsWith("/evaluators"))
-      data.push({ ...data[0], id: "eva-b", name: "Grace", avatar: 24 });
     await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
   });
   await page.goto(base + "/?org=org-a");
   await page
     .getByRole("heading", {
-      name: options.firstVisit ? "Make room for your team" : "Welcome back, Alex.",
+      name: options.firstVisit ? "Welcome, Alex." : "Welcome back, Alex.",
     })
     .waitFor();
   t.after(() => assert.deepEqual(errors, [], "No browser runtime errors"));
@@ -280,35 +386,36 @@ test(
   },
 );
 test(
-  "wizard resumes and does not submit evaluations during setup",
+  "full-screen setup resumes and does not start evaluations implicitly",
   { timeout: 60000 },
   async (t) => {
     const { page, state } = await setup(t);
-    await page.getByRole("button", { name: /Continue setup|Review setup/ }).click();
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Already have a team? Choose existing", exact: true })
+      .click();
     await choose(page, "Workspace", "Product & Engineering");
-    await choose(page, "Group", "Platform team");
+    await choose(page, "Team", "Platform team");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await screenshot(page, "04-setup-resources");
-    await page.getByRole("button", { name: "Finish later" }).click();
-    await page.reload();
-    await page.getByRole("button", { name: /Continue setup|Review setup/ }).click();
-    await page.getByRole("heading", { name: "Connect evidence", exact: true }).waitFor();
-    assert.equal(state.setup.step, 2);
+    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    assert.equal(await page.getByRole("dialog").count(), 0);
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    assert.equal(state.setup.step, "plugins");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page.getByRole("button", { name: /Ada/ }).waitFor();
     await page.getByRole("button", { name: /Grace/ }).click();
-    await screenshot(page, "05-setup-evaluator");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page.getByRole("button", { name: "Start evaluation", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Ready for your first evaluation" }).waitFor();
     assert.equal(state.setup.evaluatorId, "eva-b");
-    await page.getByRole("button", { name: "Finish setup" }).click();
-    await page.reload();
-    await page.getByRole("button", { name: /Continue setup|Review setup/ }).click();
-    await page.getByRole("dialog").getByText("Grace", { exact: true }).waitFor();
+    assert.equal(state.posts, 0);
+    await page.getByRole("button", { name: "Finish setup only" }).click();
+    await page.getByRole("heading", { name: "Welcome back, Alex." }).waitFor();
+    assert.equal(state.setup.completed, true);
     assert.equal(state.posts, 0);
   },
 );
+
 test(
   "member cards retain compact mode and failed uploads preserve the saved photo",
   { timeout: 60000 },
@@ -432,30 +539,31 @@ test(
 );
 
 test(
-  "first visit opens once and setup finishes without integrations",
+  "first visit opens a focused welcome and setup can finish without plugins",
   { timeout: 60000 },
   async (t) => {
     const { page, state } = await setup(t, { firstVisit: true });
     state.noResources = true;
-    await page.getByRole("heading", { name: "Make room for your team" }).waitFor();
-    assert.equal(new URL(page.url()).pathname, "/organizations/org-a");
-    assert.equal(new URL(page.url()).search, "");
+    assert.match(new URL(page.url()).pathname, /setup\/welcome$/);
+    await page.getByRole("button", { name: "Set up my team", exact: true }).click();
+    await page.getByLabel("Workspace", { exact: true }).fill("Product");
+    await page.getByLabel("Team", { exact: true }).fill("Engineering");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await choose(page, "Workspace", "Product & Engineering");
-    await choose(page, "Group", "Platform team");
-    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
     await page.getByRole("button", { name: "Set up later", exact: true }).click();
+    await page.getByRole("heading", { name: "Choose your evaluator" }).waitFor();
     await page.getByRole("button", { name: "Set up later", exact: true }).click();
-    await page.getByRole("button", { name: "Finish setup", exact: true }).click();
-    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Finish setup only" }).click();
+    await page.getByRole("heading", { name: "Welcome back, Alex." }).waitFor();
     assert.equal(state.setup.completed, true);
-    assert.deepEqual(state.setup.skipped, [2, 3]);
+    assert.deepEqual(state.setup.skipped, ["plugins", "evaluator"]);
     assert.equal(state.posts, 0);
     await page.reload();
     await page.getByRole("heading", { name: "Getting started" }).waitFor();
     assert.equal(await page.getByRole("dialog").count(), 0);
   },
 );
+
 test(
   "one save commits every tab and closing protects the full draft",
   { timeout: 60000 },
@@ -767,5 +875,323 @@ test(
     await page.getByRole("button", { name: "Personalize", exact: true }).first().click();
     await preview.locator("svg.lucide-flower-2").waitFor();
     assert.equal(await preview.locator("img").count(), 0);
+  },
+);
+
+async function enterSetup(t, step = "plugins") {
+  const result = await setup(t);
+  result.state.setup = {
+    version: 1,
+    step: 2,
+    seen: true,
+    workspaceId: "ws-a",
+    groupId: "group-a",
+    evaluatorId: "eva-a",
+    dismissed: false,
+  };
+  await result.page.goto(base + "/organizations/org-a/setup/" + step);
+  await result.page
+    .getByRole("heading", {
+      name:
+        step === "plugins"
+          ? "Connect your team's plugins"
+          : step === "evaluator"
+            ? "Choose your evaluator"
+            : "Ready for your first evaluation",
+    })
+    .waitFor();
+  return result;
+}
+
+test(
+  "Jira connects inline and credentials never enter the saved setup",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t);
+    await page.getByRole("button", { name: "Jira Connect", exact: true }).click();
+    await page.getByLabel("Site URL", { exact: true }).fill("https://example.atlassian.net");
+    await page.getByLabel("Email", { exact: true }).fill("alex@example.test");
+    await page.getByLabel("API token", { exact: true }).fill("private-test-token");
+    await page.getByRole("button", { name: "Connect and sync", exact: true }).click();
+    await page.getByRole("checkbox", { name: "Engineering tickets" }).waitFor();
+    assert.equal(await page.getByRole("dialog").count(), 0);
+    await page.getByRole("checkbox", { name: "Engineering tickets" }).check();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("heading", { name: "Choose your evaluator" }).waitFor();
+    assert.ok(state.assigned.includes("res-jira"));
+    assert.equal(JSON.stringify(state.setup).includes("private-test-token"), false);
+    assert.equal(
+      await page.evaluate(() =>
+        JSON.stringify({ ...sessionStorage, ...localStorage }).includes("private-test-token"),
+      ),
+      false,
+    );
+  },
+);
+
+test(
+  "GitHub authorization returns automatically to the same plugin step",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await enterSetup(t);
+    await page.route("https://github.com/apps/test/installations/new", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: `<script>location.replace(${JSON.stringify(base + "/integrations/github/setup?installation_id=123&setup_action=install")})</script>`,
+      }),
+    );
+    await page.getByRole("button", { name: "Add connection", exact: true }).click();
+    await page.getByRole("button", { name: "Authorize GitHub", exact: true }).click();
+    await page.waitForURL("**/organizations/org-a/setup/plugins");
+    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/organizations/org-a/setup/plugins");
+    assert.equal(
+      await page.evaluate(() => sessionStorage.getItem("performance-agent:github-setup")),
+      null,
+    );
+  },
+);
+
+test(
+  "custom evaluators resume as drafts and create only a team copy",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t, "evaluator");
+    await page.getByRole("button", { name: "Customize a copy", exact: true }).click();
+    await page.getByLabel("Name", { exact: true }).fill("Engineering coach");
+    await page.getByRole("button", { name: "Careful", exact: true }).click();
+    await page.getByRole("button", { name: "Use Cloud character", exact: true }).click();
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    await page.getByLabel("Name", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "Engineering coach");
+    assert.equal(state.evaluatorCopies.length, 0);
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("heading", { name: "Ready for your first evaluation" }).waitFor();
+    assert.equal(state.evaluatorCopies.length, 1);
+    assert.equal(state.evaluatorCopies[0].scope, "GROUP");
+    assert.equal(state.evaluatorCopies[0].personalityId, "voice-careful");
+    assert.equal(state.setup.evaluatorId, "copy-0");
+    assert.equal(state.posts, 0);
+  },
+);
+
+test(
+  "setup saves drafts and keeps failed saves visible before exit",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await setup(t);
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+
+    await page.getByLabel("Workspace", { exact: true }).fill("My product team");
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    assert.equal(state.setup.teamDraft.workspaceName, "My product team");
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    assert.equal(
+      await page.getByLabel("Workspace", { exact: true }).inputValue(),
+      "My product team",
+    );
+    state.setupSaveFails = true;
+    await page.getByLabel("Team", { exact: true }).fill("Unsaved team");
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    await page.getByRole("alert").filter({ hasText: "Setup save unavailable" }).waitFor();
+    assert.match(new URL(page.url()).pathname, /setup\/team$/);
+    assert.equal(await page.getByLabel("Team", { exact: true }).inputValue(), "Unsaved team");
+    state.setupSaveFails = false;
+    await page.getByRole("button", { name: "Retry saving" }).click();
+    await page.getByRole("status").filter({ hasText: "Progress saved" }).waitFor();
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    await page.getByRole("heading", { name: "Welcome back, Alex." }).waitFor();
+    assert.equal(state.setup.teamDraft.groupName, "Unsaved team");
+  },
+);
+
+test(
+  "review validates dates and starts exactly one evaluation with its period",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t, "review");
+    await choose(page, "Evaluation period", "Custom dates");
+    await page.getByLabel("From", { exact: true }).fill("2026-10-31");
+    await page.getByLabel("To", { exact: true }).fill("2026-10-01");
+    await page.getByRole("button", { name: "Start evaluation", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "Choose both dates" }).waitFor();
+    assert.equal(state.posts, 0);
+    await page.getByLabel("From", { exact: true }).fill("2026-10-01");
+    await page.getByLabel("To", { exact: true }).fill("2026-10-31");
+    await page.getByRole("button", { name: "Start evaluation", exact: true }).evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await page.waitForURL("**/groups/group-a?tab=reports");
+    assert.equal(state.posts, 1);
+    assert.deepEqual(state.reportBody.period, { from: "2026-10-01", to: "2026-10-31" });
+  },
+);
+
+test("setup stays usable on mobile and honors reduced motion", { timeout: 60000 }, async (t) => {
+  const { page } = await enterSetup(t, "review");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const step of ["review", "evaluator", "plugins", "team"]) {
+    await page.goto(base + "/organizations/org-a/setup/" + step);
+    await page.locator(".setup-main h1").waitFor();
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+      JSON.stringify(
+        await page.locator("body *").evaluateAll((nodes) =>
+          nodes
+            .filter((node) => node.getBoundingClientRect().right > innerWidth + 1)
+            .slice(0, 12)
+            .map((node) => ({
+              tag: node.tagName,
+              cls: node.className,
+              width: node.getBoundingClientRect().width,
+            })),
+        ),
+      ),
+    );
+    assert.equal(
+      await page.locator(".setup-enter").evaluate((el) => getComputedStyle(el).animationName),
+      "none",
+    );
+    assert.equal(await page.locator("select").count(), 0);
+    assert.equal(await page.getByRole("dialog").count(), 0);
+  }
+});
+test(
+  "pending plugin credentials are protected when leaving setup",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await enterSetup(t);
+    await page.getByRole("button", { name: "Jira Connect", exact: true }).click();
+    await page.getByLabel("API token", { exact: true }).fill("pending-secret");
+    assert.equal(
+      await page.getByRole("button", { name: "Set up later", exact: true }).isDisabled(),
+      true,
+    );
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    await page.getByRole("alertdialog").waitFor();
+    await page.getByRole("button", { name: "Keep editing" }).click();
+    assert.equal(
+      await page.getByLabel("API token", { exact: true }).inputValue(),
+      "pending-secret",
+    );
+    await page.getByRole("button", { name: "Cancel connection", exact: true }).click();
+    await page.getByRole("button", { name: "Set up later", exact: true }).click();
+    await page.getByRole("heading", { name: "Choose your evaluator" }).waitFor();
+  },
+);
+
+test(
+  "viewers can resume setup but cannot configure plugins or launch evaluations",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t);
+    state.appearance.canEdit = false;
+    await page.route("**/api/**/members", async (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([{ userId: "user-a", role: "VIEWER", user: state.profile }]),
+      }),
+    );
+    await page.reload();
+    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    await page.getByRole("button", { name: "Jira Connect", exact: true }).click();
+    await page
+      .getByText("An organization admin can connect this plugin.", { exact: false })
+      .waitFor();
+    assert.equal(
+      await page.getByRole("button", { name: "Connect and sync", exact: true }).count(),
+      0,
+    );
+    await page.getByRole("button", { name: "Set up later", exact: true }).click();
+    assert.equal(
+      await page.getByRole("button", { name: "Customize a copy", exact: true }).count(),
+      0,
+    );
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("heading", { name: "Ready for your first evaluation" }).waitFor();
+    assert.equal(
+      await page.getByRole("button", { name: "Start evaluation", exact: true }).isDisabled(),
+      true,
+    );
+    assert.equal(state.posts, 0);
+  },
+);
+
+test(
+  "an existing evaluator job is reused instead of submitting another",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t, "review");
+    state.activeReports = [{ jobId: "existing-job", evaluatorId: "eva-a", status: "running" }];
+    await page.getByRole("button", { name: "Start evaluation", exact: true }).click();
+    await page.waitForURL("**/groups/group-a?tab=reports");
+    assert.equal(state.posts, 0);
+  },
+);
+
+test(
+  "plugin synchronization errors retain selections and allow retry",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t);
+    await page.route("**/api/plugin-installations/inst-a/sync", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Plugin temporarily unavailable" }),
+      }),
+    );
+    await page.getByRole("button", { name: "Sync plugin", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "Plugin temporarily unavailable" }).waitFor();
+    assert.equal(await page.getByRole("checkbox", { name: "platformance/app" }).isChecked(), true);
+    await page.unroute("**/api/plugin-installations/inst-a/sync");
+    await page.getByRole("button", { name: "Sync plugin", exact: true }).click();
+    await page.getByRole("checkbox", { name: "platformance/app" }).waitFor();
+    assert.equal(state.posts, 0);
+  },
+);
+
+test(
+  "advanced evaluator settings keep the primary action visible",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await enterSetup(t, "evaluator");
+    await page.getByRole("button", { name: "Customize a copy", exact: true }).click();
+    await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
+    await page.getByRole("button", { name: "Add rule", exact: true }).click();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const bounds = await page.locator(".setup-footer").boundingBox();
+      assert.ok(
+        (bounds.top >= 0 && bounds.bottom <= 845) ||
+          (bounds.y >= 0 && bounds.y + bounds.height <= 845),
+        JSON.stringify(bounds),
+      );
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        true,
+      );
+    }
+  },
+);
+
+test(
+  "removed plugin resources can be cleared without losing setup progress",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t);
+    await page.getByRole("checkbox", { name: "platformance/app" }).waitFor();
+    await page.getByRole("button", { name: "Save & exit" }).click();
+    state.noResources = true;
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    await page.getByRole("button", { name: "Remove unavailable resources", exact: true }).click();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("heading", { name: "Choose your evaluator" }).waitFor();
+    assert.deepEqual(state.setup.resourceIds, []);
+    assert.equal(state.setup.groupId, "group-a");
   },
 );
