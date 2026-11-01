@@ -1,3 +1,10 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FileText, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -587,18 +594,21 @@ function ReportHistoryBar({
         <ArrowLeft className="h-4 w-4" />
       </Button>
       {history.length > 1 ? (
-        <select
-          aria-label="Report date"
-          value={currentId}
-          onChange={(event) => onOpenReport(event.target.value)}
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-        >
-          {history.map((report) => (
-            <option key={report.id} value={report.id}>
-              {report.createdAt ? new Date(report.createdAt).toLocaleString() : "Report"}
-            </option>
-          ))}
-        </select>
+        <Select value={currentId} onValueChange={onOpenReport}>
+          <SelectTrigger
+            aria-label="Report date"
+            className="h-8 w-auto min-w-40 max-w-full text-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {history.map((report) => (
+              <SelectItem key={report.id} value={report.id}>
+                {report.createdAt ? new Date(report.createdAt).toLocaleString() : "Report"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : null}
       {canDelete && (
         <Button

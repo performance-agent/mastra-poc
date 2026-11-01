@@ -5,7 +5,9 @@ import { resolve } from "node:path";
 import { chromium } from "playwright";
 
 const baseURL = process.env.PROGRESS_TEST_BASE_URL ?? "http://127.0.0.1:5173";
-const evidence = resolve("../artifacts/evaluation-progress/ui-tests");
+const evidence = resolve(
+  process.env.PROGRESS_TEST_EVIDENCE_DIR ?? "../artifacts/evaluation-progress/ui-tests",
+);
 const stages = [
   "preparing",
   "rule_input",
@@ -24,7 +26,7 @@ before(async () => {
     channel: process.env.PLAYWRIGHT_CHANNEL ?? "chrome",
     headless: true,
   });
-  await mkdir(evidence, { recursive: true });
+  if (process.env.UI_TEST_SCREENSHOTS !== "0") await mkdir(evidence, { recursive: true });
 });
 after(async () => {
   await browser?.close();
@@ -148,6 +150,7 @@ async function visible(page, text, panel = "evaluation-progress") {
   await page.getByTestId(panel).getByText(text, { exact: true }).waitFor({ timeout: 15000 });
 }
 async function screenshot(page, name) {
+  if (process.env.UI_TEST_SCREENSHOTS === "0") return;
   await page.screenshot({ path: resolve(evidence, `${name}.png`), fullPage: true });
 }
 

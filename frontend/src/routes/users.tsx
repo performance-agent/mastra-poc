@@ -1,3 +1,5 @@
+import { ImagePicker } from "@/components/app/ImagePicker";
+import { useExperience } from "@/lib/experience-context";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -36,6 +38,7 @@ function UsersPage() {
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
 
+  const experience = useExperience();
   const q = useQuery({ queryKey: ["users"], queryFn: api.listUsers });
   const filtered = useMemo(() => {
     const list = q.data ?? [];
@@ -88,6 +91,7 @@ function UsersPage() {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
+                    disabled={u.id !== experience.profile?.id}
                     onClick={() => setEditing(u)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -155,6 +159,7 @@ function UserFormDialog({
   const [email, setEmail] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -168,9 +173,14 @@ function UserFormDialog({
     <FormModal
       open={open}
       onOpenChange={onOpenChange}
+      dirty={
+        name !== (initial?.name ?? "") ||
+        email !== (initial?.email ?? "") ||
+        photoUrl !== (initial?.photoUrl ?? "")
+      }
       title="Edit user"
       submitLabel="Save"
-      submitting={submitting}
+      submitting={submitting || uploading}
       onSubmit={async () => {
         if (!name.trim() || !email.trim()) {
           toast.error("Fill all required fields");
@@ -181,7 +191,7 @@ function UserFormDialog({
           await onSubmit({
             name: name.trim(),
             email: email.trim(),
-            photoUrl: photoUrl.trim() || undefined,
+            photoUrl: photoUrl.trim(),
           });
           onOpenChange(false);
         } catch (e) {
@@ -205,15 +215,12 @@ function UserFormDialog({
           required
         />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="u-photo">Photo URL</Label>
-        <Input
-          id="u-photo"
-          type="url"
-          value={photoUrl}
-          onChange={(e) => setPhotoUrl(e.target.value)}
-        />
-      </div>
+      <ImagePicker
+        value={photoUrl}
+        onChange={setPhotoUrl}
+        target={{ scope: "user", targetId: initial?.id ?? "" }}
+        onBusyChange={setUploading}
+      />
     </FormModal>
   );
 }

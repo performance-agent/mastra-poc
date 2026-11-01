@@ -1,0 +1,23 @@
+model ExperienceSetting {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope String @default("global")
+  preferences Json
+  setup Json?
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([userId, scope])
+}
+
+model MediaAsset {
+  id String @id @default(cuid())
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  scope String
+  targetId String
+  purpose String
+  objectPath String @unique
+  bytes Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([scope, targetId])
+}

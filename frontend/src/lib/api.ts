@@ -1,3 +1,4 @@
+import type { Appearance, Preferences, Setup } from "./experience";
 import type { GradingSettings, GenerationJob } from "./types";
 import type {
   Organization,
@@ -98,6 +99,52 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  createTeamSpace: (
+    org: string,
+    body: { workspaceName: string; groupName: string; description?: string },
+  ) =>
+    request<{ workspace: Workspace; group: Group }>(`/organizations/${org}/team-space`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  savePersonalization: (body: {
+    profile?: { name: string; photoUrl: string | null };
+    personal?: Partial<Pick<Preferences, "theme" | "motion">>;
+    organizationId?: string;
+    home?: Partial<Pick<Preferences, "blocks" | "favorites">>;
+    organization?: { appearance: Omit<Appearance, "canEdit">; photoUrl: string };
+  }) =>
+    request<{ saved: boolean }>("/users/me/personalization", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  me: () => request<User>("/users/me"),
+  saveProfile: (body: { name: string; photoUrl?: string | null }) =>
+    request<User>("/users/me", { method: "PATCH", body: JSON.stringify(body) }),
+  preferences: (org?: string) =>
+    request<Preferences>(org ? `/organizations/${org}/me/preferences` : "/users/me/preferences"),
+  savePreferences: (body: Preferences, org?: string) =>
+    request<Preferences>(org ? `/organizations/${org}/me/preferences` : "/users/me/preferences", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  appearance: (org: string) => request<Appearance>(`/organizations/${org}/appearance`),
+  saveAppearance: (org: string, body: Appearance) =>
+    request<Appearance>(`/organizations/${org}/appearance`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        version: body.version,
+        color: body.color,
+        cover: body.cover,
+        blocks: body.blocks,
+      }),
+    }),
+  setup: (org: string) => request<Setup>(`/organizations/${org}/me/setup`),
+  saveSetup: (org: string, body: Setup) =>
+    request<Setup>(`/organizations/${org}/me/setup`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getIndividualInsightsJob: (workspaceId: string, jobId: string) =>
     request<GenerationJob<EvaluationReport["individualInsights"]>>(
       `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,

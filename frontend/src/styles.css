@@ -177,3 +177,101 @@
     display: none !important;
   }
 }
+
+/* Platformance experience: neutral surfaces, recognizable organization accents. */
+:root {
+  --brand: #7262d9;
+  --brand-contrast: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 15%, var(--card));
+  --brand-ink: color-mix(in srgb, var(--brand) 35%, #111827);
+}
+.dark {
+  --brand-ink: color-mix(in srgb, var(--brand) 35%, white);
+}
+.experience-eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.experience-panel {
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  background: var(--card);
+  box-shadow: 0 3px 18px rgb(20 20 40 / 2%);
+}
+.experience-welcome {
+  background:
+    radial-gradient(
+      ellipse at 95% 15%,
+      color-mix(in srgb, var(--brand) 30%, transparent),
+      transparent 65%
+    ),
+    var(--card);
+}
+.experience-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  transition:
+    background 160ms,
+    border-color 160ms;
+}
+.experience-shortcut:hover {
+  background: var(--brand-soft);
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border));
+}
+.experience-entity-header {
+  background: linear-gradient(115deg, var(--brand-soft), var(--card) 65%);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+}
+[data-motion="reduced"] .experience-shortcut,
+[data-motion="reduced"] .experience-shortcut svg {
+  transition: none !important;
+  transform: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .experience-shortcut,
+  .experience-shortcut svg {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+@media (max-width: 640px) {
+  .experience-panel {
+    padding: 1rem;
+  }
+  .experience-entity-header {
+    padding: 1.1rem;
+  }
+}
+@media print {
+  .experience-entity-header {
+    background: white;
+    box-shadow: none;
+  }
+}
+
+.experience-setup {
+  background: linear-gradient(120deg, var(--brand-soft), var(--card));
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, var(--border));
+  border-left: 5px solid var(--brand);
+  box-shadow: 0 12px 36px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+.experience-directory {
+  background: radial-gradient(ellipse at top right, var(--brand-soft), transparent 70%);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--brand);
+  border-radius: 1.5rem;
+  padding: 2rem;
+}
+progress {
+  accent-color: var(--brand);
+}
