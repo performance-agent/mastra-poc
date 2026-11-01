@@ -93,6 +93,15 @@
   --sidebar-accent-foreground: oklch(0.22 0.02 260);
   --sidebar-border: oklch(0.92 0.006 260);
   --sidebar-ring: oklch(0.55 0.04 260);
+  --tree-ink: #242a27;
+  --tree-plan: #e9ecea;
+  --tree-teal: #00b8a6;
+  --tree-active: #008d7f;
+  --tree-error: #ce6464;
+  --tree-pass: #4d9868;
+  --tree-partial: #d5a24b;
+  --tree-no-data: #adb5b0;
+  --tree-fail: #ce6464;
 }
 
 .dark {
@@ -128,6 +137,15 @@
   --sidebar-accent-foreground: oklch(0.97 0.003 260);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.6 0.03 260);
+  --tree-ink: #e7eeea;
+  --tree-plan: #3a4250;
+  --tree-teal: #3ddbc8;
+  --tree-active: #7ee8da;
+  --tree-error: #f09999;
+  --tree-pass: #7dc99a;
+  --tree-partial: #e6c07a;
+  --tree-no-data: #8b9692;
+  --tree-fail: #f09999;
 }
 
 @layer base {

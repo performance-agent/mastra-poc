@@ -13,6 +13,8 @@ import type {
   PluginInstallation,
   DataType,
   PerformanceReport,
+  ReportNote,
+  ReportRevision,
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
   GroupReport,
@@ -404,12 +406,22 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
       `/groups/${groupId}/generation-jobs`,
     ),
-  startEvaluatorReports: (groupId: string, evaluatorIds: string[]) =>
+  startEvaluatorReports: (
+    groupId: string,
+    evaluatorIds: string[],
+    contextByEvaluator?: Record<string, string>,
+  ) =>
     request<{ jobs: Array<{ jobId: string; evaluatorId: string; status: string }> }>(
       `/groups/${groupId}/reports`,
       {
         method: "POST",
-        body: JSON.stringify({ type: "GROUP_REPORT", evaluatorIds }),
+        body: JSON.stringify({
+          type: "GROUP_REPORT",
+          evaluatorIds,
+          ...(contextByEvaluator && Object.keys(contextByEvaluator).length > 0
+            ? { contextByEvaluator }
+            : {}),
+        }),
       },
     ),
   getGroupGenerationJob: (groupId: string, jobId: string, signal?: AbortSignal) =>
@@ -452,6 +464,17 @@ export const api = {
     request<PerformanceReport>(`/reports/${id}`, {
       method: "PATCH",
       body: JSON.stringify(body),
+    }),
+  listReportRevisions: (id: string) => request<ReportRevision[]>(`/reports/${id}/revisions`),
+  saveReportNotes: (id: string, notes: ReportNote[]) =>
+    request<{ id: string; position: number; notes: ReportNote[] }>(`/reports/${id}/notes`, {
+      method: "PUT",
+      body: JSON.stringify({ notes }),
+    }),
+  reviseReport: (id: string, notes: ReportNote[]) =>
+    request<{ jobId: string; status: string }>(`/reports/${id}/revisions`, {
+      method: "POST",
+      body: JSON.stringify({ notes }),
     }),
   listGroupReports: (groupId: string) =>
     request<

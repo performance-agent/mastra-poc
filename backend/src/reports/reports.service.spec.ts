@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { GenerationService } from '../generation/generation.service';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from './reports.service';
@@ -76,13 +77,21 @@ describe('ReportsService', () => {
     },
   };
   const prisma = {
-    group: { findUnique: jest.fn() },
+    group: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
     pluginInstallationResource: { findMany: jest.fn() },
     performanceReport: {
       create: jest.fn(),
       findUnique: jest.fn(),
       findMany: jest.fn(),
+      update: jest.fn(),
     },
+    reportRevision: {
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+    },
+    generationJob: { findMany: jest.fn() },
   };
   const runtime = { provide: jest.fn() };
   let service: ReportsService;
@@ -131,6 +140,11 @@ describe('ReportsService', () => {
       limitations: [],
     });
     groupGenerate.mockResolvedValue({ object: minimalReportContent });
+    prisma.performanceReport.create.mockResolvedValue({ id: 'report-1' });
+    prisma.reportRevision.create.mockResolvedValue({
+      id: 'rev-1',
+      position: 0,
+    });
   });
 
   afterEach(() => {
@@ -150,7 +164,7 @@ describe('ReportsService', () => {
     );
     expect(groupGenerate).toHaveBeenCalled();
     expect(prisma.performanceReport.create).toHaveBeenCalledWith({
-        data: {
+      data: {
         groupId: 'group-1',
         evaluatorId: null,
         type: 'GROUP_REPORT',
@@ -278,6 +292,65 @@ describe('ReportsService', () => {
     });
     expect(prisma.performanceReport.findUnique).toHaveBeenCalledWith({
       where: { id: 'history-1', type: { not: 'AGENT_EVALUATION' } },
+    });
+  });
+
+  it('queues a rewrite of the same report from reviewer notes', async () => {
+    const enqueue = jest
+      .fn()
+      .mockResolvedValue({ jobId: 'job-1', status: 'queued' });
+    const rewriting = new ReportsService(
+      prisma as unknown as PrismaService,
+      runtime as unknown as PluginRuntimeService,
+      { enqueue } as unknown as GenerationService,
+    );
+    prisma.performanceReport.findUnique.mockResolvedValue({
+      id: 'report-1',
+      type: 'GROUP_REPORT',
+      groupId: 'group-1',
+      evaluatorId: 'evaluator-1',
+      data: { summary: 'old' },
+      createdAt: new Date('2026-11-01T12:00:00.000Z'),
+    });
+    prisma.group.findUniqueOrThrow.mockResolvedValue({
+      id: 'group-1',
+      workspaceId: 'workspace-1',
+    });
+    prisma.generationJob.findMany.mockResolvedValue([]);
+    prisma.reportRevision.findFirst.mockResolvedValue({
+      id: 'rev-1',
+      position: 0,
+    });
+
+    await expect(
+      rewriting.reviseReport('report-1', [
+        {
+          id: 'note-note',
+          quote: 'la entrega fue irregular',
+          comment: 'Aclarar que hubo un corte de dos semanas',
+        },
+      ]),
+    ).resolves.toEqual({ jobId: 'job-1', status: 'queued' });
+
+    expect(enqueue).toHaveBeenCalledWith(
+      'workspace-1',
+      'group-1',
+      'group_report',
+      { type: 'GROUP_REPORT', reportId: 'report-1', revision: true },
+      expect.any(Function),
+    );
+    expect(prisma.performanceReport.create).not.toHaveBeenCalled();
+    expect(prisma.reportRevision.update).toHaveBeenCalledWith({
+      where: { id: 'rev-1' },
+      data: {
+        notes: [
+          {
+            id: 'note-note',
+            quote: 'la entrega fue irregular',
+            comment: 'Aclarar que hubo un corte de dos semanas',
+          },
+        ],
+      },
     });
   });
 });

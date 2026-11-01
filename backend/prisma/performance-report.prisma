@@ -22,12 +22,30 @@ model PerformanceReport {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
+  revisions ReportRevision[]
+
   @@index([organizationId])
   @@index([workspaceId])
   @@index([groupId])
   @@index([evaluatorId])
   @@index([type])
   @@index([createdAt])
+}
+
+model ReportRevision {
+  id String @id @default(cuid())
+
+  reportId String
+  report   PerformanceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  position Int
+  data     Json
+  notes    Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([reportId, position])
+  @@index([reportId])
 }
 
 enum PerformanceReportType {

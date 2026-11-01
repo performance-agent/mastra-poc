@@ -3,6 +3,7 @@ import {
   IsArray,
   IsEnum,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
 } from 'class-validator';
@@ -18,4 +19,8 @@ export class CreateReportDto {
   @ArrayMinSize(1)
   @IsString({ each: true })
   evaluatorIds?: string[];
+
+  @IsOptional()
+  @IsObject()
+  contextByEvaluator?: Record<string, string>;
 }

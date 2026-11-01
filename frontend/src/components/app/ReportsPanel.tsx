@@ -17,7 +17,7 @@ import { ErrorState } from "@/components/app/ErrorState";
 import { GenerationProgressPanel } from "@/components/app/GenerationProgress";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
-import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
+import { ReportThread } from "@/components/app/ReportThread";
 import { LoadingState } from "@/components/app/LoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -73,6 +73,7 @@ export function ReportsPanel({
   const evaluators = evaluatorsQ.data ?? [];
   const reports = reportsQ.data ?? [];
   const [picked, setPicked] = useState<string[]>([]);
+  const [contextByEvaluator, setContextByEvaluator] = useState<Record<string, string>>({});
   const seeded = useRef(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [cancelling, setCancelling] = useState(false);
@@ -213,7 +214,10 @@ export function ReportsPanel({
     setSubmitting(true);
     const startedAt = Date.now();
     try {
-      const response = await api.startEvaluatorReports(groupId, picked);
+      const context = Object.fromEntries(
+        picked.flatMap((id) => (contextByEvaluator[id] ? [[id, contextByEvaluator[id]]] : [])),
+      );
+      const response = await api.startEvaluatorReports(groupId, picked, context);
       setRuns((current) => [
         ...current.filter((run) => !picked.includes(run.evaluatorId)),
         ...response.jobs.map((job) => ({
@@ -377,10 +381,11 @@ export function ReportsPanel({
             {shown ? (
               <>
                 {shown.type === "GROUP_REPORT" ? (
-                  <GroupReportRenderer
+                  <ReportThread
+                    groupId={groupId}
                     report={shown as PerformanceReport<GroupReport>}
+                    canEdit={canDelete}
                     onBack={() => setOpenedReportId(null)}
-                    canDelete={canDelete}
                     onRename={canDelete ? (title) => void renameReport(title) : undefined}
                     onDelete={() => setDeleteReportId(shown.id)}
                   />
@@ -518,35 +523,91 @@ export function ReportsPanel({
           <DialogHeader>
             <DialogTitle>Generate reports</DialogTitle>
             <DialogDescription>
-              Each selected evaluator writes its own report. They run one after another.
+              Each selected evaluator writes its own report. They run one after another. You can
+              attach one earlier report from that same evaluator as context.
             </DialogDescription>
           </DialogHeader>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (picked.length === evaluators.length) {
+                  setPicked([]);
+                  setContextByEvaluator({});
+                  return;
+                }
+                setPicked(evaluators.map((evaluator) => evaluator.id));
+              }}
+            >
+              {picked.length === evaluators.length ? "Clear selection" : "Select all"}
+            </Button>
+          </div>
           <div className="grid max-h-80 gap-2 overflow-y-auto">
             {evaluators.map((evaluator) => {
               const checked = picked.includes(evaluator.id);
+              const ownReports = reports.filter(
+                (report) =>
+                  report.type === "GROUP_REPORT" && reportEvaluatorId(report) === evaluator.id,
+              );
               return (
-                <label
-                  key={evaluator.id}
-                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
-                >
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(value) =>
-                      setPicked((current) =>
-                        value === true
-                          ? [...current, evaluator.id]
-                          : current.filter((id) => id !== evaluator.id),
-                      )
-                    }
-                  />
-                  <EvaluatorMark name={evaluator.name} avatar={evaluator.avatar} size={36} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{evaluator.name}</span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {evaluator.scope === "WORKSPACE" ? "Workspace" : "Project"}
+                <div key={evaluator.id} className="rounded-lg border border-border px-3 py-2">
+                  <label className="flex items-center gap-3">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(value) => {
+                        setPicked((current) =>
+                          value === true
+                            ? [...current, evaluator.id]
+                            : current.filter((id) => id !== evaluator.id),
+                        );
+                        if (value !== true) {
+                          setContextByEvaluator((current) => {
+                            const next = { ...current };
+                            delete next[evaluator.id];
+                            return next;
+                          });
+                        }
+                      }}
+                    />
+                    <EvaluatorMark name={evaluator.name} avatar={evaluator.avatar} size={36} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{evaluator.name}</span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        {evaluator.scope === "WORKSPACE" ? "Workspace" : "Project"}
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                  {checked && ownReports.length > 0 && (
+                    <Select
+                      value={contextByEvaluator[evaluator.id] ?? "none"}
+                      onValueChange={(value) =>
+                        setContextByEvaluator((current) => {
+                          const next = { ...current };
+                          if (value === "none") delete next[evaluator.id];
+                          else next[evaluator.id] = value;
+                          return next;
+                        })
+                      }
+                    >
+                      <SelectTrigger className="mt-2" aria-label={`Context for ${evaluator.name}`}>
+                        <SelectValue placeholder="No previous report" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No previous report</SelectItem>
+                        {ownReports.map((report) => (
+                          <SelectItem key={report.id} value={report.id}>
+                            {report.title?.trim() ||
+                              (report.createdAt
+                                ? new Date(report.createdAt).toLocaleString()
+                                : "Report")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               );
             })}
           </div>

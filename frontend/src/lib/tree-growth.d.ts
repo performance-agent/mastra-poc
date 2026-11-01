@@ -14,10 +14,14 @@ export type TreeProgressDetail = {
   anchor?: { x: number; y: number };
 };
 
+export type TreeTheme = "light" | "dark";
+
 export type TreeController = EventTarget & {
   model: { branches: Array<{ label: string }> };
   isReduced: boolean;
   svg: SVGSVGElement;
+  palette: { colors: Record<LeafStatus, string> };
+  setTheme(theme: TreeTheme): void;
   reset(rules?: TreeRule[]): TreeController;
   dispose(): void;
   cancel(): void;
@@ -35,7 +39,7 @@ export type TreeController = EventTarget & {
 export type TreeGrowthApi = {
   Controller: new (
     host: Element,
-    options?: { rules?: TreeRule[] | number; duration?: number },
+    options?: { rules?: TreeRule[] | number; duration?: number; theme?: TreeTheme },
   ) => TreeController;
   colors: Record<LeafStatus, string>;
 };

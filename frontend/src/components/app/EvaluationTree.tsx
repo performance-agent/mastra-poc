@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { EvaluatorMark } from "@/components/app/EvaluatorMark";
-import type { LeafStatus, TreeController, TreeProgressDetail } from "@/lib/tree-growth";
+import type { LeafStatus, TreeController, TreeProgressDetail, TreeTheme } from "@/lib/tree-growth";
 import "@/lib/tree-growth.js";
 
 const PHASES = ["evidence", "rules", "judgment", "crown"] as const;
@@ -27,10 +27,14 @@ export function leafFor(verdicts: LeafStatus[], index: number): LeafStatus {
   );
 }
 
+function currentTheme(): TreeTheme {
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
 function paintLeaves(tree: TreeController, verdicts: LeafStatus[]) {
   tree.model.branches.forEach((_, index) => {
     const fill = tree.svg.querySelector(`[data-fill="${index}"] path`);
-    const color = window.TreeGrowth?.colors[leafFor(verdicts, index)];
+    const color = tree.palette.colors[leafFor(verdicts, index)];
     if (fill && color) fill.setAttribute("fill", color);
   });
 }
@@ -55,6 +59,7 @@ export function EvaluationTree({
   const [labelState, setLabelState] = useState<Record<string, string>>({});
   const [character, setCharacter] = useState<"thinking" | "generating">("generating");
   const hostRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<TreeController | null>(null);
   const labelsKey = ruleLabels.join("\n");
   const labelsRef = useRef(ruleLabels);
   labelsRef.current = ruleLabels;
@@ -69,8 +74,10 @@ export function EvaluationTree({
       {
         rules: ruleLabels.map((label) => ({ label, status: "no-data" as const })),
         duration: 500,
+        theme: currentTheme(),
       },
     );
+    treeRef.current = tree;
     let cancelled = false;
     const onProgress = (event: Event) => {
       const detail = (event as CustomEvent<TreeProgressDetail>).detail;
@@ -147,17 +154,28 @@ export function EvaluationTree({
     void loop();
     return () => {
       cancelled = true;
+      treeRef.current = null;
       tree.removeEventListener("progress", onProgress);
       tree.dispose();
     };
   }, [labelsKey]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    const apply = () => treeRef.current?.setTheme(currentTheme());
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, [labelsKey]);
+
+  useEffect(() => {
     const tree = hostRef.current?.querySelector("svg");
     if (!tree || verdicts.length === 0) return;
+    const palette = treeRef.current?.palette.colors;
     verdicts.forEach((_, index) => {
       const fill = tree.querySelector(`[data-fill="${index}"] path`);
-      const color = window.TreeGrowth?.colors[leafFor(verdicts, index)];
+      const color = palette?.[leafFor(verdicts, index)];
       if (fill && color) fill.setAttribute("fill", color);
     });
   }, [verdicts]);
@@ -166,7 +184,7 @@ export function EvaluationTree({
     Boolean(anchor) && phase !== "idle" && phase !== "done" && phase !== "failed" && activePhase !== "ready";
 
   return (
-    <div className="overflow-hidden rounded-[18px] border border-[#E9ECEA] bg-white">
+    <div className="overflow-hidden rounded-[18px] border border-border bg-card">
       <div className="relative aspect-[640/420]">
         <div ref={hostRef} className="absolute inset-0 [&_svg]:h-full [&_svg]:w-full" />
         <div className="pointer-events-none absolute inset-0" aria-label="Evaluation steps">
@@ -182,12 +200,12 @@ export function EvaluationTree({
               key={key}
               className={`absolute left-[4%] -translate-y-1/2 text-sm ${
                 labelState[key] === "active"
-                  ? "font-medium text-[#008D7F]"
+                  ? "font-medium text-[var(--tree-active)]"
                   : labelState[key] === "complete"
-                    ? "text-[#242A27]"
+                    ? "text-foreground"
                     : labelState[key] === "failed"
-                      ? "text-[#B74444]"
-                      : "text-[#7B8680]"
+                      ? "text-destructive"
+                      : "text-muted-foreground"
               }`}
               style={{ top }}
             >
@@ -198,17 +216,23 @@ export function EvaluationTree({
         {showCharacter && anchor && (
           <div
             aria-hidden
-            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            className="pointer-events-none absolute z-10 h-9 w-9 -translate-x-1/2 -translate-y-1/2"
             style={{
               left: `${(Math.min(600, anchor.x + 36) / 640) * 100}%`,
               top: `${(Math.max(24, anchor.y - 24) / 420) * 100}%`,
             }}
           >
-            <EvaluatorMark name="Rules" avatar={41} state={character} size={36} />
+            <EvaluatorMark
+              name="Rules"
+              avatar={41}
+              state={character}
+              size={36}
+              className="block h-9 w-9 max-w-none"
+            />
           </div>
         )}
       </div>
-      <p className="border-t border-[#E9ECEA] px-4 py-3 text-sm text-[#64716a]" role="status">
+      <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground" role="status">
         {status}
         {ruleLabels.length > 5 ? " The fifth branch groups the rest." : ""}
       </p>

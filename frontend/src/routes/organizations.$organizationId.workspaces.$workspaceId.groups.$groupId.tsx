@@ -222,11 +222,11 @@ function GroupPage() {
             onChange={setTab}
             items={[
               { value: "overview", label: "Overview" },
+              { value: "evaluation", label: "Evaluators" },
+              { value: "reports", label: "Reports", count: reportsQ.data?.length },
+              { value: "rules", label: "Rules" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
-              { value: "evaluation", label: "Evaluators" },
-              { value: "rules", label: "Rules" },
-              { value: "reports", label: "Reports", count: reportsQ.data?.length },
             ]}
           />
 

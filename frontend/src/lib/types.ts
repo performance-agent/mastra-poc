@@ -358,6 +358,20 @@ export interface PerformanceReport<TData = unknown> {
   updatedAt?: string;
 }
 
+export interface ReportNote {
+  id: string;
+  quote: string;
+  comment: string;
+}
+
+export interface ReportRevision<TData = unknown> {
+  id: string;
+  position: number;
+  createdAt: string;
+  notes: ReportNote[];
+  data: TData;
+}
+
 export type EvaluatorScope = "WORKSPACE" | "GROUP";
 export type EvaluatorEffort = "LOW" | "MEDIUM" | "HIGH";
 export interface Personality {

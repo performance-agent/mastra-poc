@@ -5,6 +5,7 @@ import { GenerationService } from '../generation/generation.service';
 import type { ReportProgress } from '../generation/progress';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -72,6 +73,11 @@ export class ReportsService {
     for (const evaluatorId of evaluatorIds) {
       await this.assertEvaluatorVisible(group, evaluatorId);
     }
+    const priorReports = await this.loadPriorReports(
+      groupId,
+      evaluatorIds,
+      dto.contextByEvaluator,
+    );
     const prepared = this.prepareGroupReport(groupId);
     void prepared.catch(() => undefined);
     const jobs: Array<{
@@ -90,6 +96,7 @@ export class ReportsService {
             evaluatorId,
             progress,
             prepared,
+            priorReport: priorReports.get(evaluatorId),
           }),
       );
       jobs.push({ jobId: job.jobId, evaluatorId, status: job.status });
@@ -108,19 +115,69 @@ export class ReportsService {
     return this.jobs.cancelQueued(jobId, groupId);
   }
 
+  private async loadPriorReports(
+    groupId: string,
+    evaluatorIds: string[],
+    contextByEvaluator: Record<string, string> | undefined,
+  ) {
+    const entries = Object.entries(contextByEvaluator ?? {}).filter(
+      ([, reportId]) => reportId,
+    );
+    const selected = new Set(evaluatorIds);
+    const prior = new Map<string, unknown>();
+    if (entries.length === 0) return prior;
+    for (const [evaluatorId, reportId] of entries) {
+      if (typeof reportId !== 'string') {
+        throw new BadRequestException(
+          'Each context report must be a report id',
+        );
+      }
+      if (!selected.has(evaluatorId)) {
+        throw new BadRequestException(
+          'A context report can only be attached to a selected evaluator',
+        );
+      }
+    }
+    const rows = await this.prisma.performanceReport.findMany({
+      where: {
+        id: { in: entries.map(([, reportId]) => reportId) },
+        groupId,
+      },
+      select: { id: true, evaluatorId: true, type: true, data: true },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    for (const [evaluatorId, reportId] of entries) {
+      const row = byId.get(reportId);
+      if (
+        !row ||
+        row.type !== 'GROUP_REPORT' ||
+        row.evaluatorId !== evaluatorId
+      ) {
+        throw new BadRequestException(
+          'The context report must be an existing report from the same evaluator',
+        );
+      }
+      prior.set(evaluatorId, row.data);
+    }
+    return prior;
+  }
+
   private async createSoftwareReport(
     groupId: string,
     options: {
       evaluatorId?: string;
       progress?: ReportProgress;
       prepared?: ReturnType<ReportsService['prepareGroupReport']>;
+      priorReport?: unknown;
+      revision?: { reportId: string; notes: ReportNote[] };
     } = {},
   ) {
     const progress = options.progress;
     await progress?.('preparing');
     await progress?.('preparing', 'completed');
     await progress?.('collecting_evidence');
-    const prepared = await (options.prepared ?? this.prepareGroupReport(groupId));
+    const prepared = await (options.prepared ??
+      this.prepareGroupReport(groupId));
     const source = await this.loadEvaluatorSource(
       prepared.group,
       options.evaluatorId,
@@ -184,7 +241,10 @@ export class ReportsService {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       const effort = reportEffortPreset(source.effort, budget);
       const effortLine = effort.instruction ? `${effort.instruction}\n\n` : '';
-      const prefix = `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
+      const priorPrefix = options.revision
+        ? revisionPrompt(options.priorReport, options.revision.notes)
+        : priorReportPrompt(options.priorReport);
+      const prefix = `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${priorPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
       const reserve = Buffer.byteLength(`${REPORT_COMPACT_INSTRUCTION}\n\n`);
       packed = packEvidence(reportInput, effort.sample, {
         budgetBytes: Math.max(1024, effort.inputBytes - reserve),
@@ -195,7 +255,10 @@ export class ReportsService {
       this.logger.log(
         `Group report evidence receipt ${JSON.stringify(packed.receipt)}`,
       );
-      const boundedPrompt = `${prefix}${JSON.stringify(packed.evidence)}`;
+      const closing = options.revision
+        ? `\n\n${revisionClosing(options.revision.notes)}`
+        : '';
+      const boundedPrompt = `${prefix}${JSON.stringify(packed.evidence)}${closing}`;
       const requestContext = new RequestContext();
       requestContext.set('generationModel', model);
       let promptText = boundedPrompt;
@@ -264,6 +327,7 @@ export class ReportsService {
       },
       evaluationGuidelines,
       source.snapshot,
+      options.revision?.reportId,
     );
     await progress?.('saving', 'completed');
     return saved;
@@ -423,7 +487,7 @@ export class ReportsService {
     return evaluator;
   }
 
-  private persistGroupReport(
+  private async persistGroupReport(
     groupId: string,
     content: unknown,
     coverage: ReturnType<typeof buildCoverage> & {
@@ -431,6 +495,7 @@ export class ReportsService {
     },
     evaluationGuidelines: EvaluationGuidelines | null,
     evaluator: EvaluatorSnapshot | null,
+    reportId?: string,
   ) {
     const generatedReport = groupReportContentSchema.parse(content);
     const reportData = groupReportSchema.parse({
@@ -439,15 +504,187 @@ export class ReportsService {
       evaluationGuidelines: evaluationGuidelines ?? null,
       evaluator,
     });
+    const payload = JSON.parse(JSON.stringify(reportData)) as object;
 
-    return this.prisma.performanceReport.create({
+    if (reportId) {
+      const existing = await this.prisma.performanceReport.findUnique({
+        where: { id: reportId },
+      });
+      const latest = await this.prisma.reportRevision.findFirst({
+        where: { reportId },
+        orderBy: { position: 'desc' },
+      });
+      let basePosition = latest?.position ?? -1;
+      if (!latest && existing) {
+        await this.prisma.reportRevision.create({
+          data: {
+            reportId,
+            position: 0,
+            data: JSON.parse(JSON.stringify(existing.data)) as object,
+            notes: [],
+          },
+        });
+        basePosition = 0;
+      }
+      const saved = await this.prisma.performanceReport.update({
+        where: { id: reportId },
+        data: { data: payload },
+      });
+      await this.prisma.reportRevision.create({
+        data: {
+          reportId,
+          position: basePosition + 1,
+          data: payload,
+          notes: [],
+        },
+      });
+      return saved;
+    }
+
+    const saved = await this.prisma.performanceReport.create({
       data: {
         groupId,
         evaluatorId: evaluator?.id ?? null,
         type: 'GROUP_REPORT',
-        data: reportData,
+        data: payload,
       },
     });
+    if (saved?.id) {
+      await this.prisma.reportRevision.create({
+        data: {
+          reportId: saved.id,
+          position: 0,
+          data: payload,
+          notes: [],
+        },
+      });
+    }
+    return saved;
+  }
+
+  async listRevisions(reportId: string) {
+    const report = await this.requireGroupReport(reportId);
+    const rows = await this.prisma.reportRevision.findMany({
+      where: { reportId },
+      orderBy: { position: 'asc' },
+    });
+    if (rows.length === 0) {
+      return [
+        {
+          id: `base:${report.id}`,
+          position: 0,
+          createdAt: report.createdAt,
+          notes: [] as ReportNote[],
+          data: report.data,
+        },
+      ];
+    }
+    return rows.map((row) => ({
+      id: row.id,
+      position: row.position,
+      createdAt: row.createdAt,
+      notes: readNotes(row.notes),
+      data: row.data,
+    }));
+  }
+
+  async saveNotes(reportId: string, notes: unknown) {
+    const report = await this.requireGroupReport(reportId);
+    const clean = parseReportNotes(notes);
+    const latest = await this.ensureBaseRevision(report);
+    return this.prisma.reportRevision.update({
+      where: { id: latest.id },
+      data: { notes: clean },
+      select: { id: true, position: true, notes: true, createdAt: true },
+    });
+  }
+
+  async reviseReport(reportId: string, notes: unknown) {
+    const report = await this.requireGroupReport(reportId);
+    const clean = parseReportNotes(notes);
+    if (clean.length === 0) {
+      throw new BadRequestException('Add at least one note before rewriting');
+    }
+    if (!report.groupId) throw new NotFoundException('Report not found');
+    const group = await this.prisma.group.findUniqueOrThrow({
+      where: { id: report.groupId },
+    });
+    await this.assertNoActiveRevision(report.groupId, report.id);
+    const latest = await this.ensureBaseRevision(report);
+    await this.prisma.reportRevision.update({
+      where: { id: latest.id },
+      data: { notes: clean },
+    });
+    return this.jobs.enqueue(
+      group.workspaceId,
+      report.groupId,
+      'group_report',
+      { type: 'GROUP_REPORT', reportId: report.id, revision: true },
+      (progress) => this.rewriteGroupReport(report.id, progress),
+    );
+  }
+
+  private async rewriteGroupReport(reportId: string, progress: ReportProgress) {
+    const report = await this.requireGroupReport(reportId);
+    if (!report.groupId) throw new NotFoundException('Report not found');
+    const latest = await this.prisma.reportRevision.findFirst({
+      where: { reportId },
+      orderBy: { position: 'desc' },
+    });
+    const notes = readNotes(latest?.notes);
+    if (notes.length === 0) {
+      throw new BadRequestException('Add at least one note before rewriting');
+    }
+    return this.createSoftwareReport(report.groupId, {
+      evaluatorId: report.evaluatorId ?? undefined,
+      progress,
+      priorReport: report.data,
+      revision: { reportId: report.id, notes },
+    });
+  }
+
+  private async requireGroupReport(reportId: string) {
+    const report = await this.prisma.performanceReport.findUnique({
+      where: { id: reportId },
+    });
+    if (!report || report.type !== 'GROUP_REPORT') {
+      throw new NotFoundException('Report not found');
+    }
+    return report;
+  }
+
+  private async ensureBaseRevision(report: { id: string; data: unknown }) {
+    const latest = await this.prisma.reportRevision.findFirst({
+      where: { reportId: report.id },
+      orderBy: { position: 'desc' },
+    });
+    if (latest) return latest;
+    return this.prisma.reportRevision.create({
+      data: {
+        reportId: report.id,
+        position: 0,
+        data: JSON.parse(JSON.stringify(report.data)) as object,
+        notes: [],
+      },
+    });
+  }
+
+  private async assertNoActiveRevision(groupId: string, reportId: string) {
+    const jobs = await this.prisma.generationJob.findMany({
+      where: {
+        groupId,
+        kind: 'group_report',
+        status: { in: ['queued', 'running'] },
+      },
+      select: { input: true },
+    });
+    const active = jobs.some((job) => {
+      const input = job.input as { reportId?: unknown; revision?: unknown };
+      return input?.revision === true && input.reportId === reportId;
+    });
+    if (active) {
+      throw new ConflictException('This report is already being rewritten');
+    }
   }
 
   findOne(id: string) {
@@ -486,6 +723,106 @@ export class ReportsService {
       data: { title: next },
     });
   }
+}
+
+const PRIOR_REPORT_CAP = 48_000;
+const NOTE_PROMPT_CAP = 8_000;
+
+export type ReportNote = {
+  id: string;
+  quote: string;
+  comment: string;
+};
+
+function boundedReportText(data: unknown) {
+  if (data == null) return '';
+  const copy =
+    data && typeof data === 'object'
+      ? { ...(data as Record<string, unknown>) }
+      : data;
+  if (copy && typeof copy === 'object' && 'coverage' in copy) {
+    const coverage = {
+      ...((copy as { coverage?: Record<string, unknown> }).coverage ?? {}),
+    };
+    delete coverage.evidenceReceipt;
+    (copy as { coverage?: Record<string, unknown> }).coverage = coverage;
+  }
+  let text = JSON.stringify(copy);
+  if (text.length > PRIOR_REPORT_CAP && copy && typeof copy === 'object') {
+    delete (copy as { evidence?: unknown }).evidence;
+    text = JSON.stringify(copy);
+  }
+  if (text.length > PRIOR_REPORT_CAP) text = text.slice(0, PRIOR_REPORT_CAP);
+  return text;
+}
+
+function priorReportPrompt(data: unknown) {
+  if (data == null) return '';
+  return `Previous report from this same evaluator, supplied only as context. It is not evidence. Write a new report from the current records. Use the previous report to notice what was already said and what may have changed. Do not copy it, and do not treat its claims as facts unless the current records still support them.\n${boundedReportText(data)}\n\n`;
+}
+
+function listedNotes(notes: ReportNote[]) {
+  let listed = notes
+    .map((note, index) => {
+      const quote = note.quote.replace(/\s+/g, ' ').trim().slice(0, 500);
+      const comment = note.comment.replace(/\s+/g, ' ').trim().slice(0, 1000);
+      return `${index + 1}. On-screen passage: "${quote}"\nChange requested: ${comment}`;
+    })
+    .join('\n');
+  if (listed.length > NOTE_PROMPT_CAP) listed = listed.slice(0, NOTE_PROMPT_CAP);
+  return listed;
+}
+
+function revisionPrompt(data: unknown, notes: ReportNote[]) {
+  return `Revise the current report. Do not start over from the evidence. Reviewer notes are mandatory editing instructions. The quoted passage is text as shown on screen and may join a name, headings, labels and counts from one card. Find that person or section in the current report and change it so a reader can see the note was applied. Do not invent counts, events or people. If a stored count disagrees with the note, keep the count and change the interpretation the note asks for. Leave passages the notes do not mention as they are.\n\nReviewer notes:\n${listedNotes(notes)}\n\nCurrent report:\n${boundedReportText(data)}\n\n`;
+}
+
+function revisionClosing(notes: ReportNote[]) {
+  return `Apply every reviewer note now. The records above do not cancel them. Each note must change the matching person or section in the new report. Keep stored counts, and change the wording or role the note asks for.\n\nReviewer notes:\n${listedNotes(notes)}`;
+}
+
+function parseReportNotes(value: unknown): ReportNote[] {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException('Notes must be a list');
+  }
+  if (value.length > 30) {
+    throw new BadRequestException('A report can hold up to 30 notes');
+  }
+  return value.map((item) => parseReportNote(item));
+}
+
+function parseReportNote(value: unknown): ReportNote {
+  if (!value || typeof value !== 'object') {
+    throw new BadRequestException('Each note needs a quote and a comment');
+  }
+  const note = value as { id?: unknown; quote?: unknown; comment?: unknown };
+  const id = typeof note.id === 'string' ? note.id.trim() : '';
+  const quote =
+    typeof note.quote === 'string'
+      ? note.quote.replace(/\s+/g, ' ').trim()
+      : '';
+  const comment = typeof note.comment === 'string' ? note.comment.trim() : '';
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(id)) {
+    throw new BadRequestException('Each note needs a valid id');
+  }
+  if (quote.length < 2 || quote.length > 500) {
+    throw new BadRequestException('Each note must mark a short passage');
+  }
+  if (comment.length < 1 || comment.length > 2000) {
+    throw new BadRequestException('Each note needs a comment');
+  }
+  return { id, quote, comment };
+}
+
+function readNotes(value: unknown): ReportNote[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    try {
+      return [parseReportNote(item)];
+    } catch {
+      return [];
+    }
+  });
 }
 
 type ProviderData = Awaited<ReturnType<PluginRuntimeService['provide']>>;

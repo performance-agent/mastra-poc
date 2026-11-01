@@ -1,8 +1,11 @@
 (() => {
-  if (window.TreeGrowth) return;
   const NS = 'http://www.w3.org/2000/svg';
   const LEAF = 'M0 0C-17-5-17-24 0-36C17-24 17-5 0 0Z';
   const COLORS = { pass: '#4D9868', partial: '#D5A24B', 'no-data': '#ADB5B0', fail: '#CE6464' };
+  const THEMES = {
+    light: { ink: '#242A27', plan: '#E9ECEA', error: '#CE6464', colors: COLORS },
+    dark: { ink: '#DCE7E1', plan: '#34413B', error: '#E18B8B', colors: { pass: '#77C696', partial: '#DDB86C', 'no-data': '#8B9D93', fail: '#E18B8B' } }
+  };
   const DEFAULTS = ['pass', 'pass', 'partial', 'no-data', 'fail'];
   const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
   const number = n => Math.round(n * 100) / 100;
@@ -92,15 +95,17 @@
       .tree-drop{display:none}
     }`;
 
-  function buildSvg({ rules = 5, duration = 500, autoplay = true } = {}) {
+  function buildSvg({ rules = 5, duration = 500, autoplay = true, theme = 'light' } = {}) {
     duration = durationOf(duration);
+    theme = Object.hasOwn(THEMES, theme) ? theme : 'light';
+    const palette = THEMES[theme];
     const g = geometry(rules, duration);
     const trace = (part, width) => `<path class="tree-line tree-trace" data-segment="${part.key}" pathLength="1" stroke-width="${width}" d="${part.d}" style="--start:${part.start}ms"/>`;
     const planned = (part, width) => `<path class="tree-line" stroke-width="${width}" d="${part.d}"/>`;
     const position = branch => `translate(${branch.x} ${branch.y}) rotate(${branch.angle})`;
-    const branchInfo = g.branches.map((b, i) => `<g transform="${position(b)}" data-leaf="${i}"><title>${escape(b.label)}</title><g class="tree-fill" data-fill="${i}" style="--start:${b.fillStart}ms"><path d="${LEAF}" fill="${COLORS[b.status]}"/></g><path class="tree-outline" data-outline="${i}" d="${LEAF}" style="--start:${b.start + duration}ms"/></g>`).join('');
+    const branchInfo = g.branches.map((b, i) => `<g transform="${position(b)}" data-leaf="${i}"><title>${escape(b.label)}</title><g class="tree-fill" data-fill="${i}" style="--start:${b.fillStart}ms"><path d="${LEAF}" fill="${palette.colors[b.status]}"/></g><path class="tree-outline" data-outline="${i}" d="${LEAF}" style="--start:${b.start + duration}ms"/></g>`).join('');
     const droplets = g.branches.map((b, i) => `<circle class="tree-drop" data-drop="${i}" r="3.6" style="--start:${b.judgeStart}ms">${autoplay ? `<animateMotion dur="${duration}ms" begin="${b.judgeStart}ms" path="${b.d}" calcMode="paced" fill="freeze"/>` : ''}</circle>`).join('');
-    return `<svg xmlns="${NS}" width="640" height="420" viewBox="0 0 640 420" fill="none" role="img" aria-label="Árbol de evaluación que crece desde la evidencia hasta el juicio de las reglas" data-autoplay="${Boolean(autoplay)}" data-rule-count="${g.rules.length}" data-branch-count="${g.branches.length}" style="--duration:${duration}ms">
+    return `<svg xmlns="${NS}" width="640" height="420" viewBox="0 0 640 420" fill="none" role="img" aria-label="Árbol de evaluación que crece desde la evidencia hasta el juicio de las reglas" data-autoplay="${Boolean(autoplay)}" data-theme="${theme}" data-rule-count="${g.rules.length}" data-branch-count="${g.branches.length}" style="--duration:${duration}ms;--tree-ink:${palette.ink};--tree-plan:${palette.plan};--tree-error:${palette.error}">
 <title>Árbol de evaluación</title><desc>Raíces de evidencia, tronco y ramas de reglas, hojas de juicio y copa final. El color de cada hoja indica su resultado.</desc>
 <style>${styles}</style>
 <g data-layer="plan" aria-hidden="true">${g.roots.map(r => planned(r, 3.2) + `<circle cx="${r.x}" cy="${r.y}" r="6.5" fill="var(--tree-plan)" stroke="none"/>`).join('')}${planned(g.trunk, 4.6)}${g.branches.map(b => planned(b, 3.2) + `<path transform="${position(b)}" stroke-width="1.7" d="${LEAF}"/>`).join('')}${g.crown.d ? planned(g.crown, 1.25) : ''}</g>
@@ -109,11 +114,13 @@
   }
 
   class Controller extends EventTarget {
-    constructor(host, { rules = 5, duration = 500, reducedMotion = null } = {}) {
+    constructor(host, { rules = 5, duration = 500, reducedMotion = null, theme = 'light' } = {}) {
       super();
       if (!(host instanceof Element)) throw new TypeError('Debe indicarse un contenedor HTML.');
       this.host = host;
       this.duration = durationOf(duration);
+      this.theme = Object.hasOwn(THEMES, theme) ? theme : 'light';
+      this.palette = THEMES[this.theme];
       this.reducedMotion = reducedMotion;
       this.media = matchMedia('(prefers-reduced-motion: reduce)');
       this._onMotion = () => { if (this.isReduced && this._finishFrame) this._finishFrame(); };
@@ -131,7 +138,7 @@
       this.cancel();
       this.rules = normalize(rules);
       this.model = geometry(this.rules, this.duration);
-      this.host.innerHTML = buildSvg({ rules: this.rules, duration: this.duration, autoplay: false });
+      this.host.innerHTML = buildSvg({ rules: this.rules, duration: this.duration, autoplay: false, theme: this.theme });
       this.svg = this.host.querySelector('svg');
       this.status = 'idle';
       this.failed = false;
@@ -139,6 +146,20 @@
       return this;
     }
     dispose() { this.cancel(); this.media.removeEventListener('change', this._onMotion); }
+    setTheme(theme) {
+      this.theme = Object.hasOwn(THEMES, theme) ? theme : 'light';
+      this.palette = THEMES[this.theme];
+      if (!this.svg) return;
+      this.svg.dataset.theme = this.theme;
+      this.svg.style.setProperty('--tree-ink', this.palette.ink);
+      this.svg.style.setProperty('--tree-plan', this.palette.plan);
+      this.svg.style.setProperty('--tree-error', this.palette.error);
+      this.svg.querySelectorAll('[data-status]').forEach((node) => {
+        const path = node.querySelector('path');
+        const color = this.palette.colors[node.dataset.status];
+        if (path && color) path.setAttribute('fill', color);
+      });
+    }
     _notify(phase, detail = {}) {
       this.svg.dataset.phase = phase;
       this.dispatchEvent(new CustomEvent('progress', { detail: { phase, status: this.status, ...detail } }));
@@ -218,7 +239,7 @@
       })) return false;
       drop.style.opacity = '0';
       if (fail) return this._fail(path, 'judgment', branch.label, index);
-      fill.querySelector('path').setAttribute('fill', COLORS[status]);
+      fill.querySelector('path').setAttribute('fill', this.palette.colors[status]);
       if (!await this._animate(160, t => { fill.style.opacity = '1'; fill.style.transform = `scale(${.15 + t * .85})`; })) return false;
       fill.dataset.status = status;
       return true;
