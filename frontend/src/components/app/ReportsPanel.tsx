@@ -217,7 +217,9 @@ export function ReportsPanel({
       const context = Object.fromEntries(
         picked.flatMap((id) => (contextByEvaluator[id] ? [[id, contextByEvaluator[id]]] : [])),
       );
-      const response = await api.startEvaluatorReports(groupId, picked, context);
+      const response = await api.startEvaluatorReports(groupId, picked, {
+        contextByEvaluator: context,
+      });
       setRuns((current) => [
         ...current.filter((run) => !picked.includes(run.evaluatorId)),
         ...response.jobs.map((job) => ({

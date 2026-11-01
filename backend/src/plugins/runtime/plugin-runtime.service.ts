@@ -86,6 +86,7 @@ export class PluginRuntimeService {
     resources: readonly RuntimeResource[],
     mode: ReportMode,
     from?: Date,
+    period?: RuntimeEvaluationPeriod,
   ): Promise<{
     resources: ResourceProviderData[];
     limitations: ProviderLimitation[];
@@ -116,10 +117,20 @@ export class PluginRuntimeService {
       for (const provider of plugin.dataProviders) {
         const dataType = provider.dataType.key;
         try {
+          if (period && dataType === 'github.participation') {
+            limitations.push({
+              pluginId: installation.pluginId,
+              resourceId: resource.id,
+              dataType,
+              message:
+                'Rolling participation snapshots cannot describe the requested period; use commit evidence.',
+            });
+            continue;
+          }
           const stored = await this.store.read(
             resource,
             dataType,
-            undefined,
+            period,
             (options) =>
               provider.provide(context as never, pluginResource, options),
           );
@@ -132,8 +143,10 @@ export class PluginRuntimeService {
               message,
             })),
           );
-          const filtered =
-            mode === 'activity' && from
+          const periodLimitations: string[] = [];
+          const filtered = period
+            ? filterPeriodRecords(provided, period, periodLimitations)
+            : mode === 'activity' && from
               ? this.filterActivityRecords(
                   provided,
                   from,
@@ -143,6 +156,14 @@ export class PluginRuntimeService {
                   limitations,
                 )
               : [...provided];
+          limitations.push(
+            ...periodLimitations.map((message) => ({
+              pluginId: installation.pluginId,
+              resourceId: resource.id,
+              dataType,
+              message,
+            })),
+          );
           datasets.push({
             dataType,
             records: filtered.slice(0, MAX_RECORDS),
@@ -365,6 +386,8 @@ function createHostSecretReader<TDefinitions extends SecretDefinitions>(
   values: Readonly<Record<string, unknown>>,
 ): SecretReader<InferSecretValues<TDefinitions>> {
   return {
+    // The async contract keeps configuration errors as rejected secret reads.
+    // eslint-disable-next-line @typescript-eslint/require-await
     async get(key) {
       const definition = definitions.definitions.find(
         (candidate) => candidate.key === key,

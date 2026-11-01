@@ -1,3 +1,4 @@
+import { PluginConfigurationFields } from "@/components/app/PluginConfigurationFields";
 import { TeamSpaceDialog } from "@/components/app/TeamSpaceDialog";
 import { OrganizationHome } from "@/components/app/OrganizationHome";
 import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -773,23 +774,15 @@ function EditPluginInstallationDialog({
           autoFocus
         />
       </div>
-      {(plugin?.configurationFields ?? [])
-        .filter((field) => field.configurable)
-        .map((field) => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`plugin-edit-${field.key}`}>{field.label}</Label>
-            <Input
-              id={`plugin-edit-${field.key}`}
-              type={field.sensitive ? "password" : field.key === "email" ? "email" : "text"}
-              value={configuration[field.key] ?? ""}
-              placeholder={field.sensitive ? "Leave blank to keep the current value" : undefined}
-              required={field.required && !field.sensitive}
-              onChange={(event) =>
-                setConfiguration((current) => ({ ...current, [field.key]: event.target.value }))
-              }
-            />
-          </div>
-        ))}
+      {plugin && (
+        <PluginConfigurationFields
+          plugin={plugin}
+          values={configuration}
+          editing
+          prefix="plugin-edit"
+          onChange={(key, value) => setConfiguration((current) => ({ ...current, [key]: value }))}
+        />
+      )}{" "}
     </FormModal>
   );
 }
@@ -833,28 +826,14 @@ function ConnectJiraDialog({
           onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
         />
       </div>
-      {(plugin?.configurationFields ?? [])
-        .filter((field) => field.configurable)
-        .map((field) => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`jira-${field.key}`}>{field.label}</Label>
-            <Input
-              id={`jira-${field.key}`}
-              required={field.required}
-              type={
-                field.sensitive
-                  ? "password"
-                  : field.key === "email"
-                    ? "email"
-                    : field.key === "siteUrl"
-                      ? "url"
-                      : "text"
-              }
-              value={values[field.key] ?? ""}
-              onChange={(event) => setValues((v) => ({ ...v, [field.key]: event.target.value }))}
-            />
-          </div>
-        ))}
+      {plugin && (
+        <PluginConfigurationFields
+          plugin={plugin}
+          values={values}
+          prefix="jira"
+          onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
+        />
+      )}{" "}
     </FormModal>
   );
 }

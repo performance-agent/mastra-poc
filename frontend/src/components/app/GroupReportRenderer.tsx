@@ -379,8 +379,7 @@ const readingTypeLabels: Record<string, string> = {
 const readingActionLabels: Record<string, string> = {
   shorten_text: "Se acortaron textos largos para que entraran los demás registros.",
   reduce_list: "Se achicaron comentarios, reviews o archivos, dejando al menos uno.",
-  drop_records:
-    "Se retiraron algunos registros. Los que quedaron siguen repartidos en el tiempo.",
+  drop_records: "Se retiraron algunos registros. Los que quedaron siguen repartidos en el tiempo.",
 };
 
 function personalityLabel(value: string) {
@@ -469,6 +468,11 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
 
   return (
     <div id="group-report" className="min-w-0 space-y-8 overflow-hidden">
+      {report.data.period && (
+        <p className="text-sm text-muted-foreground">
+          Evaluation period: {report.data.period.from} &ndash; {report.data.period.to}
+        </p>
+      )}
       <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
         <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 max-w-3xl">
@@ -614,9 +618,7 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
         <Metric label="Registros" value={data.coverage.recordsAnalyzed} />
       </div>
 
-      {data.coverage.evidenceReceipt && (
-        <ReadingCard receipt={data.coverage.evidenceReceipt} />
-      )}
+      {data.coverage.evidenceReceipt && <ReadingCard receipt={data.coverage.evidenceReceipt} />}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">

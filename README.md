@@ -170,13 +170,27 @@ user can override their home layout, restore organization defaults, select a
 theme, reduce decorative movement, and manage shortcuts. Evaluator characters,
 animations and configuration have not been changed.
 
-The optional **Setup guide** opens once per user/organization and can be resumed
-from **Getting started**, first in the default home layout. Integrations and
-evaluator selection can be skipped. Workspace and first-group creation share
-one form and one backend transaction, including default evaluators. Progress and evaluator selection survive reloads and
-provider setup in a separate tab. Only the final **Start evaluation** action
-submits a generation job; it first checks for an active job for the selected
-evaluator. Saved reports and progress tracking use the existing Reports screen.
+The optional **Setup guide** is a focused full-screen flow at
+`/organizations/:id/setup/:step`: welcome, team, plugins, evaluator, and review.
+New empty organizations open the welcome once; existing teams and invited users
+keep their current entry flow. **Getting started** resumes saved progress.
+Plugins connect inline (GitHub authorization returns to the same setup step),
+resources refresh automatically, and evaluator customization creates a team copy.
+Advanced settings and invitations expand in place. Invitations are sent only by
+**Continue & invite**; plugin credentials are never stored in setup drafts.
+
+Non-sensitive drafts save after 600 ms or blur, and navigation waits for saves.
+Failed writes retain edits, and leaving with unsaved changes or plugin credentials
+requires confirmation. Version 1 progress upgrades on read to named version 2 steps
+inside the existing JSON setting; no new database migration is required.
+
+Plugins and evaluators can be postponed. **Finish setup only** never generates a
+report. **Start evaluation** checks for active evaluator jobs and sends a validated
+period (last 30 days by default). Report evidence is filtered to both period
+boundaries, rolling participation snapshots are excluded for bounded periods,
+and the saved report includes its requested dates. Existing calls without a
+period retain their all-history behavior. The existing Reports screen tracks
+progress. Step transitions honor reduced motion and current evaluator animations.
 
 ### Deployment prerequisites
 

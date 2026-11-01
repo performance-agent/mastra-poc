@@ -80,7 +80,10 @@ function GithubSetupPage() {
             ? "GitHub connection updated. Redirecting to plugins..."
             : "GitHub connected. Redirecting to plugins...",
         );
-        window.location.assign(`/organizations/${pending.organizationId}?tab=plugins`);
+        window.location.assign(
+          pending.returnTo ??
+            `/organizations/${encodeURIComponent(pending.organizationId)}?tab=plugins`,
+        );
       } catch (error) {
         if (cancelled) return;
         setStatus("error");
@@ -104,6 +107,7 @@ function GithubSetupPage() {
       <TriangleAlert className="h-5 w-5" />
     );
 
+  const returnTo = readPendingGithubSetup()?.returnTo;
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
       <Card className="w-full max-w-md rounded-lg shadow-card">
@@ -122,7 +126,9 @@ function GithubSetupPage() {
           <p className="text-sm text-muted-foreground">{message}</p>
           {status === "error" ? (
             <Button asChild variant="outline" className="w-full">
-              <Link to="/organizations">Back to organizations</Link>
+              <Link to={(returnTo ?? "/organizations") as never}>
+                {returnTo ? "Return to setup" : "Back to organizations"}
+              </Link>
             </Button>
           ) : null}
         </CardContent>

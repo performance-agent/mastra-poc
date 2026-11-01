@@ -456,6 +456,7 @@ export interface GroupReportDimensionAssessment {
 }
 
 export interface GroupReport {
+  period?: { from: string; to: string };
   summary: string;
   overallAssessment: GroupReportAssessment & { score: number | null };
   productAssessment: {
