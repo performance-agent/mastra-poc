@@ -1,0 +1,44 @@
+{
+  "date": "2026-11-01",
+  "builds": {
+    "frontend": "passed",
+    "backend": "passed",
+    "frontendTypecheck": "passed"
+  },
+  "tests": {
+    "backend": {
+      "passed": 36,
+      "suites": 3
+    },
+    "personalizationBrowser": {
+      "passed": 11,
+      "simulatedApi": true
+    },
+    "evaluationProgressBrowser": {
+      "passed": 6,
+      "simulatedApi": true
+    },
+    "finalDraftGuardRecheck": {
+      "passed": 2
+    }
+  },
+  "lint": {
+    "changedFrontendFiles": "no errors",
+    "existingWarnings": [
+      "button.tsx exports both component and variants (Fast Refresh)"
+    ]
+  },
+  "compatibility": {
+    "evaluatorCharactersAndAnimations": "unchanged",
+    "priorThesisScreenshots": "unchanged",
+    "newDatabaseMigrationRequiredForRevision": false
+  },
+  "evidence": [
+    "artifacts/personalization/revision-simulated",
+    "artifacts/personalization/revision-regression"
+  ],
+  "limitations": [
+    "Browser checks use simulated authentication and API responses.",
+    "This revision does not deploy frontend/backend or provision cloud resources."
+  ]
+}

@@ -1,3 +1,6 @@
+﻿import { useState } from "react";
+import { Sparkles, Leaf, Sun, Flower2 } from "lucide-react";
+import { useImageSource } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 function initials(name: string) {
@@ -20,6 +23,18 @@ export function Avatar({
   size?: "sm" | "md" | "lg" | "xl";
   className?: string;
 }) {
+  const [failedSource, setFailedSource] = useState<string>();
+  const resolved = useImageSource(src?.startsWith("avatar:") ? undefined : src);
+  const avatar = src?.startsWith("avatar:") ? src.slice(7) : "";
+  const colors: Record<string, string> = {
+    iris: "#7262d9",
+    fern: "#176c65",
+    sun: "#a45728",
+    rose: "#a14b70",
+  };
+  const AvatarIcon =
+    ({ iris: Sparkles, fern: Leaf, sun: Sun, rose: Flower2 } as const)[avatar as "iris"] ??
+    Sparkles;
   const sizes = {
     sm: "h-6 w-6 text-[10px]",
     md: "h-9 w-9 text-xs",
@@ -28,17 +43,31 @@ export function Avatar({
   };
   return (
     <div
+      style={
+        avatar
+          ? {
+              color: colors[avatar] ?? colors.iris,
+              backgroundColor: `color-mix(in srgb, ${colors[avatar] ?? colors.iris} 14%, var(--card))`,
+            }
+          : undefined
+      }
       className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted font-semibold text-muted-foreground",
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-[var(--brand-soft)] font-semibold text-[var(--brand-ink)]",
         sizes[size],
         className,
       )}
     >
-      {src ? (
-        // eslint-disable-next-line jsx-a11y/alt-text
-        <img src={src} alt="" className="h-full w-full object-cover" />
+      {resolved && failedSource !== resolved ? (
+        <img
+          src={resolved}
+          onError={() => setFailedSource(resolved)}
+          alt=""
+          className="h-full w-full object-cover"
+        />
+      ) : avatar ? (
+        <AvatarIcon aria-hidden className="h-1/2 w-1/2" />
       ) : (
-        <span>{initials(name) || "•"}</span>
+        <span>{initials(name) || "U"}</span>
       )}
     </div>
   );

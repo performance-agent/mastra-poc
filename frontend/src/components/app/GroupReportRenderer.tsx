@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, Download, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -260,9 +261,7 @@ function CommitContent({ commit }: { commit: CommitReview }) {
             {confidenceLabels[commit.confidence]}
           </Badge>
         </div>
-        {commit.url ? (
-          <ExternalLink className="no-print h-4 w-4 text-muted-foreground" />
-        ) : null}
+        {commit.url ? <ExternalLink className="no-print h-4 w-4 text-muted-foreground" /> : null}
       </div>
       <h4 className="mt-3 wrap-break-word text-sm font-semibold">{commit.message}</h4>
       <p className="mt-1 break-all text-xs text-muted-foreground">
@@ -317,13 +316,7 @@ function pdfFileName(title: string) {
   return `Report ${day}`;
 }
 
-export function GroupReportRenderer({
-  report,
-  onBack,
-  onDelete,
-  canDelete,
-  onRename,
-}: Props) {
+export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRename }: Props) {
   const data = report.data;
   const overall = data.overallAssessment;
   const evidenceForSection = (section: GroupReportEvidence["section"]) =>
@@ -407,7 +400,7 @@ export function GroupReportRenderer({
                 </Button>
               )}
               {onRename ? (
-                <input
+                <Input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   onBlur={commitName}
@@ -417,7 +410,7 @@ export function GroupReportRenderer({
                   placeholder="Report name"
                   aria-label="Report name"
                   maxLength={120}
-                  className="min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground"
+                  className="min-w-0 flex-1 border-transparent bg-transparent text-xl font-semibold shadow-none placeholder:font-normal hover:border-input"
                 />
               ) : (
                 <h2 className="min-w-0 wrap-break-word text-xl font-semibold">

@@ -1,3 +1,5 @@
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { GenerationProgressPanel } from "./GenerationProgress";
 import { IndividualInsights } from "./IndividualInsights";
 import { GradingControls } from "./GradingControls";
@@ -708,6 +710,7 @@ function RulePackageEditorDialog({
     editor.value?.scope === "ALL_WORKSPACES" ? "ALL_WORKSPACES" : "WORKSPACE",
   );
   const [draftRules, setDraftRules] = useState<EvaluationRule[]>(sourceRules);
+  const [baseline] = useState(() => JSON.stringify([name, evaluates, scope, sourceRules]));
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
@@ -753,6 +756,7 @@ function RulePackageEditorDialog({
     <FormModal
       open
       onOpenChange={(open) => !open && onClose()}
+      dirty={JSON.stringify([name, evaluates, scope, draftRules]) !== baseline}
       title={
         editor.mode === "edit"
           ? "Edit rule package"
@@ -788,38 +792,34 @@ function RulePackageEditorDialog({
       </div>
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">Availability</legend>
-        <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
-          <input
-            type="radio"
-            name="rule-package-scope"
-            value="WORKSPACE"
-            checked={scope === "WORKSPACE"}
-            onChange={() => setScope("WORKSPACE")}
-            className="mt-1"
-          />
-          <span>
-            <span className="block text-sm font-medium">This workspace</span>
-            <span className="block text-xs text-muted-foreground">
-              Only available here, and only to you.
+        <RadioGroup
+          aria-label="Availability"
+          value={scope}
+          onValueChange={(value) => setScope(value as typeof scope)}
+        >
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
+            <RadioGroupItem value="WORKSPACE" aria-label="This workspace" className="mt-1" />
+            <span>
+              <span className="block text-sm font-medium">This workspace</span>
+              <span className="block text-xs text-muted-foreground">
+                Only available here, and only to you.
+              </span>
             </span>
-          </span>
-        </label>
-        <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
-          <input
-            type="radio"
-            name="rule-package-scope"
-            value="ALL_WORKSPACES"
-            checked={scope === "ALL_WORKSPACES"}
-            onChange={() => setScope("ALL_WORKSPACES")}
-            className="mt-1"
-          />
-          <span>
-            <span className="block text-sm font-medium">All my workspaces</span>
-            <span className="block text-xs text-muted-foreground">
-              Available to you anywhere you can evaluate.
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
+            <RadioGroupItem
+              value="ALL_WORKSPACES"
+              aria-label="All my workspaces"
+              className="mt-1"
+            />
+            <span>
+              <span className="block text-sm font-medium">All my workspaces</span>
+              <span className="block text-xs text-muted-foreground">
+                Available to you anywhere you can evaluate.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        </RadioGroup>
       </fieldset>
       <div className="space-y-3 border-t pt-4">
         <div className="flex items-center justify-between">
@@ -1220,18 +1220,20 @@ function ReportView({ report }: { report: EvaluationReport }) {
         <ReportNotes title="Report Limitations" notes={report.limitations} />
       ) : null}
       {diagnosticCount ? (
-        <details className="group rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        <Collapsible className="group rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <CollapsibleTrigger className="flex w-full cursor-pointer items-center justify-between gap-3 p-4 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
             <span>Technical Diagnostics · {diagnosticCount}</span>
             <ChevronDown
               aria-hidden="true"
-              className="transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+              className="transition-transform duration-200 group-data-[state=open]:rotate-180 motion-reduce:transition-none"
             />
-          </summary>
-          <pre className="max-h-72 overflow-auto border-t p-4 text-xs leading-5 text-muted-foreground">
-            {JSON.stringify(report.diagnostics, null, 2)}
-          </pre>
-        </details>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="max-h-72 overflow-auto border-t p-4 text-xs leading-5 text-muted-foreground">
+              {JSON.stringify(report.diagnostics, null, 2)}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
     </div>
   );
@@ -1274,34 +1276,36 @@ function AssessmentCard({ assessment }: { assessment: RuleAssessment }) {
             </div>
           ) : null}
           {assessment.evidence.length ? (
-            <details className="group mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-[#315f76] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300">
+            <Collapsible className="group mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+              <CollapsibleTrigger className="flex w-full cursor-pointer items-center justify-between text-sm font-semibold text-[#315f76] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300">
                 <span>
                   {assessment.evidence.length} Evidence{" "}
                   {assessment.evidence.length === 1 ? "Item" : "Items"}
                 </span>
                 <ChevronDown
                   aria-hidden="true"
-                  className="transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+                  className="transition-transform duration-200 group-data-[state=open]:rotate-180 motion-reduce:transition-none"
                 />
-              </summary>
-              <div className="mt-3 space-y-2">
-                {assessment.evidence.map((evidence, index) => (
-                  <div
-                    key={`${evidence.source}-${index}`}
-                    className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70"
-                  >
-                    <p className="break-words font-mono text-[10px] font-semibold uppercase tracking-wider text-[#527387]">
-                      {evidence.source}
-                    </p>
-                    <p className="mt-1 break-words text-sm">{evidence.observation}</p>
-                    <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-                      {evidence.relevance}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </details>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-3 space-y-2">
+                  {assessment.evidence.map((evidence, index) => (
+                    <div
+                      key={`${evidence.source}-${index}`}
+                      className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70"
+                    >
+                      <p className="break-words font-mono text-[10px] font-semibold uppercase tracking-wider text-[#527387]">
+                        {evidence.source}
+                      </p>
+                      <p className="mt-1 break-words text-sm">{evidence.observation}</p>
+                      <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+                        {evidence.relevance}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           ) : null}
           {assessment.limitations.length ? (
             <ReportNotes title="Assessment Gaps" notes={assessment.limitations} compact />

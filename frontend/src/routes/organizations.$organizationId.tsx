@@ -1,3 +1,5 @@
+import { TeamSpaceDialog } from "@/components/app/TeamSpaceDialog";
+import { OrganizationHome } from "@/components/app/OrganizationHome";
 import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -5,8 +7,6 @@ import { z } from "zod";
 import { toast } from "sonner";
 import {
   Plus,
-  Building2,
-  Users,
   FolderTree,
   Boxes,
   Plug,
@@ -170,7 +170,7 @@ function OrganizationPage() {
             value={tab}
             onChange={setTab}
             items={[
-              { value: "overview", label: "Overview" },
+              { value: "overview", label: "Home" },
               { value: "workspaces", label: "Workspaces", count: workspacesQ.data?.length },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources", count: resourcesQ.data?.length },
@@ -179,18 +179,7 @@ function OrganizationPage() {
             ]}
           />
 
-          {tab === "overview" && (
-            <OverviewTab
-              workspaces={workspacesQ.data?.length ?? 0}
-              members={membersQ.data?.length ?? 0}
-              resources={resourcesQ.data?.length ?? 0}
-              dataTypes={dataTypesQ.data?.length ?? 0}
-              plugins={
-                new Set((orgPluginInstallationsQ.data ?? []).map((item) => item.pluginId)).size
-              }
-              recentResources={resourcesQ.data?.slice(0, 4) ?? []}
-            />
-          )}
+          {tab === "overview" && <OrganizationHome />}
           {tab === "workspaces" && <WorkspacesTab organizationId={organizationId} />}
           {tab === "members" && <MembersTab organizationId={organizationId} />}
           {tab === "resources" && <ResourcesTab organizationId={organizationId} />}
@@ -235,66 +224,6 @@ function OrganizationPage() {
         }}
       />
     </AppShell>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        {icon}
-      </div>
-      <div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="text-lg font-semibold">{value}</div>
-      </div>
-    </Card>
-  );
-}
-
-function OverviewTab({
-  workspaces,
-  members,
-  resources,
-  dataTypes,
-  plugins,
-  recentResources,
-}: {
-  workspaces: number;
-  members: number;
-  resources: number;
-  dataTypes: number;
-  plugins: number;
-  recentResources: Resource[];
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard icon={<FolderTree className="h-4 w-4" />} label="Workspaces" value={workspaces} />
-        <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={members} />
-        <StatCard icon={<Boxes className="h-4 w-4" />} label="Resources" value={resources} />
-        <StatCard icon={<Database className="h-4 w-4" />} label="Data Types" value={dataTypes} />
-        <StatCard icon={<Plug className="h-4 w-4" />} label="Plugins" value={plugins} />
-      </div>
-      {recentResources.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground">Recent resources</h2>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {recentResources.map((r) => (
-              <ResourceCard key={r.id} resource={r} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -358,20 +287,10 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
         </div>
       )}
 
-      <EntityFormDialog
+      <TeamSpaceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="New workspace"
-        submitLabel="Create"
-        onSubmit={async (v) => {
-          try {
-            await api.createWorkspace(organizationId, v);
-            toast.success("Workspace created");
-            refresh();
-          } catch (e) {
-            toast.error(errorMessage(e));
-          }
-        }}
+        organizationId={organizationId}
       />
       <EntityFormDialog
         open={!!editing}
@@ -824,6 +743,12 @@ function EditPluginInstallationDialog({
     <FormModal
       open={!!installation}
       onOpenChange={onOpenChange}
+      dirty={
+        name !== (installation?.name ?? "") ||
+        Object.entries(configuration).some(
+          ([key, value]) => value !== String(installation?.configuration[key] ?? ""),
+        )
+      }
       title="Edit plugin connection"
       submitLabel="Save"
       submitting={submitting}
@@ -885,6 +810,7 @@ function ConnectJiraDialog({
     <FormModal
       open={!!plugin}
       onOpenChange={onOpenChange}
+      dirty={JSON.stringify(values) !== JSON.stringify({ name: "Jira" })}
       title="Connect Jira"
       submitLabel="Connect and sync"
       submitting={submitting}

@@ -1,3 +1,4 @@
+﻿import { Sparkles, Layers3, ScanText, ArrowUpRight } from "lucide-react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Chrome, Loader2, ShieldCheck } from "lucide-react";
@@ -77,7 +78,51 @@ function LoginPage() {
 
   if (firebaseUser && oauthRequest) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+      <main className="mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-6 py-10 lg:grid-cols-[1.1fr_1fr] lg:gap-20">
+        <section className="hidden lg:block">
+          <p className="experience-eyebrow">Evidence meets perspective</p>
+          <h1 className="mt-5 max-w-lg text-5xl font-semibold leading-[1.1] tracking-tight">
+            Understand the work.
+            <br />
+            <span className="text-[var(--brand-ink)]">Help your team grow.</span>
+          </h1>
+          <p className="mt-5 max-w-md text-base leading-7 text-muted-foreground">
+            Bring your team's activity together and turn it into thoughtful, actionable evaluations.
+          </p>
+          <div className="mt-9 space-y-4">
+            {[
+              {
+                icon: Layers3,
+                title: "Connect your evidence",
+                description: "Keep GitHub and Jira work in one shared context.",
+              },
+              {
+                icon: Sparkles,
+                title: "Choose your perspective",
+                description: "Configure evaluators around the questions that matter.",
+              },
+              {
+                icon: ScanText,
+                title: "See the bigger picture",
+                description: "Explore reports with evidence and clear limitations.",
+              },
+            ].map(({ icon: Icon, title, description }) => (
+              <div
+                key={title}
+                className="flex items-center gap-4 rounded-2xl border bg-card/70 p-4"
+              >
+                <div className="rounded-xl bg-[var(--brand-soft)] p-3 text-[var(--brand-ink)]">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold">{title}</h2>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+                </div>
+                <ArrowUpRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
+              </div>
+            ))}
+          </div>
+        </section>
         <Card className="w-full max-w-md rounded-lg shadow-card">
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -147,16 +192,57 @@ function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10">
-      <div className="w-full max-w-md space-y-6 gap-4 flex flex-col">
+    <main className="mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-6 py-10 lg:grid-cols-[1.1fr_1fr] lg:gap-20">
+      <section className="hidden lg:block">
+        <p className="experience-eyebrow">Evidence meets perspective</p>
+        <h1 className="mt-5 max-w-lg text-5xl font-semibold leading-[1.1] tracking-tight">
+          Understand the work.
+          <br />
+          <span className="text-[var(--brand-ink)]">Help your team grow.</span>
+        </h1>
+        <p className="mt-5 max-w-md text-base leading-7 text-muted-foreground">
+          Bring your team's activity together and turn it into thoughtful, actionable evaluations.
+        </p>
+        <div className="mt-9 space-y-4">
+          {[
+            {
+              icon: Layers3,
+              title: "Connect your evidence",
+              description: "Keep GitHub and Jira work in one shared context.",
+            },
+            {
+              icon: Sparkles,
+              title: "Choose your perspective",
+              description: "Configure evaluators around the questions that matter.",
+            },
+            {
+              icon: ScanText,
+              title: "See the bigger picture",
+              description: "Explore reports with evidence and clear limitations.",
+            },
+          ].map(({ icon: Icon, title, description }) => (
+            <div key={title} className="flex items-center gap-4 rounded-2xl border bg-card/70 p-4">
+              <div className="rounded-xl bg-[var(--brand-soft)] p-3 text-[var(--brand-ink)]">
+                <Icon className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold">{title}</h2>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+              </div>
+              <ArrowUpRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl bg-[var(--brand-soft)] p-5 sm:p-8">
         <div className="text-center m-0">
           <div className="flex flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
             <img src={isotipo} alt="" className="h-16 w-16 shrink-0" />
-            <img src={logotipo} alt="Performance Agent" className="h-auto w-48 max-w-full" />
+            <img src={logotipo} alt="Platformance" className="h-auto w-48 max-w-full" />
           </div>
         </div>
 
-        <Card className="rounded-lg shadow-card">
+        <Card className="rounded-2xl shadow-card">
           <CardHeader>
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
