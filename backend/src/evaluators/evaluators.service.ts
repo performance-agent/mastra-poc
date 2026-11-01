@@ -12,12 +12,20 @@ import { AccessControlService } from '../access-control/access-control.service';
 import { validateEvaluationGuidelines } from '../mastra/evaluation-guidelines';
 import { PrismaService } from '../prisma/prisma.service';
 import { AVATAR_COUNT } from './default-evaluators';
-import { CreateEvaluatorDto, UpdateEvaluatorDto } from './dto/evaluator.dto';
-import type { EvaluatorScopeName } from '../reports/evaluator-run';
+import {
+  CreateEvaluatorDto,
+  PersonalityDto,
+  UpdateEvaluatorDto,
+} from './dto/evaluator.dto';
+import {
+  MAX_PERSONALITIES,
+  type EvaluatorScopeName,
+} from '../reports/evaluator-run';
 
 const include = {
   rules: { orderBy: { position: 'asc' as const } },
   questions: { orderBy: { position: 'asc' as const } },
+  personality: true,
 };
 
 @Injectable()
@@ -60,6 +68,10 @@ export class EvaluatorsService {
       (await this.prisma.evaluator.count({
         where: { workspaceId: group.workspaceId },
       })) % AVATAR_COUNT;
+    const personalityId = await this.personalityFor(
+      group.workspaceId,
+      dto.personalityId,
+    );
     return this.prisma.evaluator.create({
       data: {
         name: dto.name.trim(),
@@ -67,14 +79,12 @@ export class EvaluatorsService {
         scope: dto.scope,
         effort: dto.effort ?? 'MEDIUM',
         avatar,
+        personalityId,
         evaluationEmphasis: guidelines.emphasis,
         evaluationNotes: guidelines.notes,
         workspaceId: group.workspaceId,
         groupId: dto.scope === 'GROUP' ? group.id : null,
         ownerId: userId,
-        ...(dto.personality !== undefined
-          ? { personality: dto.personality }
-          : {}),
         ...(dto.rules?.length
           ? {
               rules: {
@@ -157,8 +167,13 @@ export class EvaluatorsService {
           groupId,
           ...(dto.effort !== undefined ? { effort: dto.effort } : {}),
           ...(dto.avatar !== undefined ? { avatar: dto.avatar } : {}),
-          ...(dto.personality !== undefined
-            ? { personality: dto.personality }
+          ...(dto.personalityId !== undefined
+            ? {
+                personalityId: await this.personalityFor(
+                  current.workspaceId,
+                  dto.personalityId,
+                ),
+              }
             : {}),
           evaluationEmphasis: guidelines.emphasis,
           evaluationNotes: guidelines.notes,
@@ -178,6 +193,78 @@ export class EvaluatorsService {
       userId,
     );
     await this.prisma.evaluator.delete({ where: { id } });
+  }
+
+  async listPersonalities(groupId: string) {
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+    });
+    if (!group) throw new NotFoundException('Group not found');
+    return this.prisma.evaluatorVoice.findMany({
+      where: { workspaceId: group.workspaceId },
+      orderBy: { position: 'asc' },
+    });
+  }
+
+  async createPersonality(groupId: string, userId: string, dto: PersonalityDto) {
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+    });
+    if (!group) throw new NotFoundException('Group not found');
+    await this.assertWorkspaceManager(group.workspaceId, userId);
+    const existing = await this.prisma.evaluatorVoice.findMany({
+      where: { workspaceId: group.workspaceId },
+      orderBy: { position: 'desc' },
+    });
+    if (existing.length >= MAX_PERSONALITIES) {
+      throw new BadRequestException(
+        'A workspace can have up to three personalities',
+      );
+    }
+    const position = (existing[0]?.position ?? -1) + 1;
+    return this.prisma.evaluatorVoice.create({
+      data: {
+        workspaceId: group.workspaceId,
+        name: dto.name.trim(),
+        instruction: dto.instruction.trim(),
+        position,
+      },
+    });
+  }
+
+  async updatePersonality(id: string, userId: string, dto: PersonalityDto) {
+    const voice = await this.prisma.evaluatorVoice.findUnique({
+      where: { id },
+    });
+    if (!voice) throw new NotFoundException('Personality not found');
+    await this.assertWorkspaceManager(voice.workspaceId, userId);
+    return this.prisma.evaluatorVoice.update({
+      where: { id },
+      data: { name: dto.name.trim(), instruction: dto.instruction.trim() },
+    });
+  }
+
+  async removePersonality(id: string, userId: string) {
+    const voice = await this.prisma.evaluatorVoice.findUnique({
+      where: { id },
+    });
+    if (!voice) throw new NotFoundException('Personality not found');
+    await this.assertWorkspaceManager(voice.workspaceId, userId);
+    const others = await this.prisma.evaluatorVoice.findMany({
+      where: { workspaceId: voice.workspaceId, id: { not: id } },
+      orderBy: { position: 'asc' },
+    });
+    const fallback = others[0];
+    if (!fallback) {
+      throw new BadRequestException('Keep at least one personality');
+    }
+    await this.prisma.$transaction([
+      this.prisma.evaluator.updateMany({
+        where: { personalityId: id },
+        data: { personalityId: fallback.id },
+      }),
+      this.prisma.evaluatorVoice.delete({ where: { id } }),
+    ]);
   }
 
   private async resolveGroupId(
@@ -237,6 +324,40 @@ export class EvaluatorsService {
       .map((question) => question.text.trim())
       .filter((text) => text.length > 0)
       .map((text, position) => ({ text, position }));
+  }
+
+  private async personalityFor(workspaceId: string, personalityId?: string) {
+    if (personalityId) {
+      const voice = await this.prisma.evaluatorVoice.findFirst({
+        where: { id: personalityId, workspaceId },
+      });
+      if (!voice) {
+        throw new BadRequestException(
+          'Personality not found in this workspace',
+        );
+      }
+      return voice.id;
+    }
+    const fallback = await this.prisma.evaluatorVoice.findFirst({
+      where: { workspaceId },
+      orderBy: { position: 'asc' },
+    });
+    if (!fallback) {
+      throw new BadRequestException('This workspace has no personalities');
+    }
+    return fallback.id;
+  }
+
+  private async assertWorkspaceManager(workspaceId: string, userId: string) {
+    const allowed = await this.access.canAccessResource({
+      userId,
+      resource: 'workspace',
+      resourceId: workspaceId,
+      roles: [MembershipRole.OWNER, MembershipRole.ADMIN],
+    });
+    if (!allowed) {
+      throw new ForbiddenException('You cannot change these personalities');
+    }
   }
 
   private async assertCanManage(

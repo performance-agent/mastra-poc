@@ -11,7 +11,11 @@ import { MembershipRole } from '../../generated/prisma/enums';
 import { RequireMembership } from '../access-control/require-membership.decorator';
 import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
-import { CreateEvaluatorDto, UpdateEvaluatorDto } from './dto/evaluator.dto';
+import {
+  CreateEvaluatorDto,
+  PersonalityDto,
+  UpdateEvaluatorDto,
+} from './dto/evaluator.dto';
 import { EvaluatorsService } from './evaluators.service';
 
 @Controller()
@@ -26,6 +30,44 @@ export class EvaluatorsController {
   })
   list(@Param('id') groupId: string) {
     return this.evaluators.listForGroup(groupId);
+  }
+
+  @Get('groups/:id/personalities')
+  @RequireMembership({
+    param: 'id',
+    resource: 'group',
+    roles: [MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.VIEWER],
+  })
+  listPersonalities(@Param('id') groupId: string) {
+    return this.evaluators.listPersonalities(groupId);
+  }
+
+  @Post('groups/:id/personalities')
+  @RequireMembership({
+    param: 'id',
+    resource: 'group',
+    roles: [MembershipRole.OWNER, MembershipRole.ADMIN],
+  })
+  createPersonality(
+    @Param('id') groupId: string,
+    @CurrentUser() user: User,
+    @Body() dto: PersonalityDto,
+  ) {
+    return this.evaluators.createPersonality(groupId, user.id, dto);
+  }
+
+  @Patch('personalities/:id')
+  updatePersonality(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() dto: PersonalityDto,
+  ) {
+    return this.evaluators.updatePersonality(id, user.id, dto);
+  }
+
+  @Delete('personalities/:id')
+  removePersonality(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.evaluators.removePersonality(id, user.id);
   }
 
   @Post('groups/:id/evaluators')

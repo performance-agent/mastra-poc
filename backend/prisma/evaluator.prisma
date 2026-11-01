@@ -7,7 +7,8 @@ model Evaluator {
   effort EvaluatorEffort @default(MEDIUM)
   avatar Int             @default(0)
 
-  personality EvaluatorPersonality @default(direct)
+  personalityId String
+  personality   EvaluatorVoice @relation(fields: [personalityId], references: [id], onDelete: Cascade)
 
   evaluationEmphasis GroupEvaluationEmphasis[] @default([])
   evaluationNotes    String?
@@ -32,6 +33,25 @@ model Evaluator {
   @@index([workspaceId])
   @@index([groupId])
   @@index([ownerId])
+  @@index([personalityId])
+}
+
+model EvaluatorVoice {
+  id          String @id @default(cuid())
+  name        String
+  instruction String
+  position    Int
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  evaluators Evaluator[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([workspaceId, position])
+  @@index([workspaceId])
 }
 
 model EvaluatorRule {
@@ -64,12 +84,6 @@ model EvaluatorQuestion {
 
   @@unique([evaluatorId, position])
   @@index([evaluatorId])
-}
-
-enum EvaluatorPersonality {
-  demanding
-  direct
-  careful
 }
 
 enum EvaluatorScope {

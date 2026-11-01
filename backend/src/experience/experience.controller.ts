@@ -1,4 +1,7 @@
-import { defaultWorkspaceEvaluators } from '../evaluators/default-evaluators';
+import {
+  DEFAULT_VOICES,
+  defaultWorkspaceEvaluators,
+} from '../evaluators/default-evaluators';
 import {
   BadRequestException,
   Body,
@@ -72,7 +75,15 @@ export class ExperienceController {
       const group = await tx.group.create({
         data: { workspaceId: workspace.id, name: data.groupName },
       });
-      for (const evaluator of defaultWorkspaceEvaluators(workspace.id))
+      const voices: Array<{ id: string; name: string }> = [];
+      for (const voice of DEFAULT_VOICES) {
+        voices.push(
+          await tx.evaluatorVoice.create({
+            data: { ...voice, workspaceId: workspace.id },
+          }),
+        );
+      }
+      for (const evaluator of defaultWorkspaceEvaluators(workspace.id, voices))
         await tx.evaluator.create({ data: evaluator });
       return { workspace, group };
     });

@@ -107,6 +107,12 @@ describe('Personalization isolation', () => {
     db.workspace.create = jest.fn().mockResolvedValue({ id: 'ws-new' });
     db.group.create = jest.fn().mockResolvedValue({ id: 'group-new' });
     db.evaluator.create = jest.fn();
+    db.evaluatorVoice = {
+      create: jest.fn(async ({ data }) => ({
+        ...data,
+        id: `voice-${data.name}`,
+      })),
+    };
     db.$transaction = jest.fn(async (fn) => fn(db));
     const result = await controller.createTeamSpace(user, 'org-a', {
       workspaceName: 'Product',
@@ -117,7 +123,14 @@ describe('Personalization isolation', () => {
     expect(db.group.create).toHaveBeenCalledWith({
       data: { workspaceId: 'ws-new', name: 'Engineering' },
     });
-    expect(db.evaluator.create).toHaveBeenCalled();
+    expect(db.evaluatorVoice.create).toHaveBeenCalledTimes(3);
+    expect(db.evaluator.create).toHaveBeenCalledTimes(3);
+    expect(db.evaluator.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workspaceId: 'ws-new',
+        personalityId: 'voice-Demanding',
+      }),
+    });
   });
   it('rejects invalid combined creation before opening a transaction', async () => {
     access.canAccessResource.mockResolvedValue(true);

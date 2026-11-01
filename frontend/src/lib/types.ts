@@ -360,7 +360,12 @@ export interface PerformanceReport<TData = unknown> {
 
 export type EvaluatorScope = "WORKSPACE" | "GROUP";
 export type EvaluatorEffort = "LOW" | "MEDIUM" | "HIGH";
-export type EvaluatorPersonality = "demanding" | "direct" | "careful";
+export interface Personality {
+  id: string;
+  name: string;
+  instruction: string;
+  position: number;
+}
 
 export interface EvaluatorRule {
   id: string;
@@ -383,7 +388,8 @@ export interface Evaluator {
   scope: EvaluatorScope;
   effort: EvaluatorEffort;
   avatar: number;
-  personality: EvaluatorPersonality;
+  personalityId: string;
+  personality: Personality;
   evaluationEmphasis: string[];
   evaluationNotes: string | null;
   workspaceId: string;
@@ -398,7 +404,7 @@ export interface EvaluatorInput {
   scope: EvaluatorScope;
   effort: EvaluatorEffort;
   avatar?: number;
-  personality?: EvaluatorPersonality;
+  personalityId?: string;
   evaluationEmphasis: string[];
   evaluationNotes?: string | null;
   rules: Array<{ name: string; description?: string | null; valuation: number }>;
@@ -512,6 +518,27 @@ export interface GroupReport {
     firstActivityAt: string | null;
     lastActivityAt: string | null;
     limitations: string[];
+    evidenceReceipt?: {
+      budgetBytes: number;
+      bytes: number;
+      counts: Array<{
+        type: string;
+        stored: number;
+        initial: number;
+        final: number;
+      }>;
+      includedIds: Array<{ type: string; ids: string[] }>;
+      nested: {
+        comments: { kept: number; omitted: number };
+        reviews: { kept: number; omitted: number };
+        files: { kept: number; omitted: number };
+      };
+      operations: Array<{
+        action: "shorten_text" | "reduce_list" | "drop_records";
+        reason: string;
+      }>;
+      tokens: { input: number | null; output: number | null } | null;
+    };
   };
   evaluationGuidelines?: {
     emphasis: string[];
@@ -523,7 +550,7 @@ export interface GroupReport {
     scope: "WORKSPACE" | "GROUP";
     effort: "LOW" | "MEDIUM" | "HIGH";
     avatar: number;
-    personality?: "demanding" | "direct" | "careful";
+    personality?: string;
     guidelines: { emphasis: string[]; notes: string | null };
     rules: Array<{ name: string; description: string | null; valuation: number }>;
     questions?: string[];

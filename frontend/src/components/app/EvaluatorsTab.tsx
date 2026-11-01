@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +9,14 @@ import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { LoadingState } from "@/components/app/LoadingState";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,41 +33,21 @@ import type {
   Evaluator,
   EvaluatorEffort,
   EvaluatorInput,
-  EvaluatorPersonality,
   EvaluatorScope,
 } from "@/lib/types";
 
-const PERSONALITIES = [
-  {
-    id: "demanding",
-    label: "Demanding",
-    hint: "Names the problem first and treats it as something to stop.",
-  },
-  {
-    id: "direct",
-    label: "Direct",
-    hint: "Says what happened, plainly, without softening or pushing.",
-  },
-  {
-    id: "careful",
-    label: "Careful",
-    hint: "Names what works, then leaves one concrete next step.",
-  },
-] as const;
-
-type PersonalityId = EvaluatorPersonality;
-
 const MAX_BEHAVIOR_RULES = 4;
+const MAX_PERSONALITIES = 3;
 const MAX_QUESTIONS = 6;
 
 const EFFORTS: Array<{ value: EvaluatorEffort; label: string; hint: string }> = [
   {
     value: "LOW",
     label: "Minimum",
-    hint: "A short report of what matters, from a smaller sample.",
+    hint: "A short report. It reads the same stored history as the other levels.",
   },
-  { value: "MEDIUM", label: "Medium", hint: "More context, still focused on what matters." },
-  { value: "HIGH", label: "Maximum", hint: "More evidence and a fuller explanation." },
+  { value: "MEDIUM", label: "Medium", hint: "More context, from the same stored history." },
+  { value: "HIGH", label: "Maximum", hint: "A fuller explanation of the same stored history." },
 ];
 
 const EFFORT_LOOK = [
@@ -317,7 +305,7 @@ type Draft = {
   scope: EvaluatorScope;
   effort: EvaluatorEffort;
   avatar: number;
-  personality: PersonalityId;
+  personalityId: string;
   emphasis: EvaluationEmphasis[];
   notes: string;
   rules: DraftRule[];
@@ -331,7 +319,7 @@ function draftFrom(evaluator: Evaluator): Draft {
     scope: evaluator.scope,
     effort: evaluator.effort,
     avatar: evaluator.avatar,
-    personality: evaluator.personality ?? "direct",
+    personalityId: evaluator.personalityId,
     emphasis: evaluator.evaluationEmphasis.filter((value): value is EvaluationEmphasis =>
       EVALUATION_EMPHASIS_VALUES.includes(value as EvaluationEmphasis),
     ),
@@ -353,14 +341,14 @@ function draftFrom(evaluator: Evaluator): Draft {
   };
 }
 
-function emptyDraft(scope: EvaluatorScope): Draft {
+function emptyDraft(scope: EvaluatorScope, personalityId: string): Draft {
   return {
     name: "",
     description: "",
     scope,
     effort: "MEDIUM",
     avatar: packAvatar(0, 1),
-    personality: "direct",
+    personalityId,
     emphasis: [],
     notes: "",
     rules: withOpenRule([]),
@@ -382,7 +370,12 @@ export function EvaluatorsTab({
     queryKey: ["group", groupId, "evaluators"],
     queryFn: () => api.listEvaluators(groupId),
   });
+  const personalitiesQ = useQuery({
+    queryKey: ["group", groupId, "personalities"],
+    queryFn: () => api.listPersonalities(groupId),
+  });
   const evaluators = evaluatorsQ.data ?? [];
+  const personalities = personalitiesQ.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -391,6 +384,13 @@ export function EvaluatorsTab({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [characterHover, setCharacterHover] = useState<number | null>(null);
+  const [personalityDraft, setPersonalityDraft] = useState<{
+    id?: string;
+    name: string;
+    instruction: string;
+  } | null>(null);
+  const [deletePersonalityId, setDeletePersonalityId] = useState<string | null>(null);
+  const instructionRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (creating || selectedId || !evaluatorsQ.data?.length) return;
@@ -398,6 +398,26 @@ export function EvaluatorsTab({
     setSelectedId(first.id);
     setDraft(draftFrom(first));
   }, [creating, evaluatorsQ.data, selectedId]);
+
+  const fitInstruction = (element: HTMLTextAreaElement | null) => {
+    if (!element || element.clientWidth === 0) return false;
+    element.style.height = "0px";
+    element.style.height = `${element.scrollHeight}px`;
+    return true;
+  };
+
+  useEffect(() => {
+    if (!personalityDraft) return;
+    let frame = 0;
+    let attempts = 0;
+    const tick = () => {
+      if (fitInstruction(instructionRef.current) || attempts > 12) return;
+      attempts += 1;
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [personalityDraft]);
 
   const selected = evaluators.find((evaluator) => evaluator.id === selectedId) ?? null;
   const canEdit = draft?.scope === "WORKSPACE" ? canManageWorkspace : canManageGroup;
@@ -417,9 +437,15 @@ export function EvaluatorsTab({
   };
 
   const startCreate = () => {
+    const fallback =
+      personalities.find((item) => item.name === "Direct") ?? personalities[0];
+    if (!fallback) {
+      toast.error("No personalities are available");
+      return;
+    }
     setCreating(true);
     setSelectedId(null);
-    setDraft(emptyDraft("GROUP"));
+    setDraft(emptyDraft("GROUP", fallback.id));
   };
 
   const persist = async () => {
@@ -430,7 +456,7 @@ export function EvaluatorsTab({
       scope: draft.scope,
       effort: draft.effort,
       avatar: draft.avatar,
-      personality: draft.personality,
+      personalityId: draft.personalityId,
       evaluationEmphasis: draft.emphasis,
       evaluationNotes: draft.notes.trim() || null,
       rules: draft.rules
@@ -472,6 +498,50 @@ export function EvaluatorsTab({
       return;
     }
     void persist();
+  };
+
+  const savePersonality = async () => {
+    if (!personalityDraft?.name.trim() || !personalityDraft.instruction.trim()) {
+      toast.error("Name and instruction are required");
+      return;
+    }
+    const body = {
+      name: personalityDraft.name.trim(),
+      instruction: personalityDraft.instruction.trim(),
+    };
+    try {
+      const saved = personalityDraft.id
+        ? await api.updatePersonality(personalityDraft.id, body)
+        : await api.createPersonality(groupId, body);
+      toast.success(personalityDraft.id ? "Personality saved" : "Personality created");
+      await qc.invalidateQueries({ queryKey: ["group", groupId, "personalities"] });
+      await qc.invalidateQueries({ queryKey: ["group", groupId, "evaluators"] });
+      setDraft((current) =>
+        current && !personalityDraft.id ? { ...current, personalityId: saved.id } : current,
+      );
+      setPersonalityDraft(null);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const removePersonality = async () => {
+    if (!deletePersonalityId) return;
+    try {
+      await api.deletePersonality(deletePersonalityId);
+      toast.success("Personality deleted");
+      await qc.invalidateQueries({ queryKey: ["group", groupId, "personalities"] });
+      await qc.invalidateQueries({ queryKey: ["group", groupId, "evaluators"] });
+      const remaining = personalities.filter((item) => item.id !== deletePersonalityId);
+      setDraft((current) =>
+        current?.personalityId === deletePersonalityId
+          ? { ...current, personalityId: remaining[0]?.id ?? current.personalityId }
+          : current,
+      );
+      setDeletePersonalityId(null);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
   };
 
   if (evaluatorsQ.isLoading) return <LoadingState />;
@@ -595,33 +665,93 @@ export function EvaluatorsTab({
               />
             </div>
             <div className="grid gap-3">
-              <div>
-                <Label>Personality</Label>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  How this evaluator speaks. It does not choose what to look at.
-                </p>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <Label>Personality</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    How this evaluator speaks. Up to three. At least one stays.
+                  </p>
+                </div>
+                {canManageWorkspace && personalities.length < MAX_PERSONALITIES && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setPersonalityDraft({ name: "", instruction: "" })
+                    }
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> New
+                  </Button>
+                )}
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
-                {PERSONALITIES.map((item) => {
-                  const selected = draft.personality === item.id;
+                {personalities.map((item) => {
+                  const selected = draft.personalityId === item.id;
                   return (
-                    <button
+                    <div
                       key={item.id}
-                      type="button"
-                      disabled={!canEdit}
+                      role="button"
+                      tabIndex={canEdit ? 0 : -1}
                       aria-pressed={selected}
-                      onClick={() => setDraft({ ...draft, personality: item.id })}
-                      className={`rounded-xl border px-3 py-3 text-left ${
+                      onClick={() => {
+                        if (!canEdit) return;
+                        setDraft({ ...draft, personalityId: item.id });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (!canEdit || (event.key !== "Enter" && event.key !== " ")) return;
+                        event.preventDefault();
+                        setDraft({ ...draft, personalityId: item.id });
+                      }}
+                      className={`cursor-pointer rounded-xl border px-3 py-3 text-left ${
                         selected
                           ? "border-foreground bg-background shadow-card"
                           : "border-border text-muted-foreground"
-                      }`}
+                      } ${canEdit ? "" : "cursor-default"}`}
                     >
-                      <span className="block text-sm font-medium text-foreground">
-                        {item.label}
-                      </span>
-                      <span className="mt-1 block text-xs">{item.hint}</span>
-                    </button>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="block min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                          {item.name}
+                        </span>
+                        {canManageWorkspace && (
+                          <div className="flex shrink-0">
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={`Edit ${item.name}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setPersonalityDraft({
+                                  id: item.id,
+                                  name: item.name,
+                                  instruction: item.instruction,
+                                });
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label={`Delete ${item.name}`}
+                              disabled={personalities.length <= 1}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeletePersonalityId(item.id);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      <span className="mt-1 line-clamp-3 block text-xs">{item.instruction}</span>
+                    </div>
                   );
                 })}
               </div>
@@ -885,6 +1015,74 @@ export function EvaluatorsTab({
           }
         }}
       />
+      <ConfirmDialog
+        open={deletePersonalityId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletePersonalityId(null);
+        }}
+        title="Delete this personality?"
+        description="Evaluators using it switch to another personality. The last one cannot be deleted."
+        destructive
+        confirmLabel="Delete"
+        onConfirm={() => void removePersonality()}
+      />
+      <Dialog
+        open={personalityDraft !== null}
+        onOpenChange={(open) => {
+          if (!open) setPersonalityDraft(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {personalityDraft?.id ? "Edit personality" : "New personality"}
+            </DialogTitle>
+            <DialogDescription>
+              This changes emphasis and tone. Claims still have to follow the evidence.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="personality-name">Name</Label>
+              <Input
+                id="personality-name"
+                value={personalityDraft?.name ?? ""}
+                maxLength={40}
+                onChange={(event) =>
+                  setPersonalityDraft((current) =>
+                    current ? { ...current, name: event.target.value } : current,
+                  )
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="personality-instruction">Instruction</Label>
+              <Textarea
+                id="personality-instruction"
+                ref={instructionRef}
+                value={personalityDraft?.instruction ?? ""}
+                maxLength={800}
+                rows={1}
+                className="min-h-0 resize-y overflow-hidden [field-sizing:content]"
+                onChange={(event) => {
+                  fitInstruction(event.currentTarget);
+                  setPersonalityDraft((current) =>
+                    current ? { ...current, instruction: event.target.value } : current,
+                  );
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPersonalityDraft(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void savePersonality()}>
+              {personalityDraft?.id ? "Save" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

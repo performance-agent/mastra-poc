@@ -1,3 +1,4 @@
+import type { EvidenceReceipt } from '@pa/agent';
 import { RequestContext } from '@mastra/core/request-context';
 import { groupReportModels } from '../mastra/model-configuration';
 import { GenerationService } from '../generation/generation.service';
@@ -27,6 +28,7 @@ import {
   buildEvaluatorQuestionsPrompt,
   buildEvaluatorVoicePrompt,
   isEvaluatorVisibleToGroup,
+  REPORT_COMPACT_INSTRUCTION,
   reportEffortPreset,
   type EvaluatorSnapshot,
 } from './evaluator-run';
@@ -70,6 +72,8 @@ export class ReportsService {
     for (const evaluatorId of evaluatorIds) {
       await this.assertEvaluatorVisible(group, evaluatorId);
     }
+    const prepared = this.prepareGroupReport(groupId);
+    void prepared.catch(() => undefined);
     const jobs: Array<{
       jobId: string;
       evaluatorId: string;
@@ -82,7 +86,11 @@ export class ReportsService {
         'group_report',
         { type: 'GROUP_REPORT', evaluatorId },
         (progress) =>
-          this.createSoftwareReport(groupId, { evaluatorId, progress }),
+          this.createSoftwareReport(groupId, {
+            evaluatorId,
+            progress,
+            prepared,
+          }),
       );
       jobs.push({ jobId: job.jobId, evaluatorId, status: job.status });
     }
@@ -102,13 +110,17 @@ export class ReportsService {
 
   private async createSoftwareReport(
     groupId: string,
-    options: { evaluatorId?: string; progress?: ReportProgress } = {},
+    options: {
+      evaluatorId?: string;
+      progress?: ReportProgress;
+      prepared?: ReturnType<ReportsService['prepareGroupReport']>;
+    } = {},
   ) {
     const progress = options.progress;
     await progress?.('preparing');
     await progress?.('preparing', 'completed');
     await progress?.('collecting_evidence');
-    const prepared = await this.prepareGroupReport(groupId);
+    const prepared = await (options.prepared ?? this.prepareGroupReport(groupId));
     const source = await this.loadEvaluatorSource(
       prepared.group,
       options.evaluatorId,
@@ -156,62 +168,81 @@ export class ReportsService {
     const governancePrefix = buildEvaluatorGovernancePrompt(
       source.snapshot?.rules ?? [],
     );
-    const voicePrefix = buildEvaluatorVoicePrompt(
-      source.snapshot?.personality ?? null,
-    );
+    const voicePrefix = buildEvaluatorVoicePrompt(source.voice);
     const questionsPrefix = buildEvaluatorQuestionsPrompt(
       source.snapshot?.questions ?? [],
     );
-    const { modelRequest, modelBudget, projectEvidence, generationError } =
+    const { modelRequest, modelBudget, packEvidence, generationError } =
       await import('@pa/agent');
     let generatedReport: unknown;
     let failure: unknown;
+    let packed: ReturnType<typeof packEvidence> | undefined;
+    let tokenUsage: { input: number | null; output: number | null } | null =
+      null;
     for (const model of groupReportModels()) {
       const budget = modelBudget(model);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       const effort = reportEffortPreset(source.effort, budget);
-      let sample = effort.sample;
       const effortLine = effort.instruction ? `${effort.instruction}\n\n` : '';
-      const prompt = () =>
-        `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${GROUP_REPORT_GENERATION_PROMPT}\n\n${JSON.stringify(projectEvidence(reportInput, sample))}`;
-      let boundedPrompt = prompt();
-      while (
-        sample > 1 &&
-        Buffer.byteLength(JSON.stringify(boundedPrompt)) > effort.inputBytes
-      ) {
-        sample = Math.max(1, Math.floor(sample / 2));
-        boundedPrompt = prompt();
-      }
+      const prefix = `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
+      const reserve = Buffer.byteLength(`${REPORT_COMPACT_INSTRUCTION}\n\n`);
+      packed = packEvidence(reportInput, effort.sample, {
+        budgetBytes: Math.max(1024, effort.inputBytes - reserve),
+        prefix,
+        textCap: 8000,
+        listCap: effort.sample,
+      });
+      this.logger.log(
+        `Group report evidence receipt ${JSON.stringify(packed.receipt)}`,
+      );
+      const boundedPrompt = `${prefix}${JSON.stringify(packed.evidence)}`;
       const requestContext = new RequestContext();
       requestContext.set('generationModel', model);
-      try {
-        generatedReport = await modelRequest(
-          model,
-          'group_report',
-          boundedPrompt,
-          async (signal) => {
-            const response = await this.groupReportAgent.generate(
-              [{ role: 'user', content: boundedPrompt }],
-              {
-                requestContext,
-                abortSignal: signal,
-                maxSteps: 1,
-                modelSettings: {
-                  maxOutputTokens: effort.outputTokens,
-                  maxRetries: 0,
+      let promptText = boundedPrompt;
+      const outputTokens = effort.outputTokens;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          generatedReport = await modelRequest(
+            model,
+            'group_report',
+            promptText,
+            async (signal) => {
+              const response = await this.groupReportAgent.generate(
+                [{ role: 'user', content: promptText }],
+                {
+                  requestContext,
+                  abortSignal: signal,
+                  maxSteps: 1,
+                  modelSettings: {
+                    maxOutputTokens: outputTokens,
+                    maxRetries: 0,
+                  },
+                  structuredOutput: { schema: groupReportContentSchema },
                 },
-                structuredOutput: { schema: groupReportContentSchema },
-              },
-            );
-            return groupReportContentSchema.parse(response.object);
-          },
-          { inputBytes: effort.inputBytes },
-        );
-        break;
-      } catch (error) {
-        failure = error;
-        if (generationError(error) === 'authentication') throw error;
+              );
+              tokenUsage = readTokenUsage(response);
+              return groupReportContentSchema.parse(response.object);
+            },
+            { inputBytes: effort.inputBytes, timeoutMs: 180000 },
+          );
+          failure = undefined;
+          break;
+        } catch (error) {
+          failure = error;
+          if (generationError(error) === 'authentication') throw error;
+          if (
+            generationError(error) !== 'invalid_structured_output' ||
+            attempt === 1
+          ) {
+            break;
+          }
+          this.logger.warn(
+            'Group report output was cut off. Retrying a shorter report.',
+          );
+          promptText = `${REPORT_COMPACT_INSTRUCTION}\n\n${boundedPrompt}`;
+        }
       }
+      if (generatedReport) break;
     }
     if (!generatedReport) throw failure;
     await progress?.('generating', 'completed');
@@ -220,7 +251,17 @@ export class ReportsService {
     const saved = await this.persistGroupReport(
       groupId,
       generatedReport,
-      prepared.coverage,
+      {
+        ...prepared.coverage,
+        ...(packed
+          ? {
+              evidenceReceipt: {
+                ...packed.receipt,
+                tokens: tokenUsage,
+              },
+            }
+          : {}),
+      },
       evaluationGuidelines,
       source.snapshot,
     );
@@ -281,7 +322,7 @@ export class ReportsService {
 
     const coverage = buildCoverage(providerData);
     coverage.limitations.push(
-      'Model input uses evidence samples spread across the stored period; aggregate counts cover the full stored history. Sample omissions are disclosed in the input.',
+      'Model input is the stored history. Text and nested lists are shortened only when the package exceeds the input budget. Aggregate counts cover the full stored history.',
     );
     const reportInput = {
       group: { id: group.id, name: group.name },
@@ -319,6 +360,7 @@ export class ReportsService {
     guidelines: EvaluationGuidelines | null;
     snapshot: EvaluatorSnapshot | null;
     effort: 'LOW' | 'MEDIUM' | 'HIGH';
+    voice: string | null;
   }> {
     if (!evaluatorId) {
       const guidelines =
@@ -328,7 +370,7 @@ export class ReportsService {
               notes: group.evaluationNotes ?? null,
             }
           : null;
-      return { guidelines, snapshot: null, effort: 'MEDIUM' };
+      return { guidelines, snapshot: null, effort: 'MEDIUM', voice: null };
     }
     const evaluator = await this.assertEvaluatorVisible(group, evaluatorId);
     const guidelines =
@@ -347,7 +389,7 @@ export class ReportsService {
         scope: evaluator.scope,
         effort: evaluator.effort,
         avatar: evaluator.avatar,
-        personality: evaluator.personality,
+        personality: evaluator.personality.name,
         guidelines: {
           emphasis: guidelines?.emphasis ?? [],
           notes: guidelines?.notes ?? null,
@@ -359,6 +401,7 @@ export class ReportsService {
         })),
         questions: evaluator.questions.map((question) => question.text),
       },
+      voice: evaluator.personality.instruction,
     };
   }
 
@@ -371,6 +414,7 @@ export class ReportsService {
       include: {
         rules: { orderBy: { position: 'asc' } },
         questions: { orderBy: { position: 'asc' } },
+        personality: true,
       },
     });
     if (!evaluator || !isEvaluatorVisibleToGroup(evaluator, group)) {
@@ -382,7 +426,9 @@ export class ReportsService {
   private persistGroupReport(
     groupId: string,
     content: unknown,
-    coverage: ReturnType<typeof buildCoverage>,
+    coverage: ReturnType<typeof buildCoverage> & {
+      evidenceReceipt?: EvidenceReceipt;
+    },
     evaluationGuidelines: EvaluationGuidelines | null,
     evaluator: EvaluatorSnapshot | null,
   ) {
@@ -489,6 +535,26 @@ function buildCoverage(providerData: ProviderData) {
       lastTimestamp === null ? null : new Date(lastTimestamp).toISOString(),
     limitations,
   };
+}
+
+function readTokenUsage(response: unknown): {
+  input: number | null;
+  output: number | null;
+} | null {
+  if (!response || typeof response !== 'object') return null;
+  const usage = (response as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== 'object') return null;
+  const record = usage as Record<string, unknown>;
+  const input = tokenCount(record.inputTokens ?? record.promptTokens);
+  const output = tokenCount(record.outputTokens ?? record.completionTokens);
+  if (input === null && output === null) return null;
+  return { input, output };
+}
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
 }
 
 function recordTimestamp(value: unknown): number | null {

@@ -227,6 +227,47 @@ export const groupReportContentSchema = z.object({
     ),
 });
 
+const evidenceCountSchema = z.object({
+  kept: z.number().int().nonnegative(),
+  omitted: z.number().int().nonnegative(),
+});
+
+const evidenceReceiptSchema = z.object({
+  budgetBytes: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative(),
+  counts: z.array(
+    z.object({
+      type: z.string(),
+      stored: z.number().int().nonnegative(),
+      initial: z.number().int().nonnegative(),
+      final: z.number().int().nonnegative(),
+    }),
+  ),
+  includedIds: z.array(
+    z.object({
+      type: z.string(),
+      ids: z.array(z.string()),
+    }),
+  ),
+  nested: z.object({
+    comments: evidenceCountSchema,
+    reviews: evidenceCountSchema,
+    files: evidenceCountSchema,
+  }),
+  operations: z.array(
+    z.object({
+      action: z.enum(['shorten_text', 'reduce_list', 'drop_records']),
+      reason: z.string(),
+    }),
+  ),
+  tokens: z
+    .object({
+      input: z.number().int().nonnegative().nullable(),
+      output: z.number().int().nonnegative().nullable(),
+    })
+    .nullable(),
+});
+
 const coverageSchema = z.object({
   resourcesAnalyzed: z.number().int().nonnegative(),
   datasetsAnalyzed: z.number().int().nonnegative(),
@@ -234,6 +275,7 @@ const coverageSchema = z.object({
   firstActivityAt: z.string().nullable(),
   lastActivityAt: z.string().nullable(),
   limitations: z.array(z.string()),
+  evidenceReceipt: evidenceReceiptSchema.optional(),
 });
 
 const evaluationGuidelinesSnapshotSchema = z.object({
@@ -251,7 +293,7 @@ const evaluatorSnapshotSchema = z.object({
     .int()
     .min(0)
     .max(AVATAR_COUNT - 1),
-  personality: z.enum(['demanding', 'direct', 'careful']),
+  personality: z.string(),
   guidelines: evaluationGuidelinesSnapshotSchema,
   rules: z.array(
     z.object({

@@ -1,4 +1,6 @@
 import {
+  FULL_EVIDENCE_SAMPLE,
+  FULL_INPUT_BYTES,
   buildEvaluatorGovernancePrompt,
   buildEvaluatorQuestionsPrompt,
   buildEvaluatorVoicePrompt,
@@ -9,37 +11,41 @@ import {
 describe('report effort', () => {
   const budget = { inputBytes: 48000, outputTokens: 4096 };
 
-  it('keeps the current sample and token budget at medium effort', () => {
+  it('reads the full stored history at medium effort and leaves room to write more', () => {
     expect(reportEffortPreset('MEDIUM', budget)).toMatchObject({
-      sample: 15,
-      inputBytes: 48000,
-      outputTokens: 4096,
+      sample: FULL_EVIDENCE_SAMPLE,
+      inputBytes: FULL_INPUT_BYTES,
+      outputTokens: 12288,
     });
     expect(reportEffortPreset('MEDIUM', budget).instruction).toContain(
       'más contexto',
     );
   });
 
-  it('reads a smaller sample at low effort and keeps room to finish the report', () => {
+  it('keeps the same evidence at low effort and writes a shorter report', () => {
     const preset = reportEffortPreset('LOW', budget);
     expect(preset).toMatchObject({
-      sample: 9,
-      inputBytes: 48000,
-      outputTokens: 4096,
+      sample: FULL_EVIDENCE_SAMPLE,
+      inputBytes: FULL_INPUT_BYTES,
+      outputTokens: 8192,
     });
     expect(preset.instruction).toContain('reporte corto');
+    expect(preset.instruction).toContain('misma evidencia');
   });
 
-  it('raises sample, input, and output at high effort without lowering an already larger budget', () => {
+  it('writes the longest report at high effort without lowering an already larger budget', () => {
     expect(reportEffortPreset('HIGH', budget)).toMatchObject({
-      sample: 30,
-      inputBytes: 64800,
-      outputTokens: 7168,
+      sample: FULL_EVIDENCE_SAMPLE,
+      inputBytes: FULL_INPUT_BYTES,
+      outputTokens: 16384,
     });
     expect(
-      reportEffortPreset('HIGH', { inputBytes: 48000, outputTokens: 9000 })
+      reportEffortPreset('HIGH', { inputBytes: 48000, outputTokens: 20000 })
         .outputTokens,
-    ).toBe(9000);
+    ).toBe(20000);
+    expect(reportEffortPreset('LOW', budget).sample).toBe(
+      reportEffortPreset('HIGH', budget).sample,
+    );
   });
 });
 
@@ -67,11 +73,14 @@ describe('evaluator voice and questions', () => {
     expect(buildEvaluatorVoicePrompt(null)).toBe('');
   });
 
-  it('asks for a direct voice without changing the facts', () => {
-    const prompt = buildEvaluatorVoicePrompt('direct');
+  it('lets the voice choose emphasis without overriding the evidence', () => {
+    const prompt = buildEvaluatorVoicePrompt(
+      'Decí lo que pasó, de forma directa, sin suavizar ni empujar.',
+    );
     expect(prompt).toContain('VOZ DEL EVALUADOR');
+    expect(prompt).toContain('elige qué enfatizar');
+    expect(prompt).toContain('Un conteo parcial no es un total');
     expect(prompt).toContain('sin suavizar ni empujar');
-    expect(prompt).toContain('No cambia los hechos');
   });
 
   it('requires an empty answer list when there are no questions', () => {
