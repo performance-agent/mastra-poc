@@ -20,6 +20,7 @@ import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
+import { RulesTab } from "@/components/app/RulesTab";
 import { ReportsPanel } from "@/components/app/ReportsPanel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -36,9 +37,9 @@ import {
 import type { Role } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z.enum(["overview", "members", "resources", "reports", "evaluation"]).optional(),
+  tab: z.enum(["overview", "members", "resources", "reports", "evaluation", "rules"]).optional(),
 });
-type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation";
+type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation" | "rules";
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId",
@@ -224,6 +225,7 @@ function GroupPage() {
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
               { value: "evaluation", label: "Evaluators" },
+              { value: "rules", label: "Rules" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
             ]}
           />
@@ -275,6 +277,10 @@ function GroupPage() {
               canManageGroup={canManageRoles}
               canManageWorkspace={canEvaluate}
             />
+          )}
+
+          {tab === "rules" && (
+            <RulesTab workspaceId={workspaceId} groupId={groupId} canManage={canEvaluate} />
           )}
 
           {tab === "members" && (
