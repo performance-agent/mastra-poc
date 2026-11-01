@@ -21,6 +21,8 @@ export type ModelRequestOptions = {
   maxRetries?: number;
   /** When set, this request may exceed the model default. The caller already bounded the payload to this size. */
   inputBytes?: number;
+  /** When set, this request may wait longer than the model default. */
+  timeoutMs?: number;
   beforeAttempt?: () => void;
   metadata?: () => Record<string, unknown>;
 };
@@ -302,7 +304,8 @@ export function modelRequest<T>(
   const task = tail.then(async () => {
     const budget = modelBudget(model);
     const inputBytes = allowedInputBytes(budget.inputBytes, options.inputBytes);
-    const enforced = { ...budget, inputBytes };
+    const timeoutMs = allowedInputBytes(budget.timeoutMs, options.timeoutMs);
+    const enforced = { ...budget, inputBytes, timeoutMs };
     const bytes = Buffer.byteLength(JSON.stringify(payload));
     if (bytes > enforced.inputBytes) {
       console.warn(
@@ -390,8 +393,22 @@ export function modelRequest<T>(
 }
 
 const NESTED_SAMPLE_CAP = 8;
+const DEFAULT_TEXT_CAP = 1200;
 const AGGREGATE_PEOPLE_CAP = 24;
 const OPEN_PARENT_CAP = 12;
+const TEXT_FIELDS = new Set(['body', 'description', 'message']);
+const COMMENT_LISTS = new Set([
+  'issueComments',
+  'reviewCommentsData',
+  'comments',
+]);
+const REVIEW_LISTS = new Set(['reviews']);
+const FILE_LISTS = new Set(['files']);
+const NAMED_LISTS = new Set([
+  ...COMMENT_LISTS,
+  ...REVIEW_LISTS,
+  ...FILE_LISTS,
+]);
 const TIME_KEYS = [
   'createdAt',
   'authoredAt',
@@ -400,25 +417,51 @@ const TIME_KEYS = [
   'updatedAt',
 ] as const;
 
+type ProjectCaps = {
+  sample: number;
+  textCap: number;
+  listCap: number;
+};
+
 /** Projection keeps source identity, text, metrics and nested evidence, with explicit omissions. */
 export function projectEvidence(value: unknown, sample = 12): unknown {
-  return projectNode(value, sample, true);
+  return projectNode(value, defaultCaps(sample), true);
 }
 
-function projectNode(value: unknown, sample: number, wide: boolean): unknown {
+function defaultCaps(sample: number): ProjectCaps {
+  return {
+    sample,
+    textCap: DEFAULT_TEXT_CAP,
+    listCap: Math.min(Math.max(sample, 1), NESTED_SAMPLE_CAP),
+  };
+}
+
+function projectNode(
+  value: unknown,
+  caps: ProjectCaps,
+  wide: boolean,
+  key?: string,
+): unknown {
   if (Array.isArray(value)) {
-    const take = wide ? sample : Math.min(sample, NESTED_SAMPLE_CAP);
+    const named = !wide && key !== undefined && NAMED_LISTS.has(key);
+    const take = wide
+      ? caps.sample
+      : named
+        ? caps.listCap
+        : Math.min(caps.sample, NESTED_SAMPLE_CAP);
     const picked = spreadAcross(orderByTime(value), take);
     return {
       total: value.length,
       omitted: Math.max(0, value.length - picked.length),
-      sample: picked.map((item) => projectNode(item, sample, wide)),
+      sample: picked.map((item) => projectNode(item, caps, wide)),
     };
   }
-  if (!value || typeof value !== 'object')
-    return typeof value === 'string' && value.length > 1200
-      ? `${value.slice(0, 1200)} [text omitted]`
-      : value;
+  if (!value || typeof value !== 'object') {
+    if (typeof value !== 'string') return value;
+    const cap =
+      key !== undefined && TEXT_FIELDS.has(key) ? caps.textCap : DEFAULT_TEXT_CAP;
+    return value.length > cap ? `${value.slice(0, cap)} [text omitted]` : value;
+  }
   const excluded = new Set([
     'patch',
     'avatar_url',
@@ -429,8 +472,9 @@ function projectNode(value: unknown, sample: number, wide: boolean): unknown {
   const record = value as Record<string, unknown>;
   const nextWide = wide && !isEvidenceRecord(record);
   const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(record))
-    if (!excluded.has(key)) result[key] = projectNode(item, sample, nextWide);
+  for (const [childKey, item] of Object.entries(record))
+    if (!excluded.has(childKey))
+      result[childKey] = projectNode(item, caps, nextWide, childKey);
   if (Array.isArray(record.records)) {
     const actors: Record<string, number> = {};
     for (const item of record.records as Array<Record<string, unknown>>) {
@@ -444,16 +488,341 @@ function projectNode(value: unknown, sample: number, wide: boolean): unknown {
       a.localeCompare(b),
     );
     result.actorRecordCounts = Object.fromEntries(
-      entries.slice(0, Math.max(12, sample * 4)),
+      entries.slice(0, Math.max(12, caps.sample * 4)),
     );
     result.omittedActorCounts = Math.max(
       0,
-      entries.length - Math.max(12, sample * 4),
+      entries.length - Math.max(12, caps.sample * 4),
     );
     const aggregates = summarizeStoredRecords(record.records);
     if (aggregates) result.aggregates = aggregates;
   }
   return result;
+}
+
+export type EvidenceTrimAction = 'shorten_text' | 'reduce_list' | 'drop_records';
+
+export type EvidenceReceipt = {
+  budgetBytes: number;
+  bytes: number;
+  counts: Array<{
+    type: string;
+    stored: number;
+    initial: number;
+    final: number;
+  }>;
+  includedIds: Array<{ type: string; ids: string[] }>;
+  nested: {
+    comments: { kept: number; omitted: number };
+    reviews: { kept: number; omitted: number };
+    files: { kept: number; omitted: number };
+  };
+  operations: Array<{ action: EvidenceTrimAction; reason: string }>;
+  tokens: { input: number | null; output: number | null } | null;
+};
+
+export function packEvidence(
+  value: unknown,
+  sample: number,
+  options: {
+    budgetBytes: number;
+    prefix: string;
+    /** Starting cap for body, description and message. The trim ladder still shortens these if the package exceeds the budget. */
+    textCap?: number;
+    /** Starting cap for comments, reviews and files. Defaults to the nested sample cap. */
+    listCap?: number;
+  },
+): { evidence: unknown; receipt: EvidenceReceipt } {
+  const linkById = linkIndex(value);
+  const stored = longestRecords(value);
+  let take = Math.max(1, Math.min(Math.max(sample, 1), stored || sample));
+  let textCap = options.textCap ?? DEFAULT_TEXT_CAP;
+  let listCap =
+    options.listCap ?? Math.min(Math.max(sample, 1), NESTED_SAMPLE_CAP);
+  const operations: EvidenceReceipt['operations'] = [];
+  let evidence = projectPacked(value, take, textCap, listCap, linkById);
+  const initial = datasetSnapshot(evidence);
+  const textLadder = [1200, 400, 160].filter((cap) => cap < textCap);
+  const listLadder = [8, 4, 2, 1].filter((cap) => cap < listCap);
+  let textStep = 0;
+  let listStep = 0;
+  let dropFrom: number | null = null;
+
+  while (packageBytes(options.prefix, evidence) > options.budgetBytes) {
+    if (textStep < textLadder.length) {
+      const next = textLadder[textStep] ?? textCap;
+      textStep += 1;
+      const before = packageBytes(options.prefix, evidence);
+      textCap = next;
+      evidence = projectPacked(value, take, textCap, listCap, linkById);
+      if (packageBytes(options.prefix, evidence) < before) {
+        operations.push({
+          action: 'shorten_text',
+          reason: `Shortened body, description and message fields to ${next} characters so other records can stay.`,
+        });
+      }
+      continue;
+    }
+    if (listStep < listLadder.length) {
+      const next = listLadder[listStep] ?? listCap;
+      listStep += 1;
+      const before = packageBytes(options.prefix, evidence);
+      listCap = next;
+      evidence = projectPacked(value, take, textCap, listCap, linkById);
+      if (packageBytes(options.prefix, evidence) < before) {
+        operations.push({
+          action: 'reduce_list',
+          reason: `Reduced comments, reviews and files to ${next} item${next === 1 ? '' : 's'}, keeping at least one while the record stays.`,
+        });
+      }
+      continue;
+    }
+    if (take > 1) {
+      if (dropFrom === null) dropFrom = take;
+      take -= 1;
+      evidence = projectPacked(value, take, textCap, listCap, linkById);
+      continue;
+    }
+    break;
+  }
+  if (dropFrom !== null) {
+    operations.push({
+      action: 'drop_records',
+      reason: `Removed records from ${dropFrom} to ${take} after shortening text and nested lists. The remaining records stay spread across the period.`,
+    });
+  }
+
+  const final = datasetSnapshot(evidence);
+  const types = [...new Set([...initial.keys(), ...final.keys()])].sort();
+  return {
+    evidence,
+    receipt: {
+      budgetBytes: options.budgetBytes,
+      bytes: packageBytes(options.prefix, evidence),
+      counts: types.map((type) => ({
+        type,
+        stored: initial.get(type)?.stored ?? final.get(type)?.stored ?? 0,
+        initial: initial.get(type)?.selected ?? 0,
+        final: final.get(type)?.selected ?? 0,
+      })),
+      includedIds: types.map((type) => ({
+        type,
+        ids: final.get(type)?.ids ?? [],
+      })),
+      nested: tallyNested(evidence),
+      operations,
+      tokens: null,
+    },
+  };
+}
+
+function projectPacked(
+  value: unknown,
+  sample: number,
+  textCap: number,
+  listCap: number,
+  linkById: Map<string, string[]>,
+) {
+  const projected = projectNode(
+    value,
+    { sample, textCap, listCap: Math.max(1, listCap) },
+    true,
+  );
+  annotateLinks(projected, linkById);
+  return projected;
+}
+
+function packageBytes(prefix: string, evidence: unknown) {
+  return Buffer.byteLength(JSON.stringify(prefix + JSON.stringify(evidence)));
+}
+
+function longestRecords(value: unknown): number {
+  let longest = 0;
+  const visit = (node: unknown, key?: string) => {
+    if (Array.isArray(node)) {
+      if (key === 'records') longest = Math.max(longest, node.length);
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    for (const [childKey, child] of Object.entries(node)) visit(child, childKey);
+  };
+  visit(value);
+  return longest;
+}
+
+type DatasetSnap = { stored: number; selected: number; ids: string[] };
+
+function datasetSnapshot(value: unknown) {
+  const counts = new Map<string, DatasetSnap>();
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const record = node as Record<string, unknown>;
+    const records = record.records;
+    if (
+      records &&
+      typeof records === 'object' &&
+      !Array.isArray(records) &&
+      Array.isArray((records as { sample?: unknown }).sample) &&
+      typeof (records as { total?: unknown }).total === 'number'
+    ) {
+      const wrapped = records as { total: number; sample: unknown[] };
+      const type =
+        typeof record.dataType === 'string' ? record.dataType : 'records';
+      const current = counts.get(type) ?? { stored: 0, selected: 0, ids: [] };
+      current.stored += wrapped.total;
+      current.selected += wrapped.sample.length;
+      for (const item of wrapped.sample) {
+        const id = recordId(item);
+        if (id) current.ids.push(id);
+      }
+      counts.set(type, current);
+    }
+    for (const child of Object.values(record)) visit(child);
+  };
+  visit(value);
+  return counts;
+}
+
+function recordId(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.key === 'string') return record.key;
+  if (typeof record.sha === 'string') return record.sha;
+  if (typeof record.number === 'number') return String(record.number);
+  if (typeof record.id === 'string') return record.id;
+  return null;
+}
+
+function tallyNested(value: unknown) {
+  const nested = {
+    comments: { kept: 0, omitted: 0 },
+    reviews: { kept: 0, omitted: 0 },
+    files: { kept: 0, omitted: 0 },
+  };
+  const visit = (node: unknown, key?: string) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const record = node as Record<string, unknown>;
+    if (
+      key &&
+      typeof record.total === 'number' &&
+      Array.isArray(record.sample)
+    ) {
+      const bucket = COMMENT_LISTS.has(key)
+        ? nested.comments
+        : REVIEW_LISTS.has(key)
+          ? nested.reviews
+          : FILE_LISTS.has(key)
+            ? nested.files
+            : null;
+      if (bucket) {
+        bucket.kept += record.sample.length;
+        bucket.omitted += Math.max(0, record.total - record.sample.length);
+      }
+    }
+    for (const [childKey, child] of Object.entries(record))
+      visit(child, childKey);
+  };
+  visit(value);
+  return nested;
+}
+
+function linkIndex(value: unknown) {
+  const ticketKeys = new Set<string>();
+  const records: Record<string, unknown>[] = [];
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const record = node as Record<string, unknown>;
+    if (isTicket(record) && typeof record.key === 'string')
+      ticketKeys.add(record.key);
+    if (isPullRequest(record) || isCommit(record) || isTicket(record))
+      records.push(record);
+    for (const child of Object.values(record)) visit(child);
+  };
+  visit(value);
+  const index = new Map<string, string[]>();
+  for (const record of records) {
+    const id = recordIdentity(record);
+    if (!id) continue;
+    index.set(id, linksFor(record, ticketKeys));
+  }
+  return index;
+}
+
+function linksFor(record: Record<string, unknown>, ticketKeys: Set<string>) {
+  const links: string[] = [];
+  if (typeof record.parentKey === 'string' && record.parentKey.length > 0)
+    links.push(`parent:${record.parentKey}`);
+  const seen = new Set<string>();
+  for (const blob of textBlobs(record)) {
+    for (const match of blob.match(/\b[A-Z][A-Z0-9]+-\d+\b/g) ?? []) {
+      if (!ticketKeys.has(match) || match === record.key || seen.has(match))
+        continue;
+      seen.add(match);
+      links.push(`ticket:${match}`);
+    }
+  }
+  return links;
+}
+
+function textBlobs(record: Record<string, unknown>) {
+  const blobs: string[] = [];
+  for (const key of ['title', 'summary', 'message', 'body', 'description'])
+    if (typeof record[key] === 'string') blobs.push(record[key]);
+  for (const key of ['issueComments', 'reviewCommentsData', 'reviews', 'comments']) {
+    const list = record[key];
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const body = (item as Record<string, unknown>).body;
+      if (typeof body === 'string') blobs.push(body);
+    }
+  }
+  return blobs;
+}
+
+function recordIdentity(record: Record<string, unknown>): string | null {
+  if (isTicket(record) && typeof record.key === 'string')
+    return `ticket:${record.key}`;
+  if (isCommit(record) && typeof record.sha === 'string')
+    return `commit:${record.sha}`;
+  if (isPullRequest(record) && typeof record.number === 'number') {
+    const repository =
+      typeof record.repository === 'string' ? record.repository : '';
+    return `pr:${repository}:${record.number}`;
+  }
+  return null;
+}
+
+function annotateLinks(value: unknown, linkById: Map<string, string[]>) {
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    const record = node as Record<string, unknown>;
+    const id = recordIdentity(record);
+    if (id && linkById.has(id)) {
+      const links = linkById.get(id) ?? [];
+      record.links =
+        links.length > 0 ? links : ['sin vínculo identificado'];
+    }
+    for (const child of Object.values(record)) visit(child);
+  };
+  visit(value);
 }
 
 function orderByTime(items: unknown[]): unknown[] {

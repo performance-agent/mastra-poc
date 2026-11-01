@@ -6,14 +6,18 @@ export type EvaluatorEffortLevel = (typeof EVALUATOR_EFFORTS)[number];
 export const EVALUATOR_SCOPES = ['WORKSPACE', 'GROUP'] as const;
 export type EvaluatorScopeName = (typeof EVALUATOR_SCOPES)[number];
 
-export const EVALUATOR_PERSONALITIES = [
-  'demanding',
-  'direct',
-  'careful',
-] as const;
-export type EvaluatorPersonalityName = (typeof EVALUATOR_PERSONALITIES)[number];
+export const MAX_PERSONALITIES = 3;
 
-const HIGH_OUTPUT_TOKEN_CAP = 8192;
+const REPORT_OUTPUT_FLOOR = 8192;
+const MEDIUM_OUTPUT_FLOOR = 12288;
+const HIGH_OUTPUT_FLOOR = 16384;
+/** Matches the stored-record cap. Every effort reads this many, not a smaller sample. */
+export const FULL_EVIDENCE_SAMPLE = 1000;
+/** Room for the stored history. Gemini's window is larger; this only stops a runaway package. */
+export const FULL_INPUT_BYTES = 2_000_000;
+
+export const REPORT_COMPACT_INSTRUCTION =
+  'La respuesta anterior se cortó antes de cerrar el formulario. Reescribí el reporte completo y más corto. Una frase por cada texto. Como máximo dos ítems en cada lista. recommendations y questionAnswers tienen que estar, con todos sus campos. No dejes ningún campo requerido vacío.';
 
 export interface ReportBudget {
   inputBytes: number;
@@ -39,52 +43,40 @@ export interface EvaluatorSnapshot {
   scope: EvaluatorScopeName;
   effort: EvaluatorEffortLevel;
   avatar: number;
-  personality: EvaluatorPersonalityName;
+  personality: string;
   guidelines: EvaluationGuidelines;
   rules: GovernanceRule[];
   questions: string[];
 }
 
-const PERSONALITY_VOICE: Record<EvaluatorPersonalityName, string> = {
-  demanding:
-    'Nombrá el problema primero y tratalo como algo que hay que frenar. El tono es exigente, sin suavizar el hallazgo.',
-  direct: 'Decí lo que pasó, de forma directa, sin suavizar ni empujar.',
-  careful:
-    'Nombrá lo que funciona y dejá un solo próximo paso concreto. El tono es cuidadoso.',
-};
-
 export function reportEffortPreset(
   effort: EvaluatorEffortLevel,
   budget: ReportBudget,
 ): ReportEffortPreset {
+  const shared = {
+    sample: FULL_EVIDENCE_SAMPLE,
+    inputBytes: Math.max(budget.inputBytes, FULL_INPUT_BYTES),
+  };
+  const sameEvidence =
+    'Los tres niveles leen la misma evidencia guardada. Cambia qué tan largo es el reporte, no qué registros ves.';
   if (effort === 'LOW') {
     return {
-      sample: 9,
-      inputBytes: budget.inputBytes,
-      outputTokens: budget.outputTokens,
-      instruction:
-        'Nivel de esfuerzo bajo: escribí un reporte corto y rápido, solo con lo importante y en pocas frases. No desarrolles cada persona ni cada registro. Las listas pueden ser cortas o vacías. Completá todas las secciones del schema para que el reporte cierre, sin texto de relleno.',
+      ...shared,
+      outputTokens: Math.max(budget.outputTokens, REPORT_OUTPUT_FLOOR),
+      instruction: `Nivel de esfuerzo bajo: escribí un reporte corto y rápido, solo con lo importante y en pocas frases. No desarrolles cada persona ni cada registro. Las listas pueden ser cortas o vacías. Completá todas las secciones del schema para que el reporte cierre, sin texto de relleno. ${sameEvidence}`,
     };
   }
   if (effort === 'HIGH') {
-    const expanded = Math.floor(budget.outputTokens * 1.75);
     return {
-      sample: 30,
-      inputBytes: Math.floor(budget.inputBytes * 1.35),
-      outputTokens: Math.max(
-        budget.outputTokens,
-        Math.min(HIGH_OUTPUT_TOKEN_CAP, expanded),
-      ),
-      instruction:
-        'Nivel de esfuerzo alto: usá más evidencia y explicá con más detalle lo que importa. No inventes evidencia ni escribas de más para llenar espacio.',
+      ...shared,
+      outputTokens: Math.max(budget.outputTokens, HIGH_OUTPUT_FLOOR),
+      instruction: `Nivel de esfuerzo alto: explicá con más detalle lo que importa. No inventes evidencia ni escribas de más para llenar espacio. ${sameEvidence}`,
     };
   }
   return {
-    sample: 15,
-    inputBytes: budget.inputBytes,
-    outputTokens: budget.outputTokens,
-    instruction:
-      'Nivel de esfuerzo medio: incluí más contexto que en un reporte breve, sobre lo que importa. No hace falta cubrir cada registro ni completar un cupo de texto.',
+    ...shared,
+    outputTokens: Math.max(budget.outputTokens, MEDIUM_OUTPUT_FLOOR),
+    instruction: `Nivel de esfuerzo medio: incluí más contexto que en un reporte breve, sobre lo que importa. No hace falta cubrir cada registro ni completar un cupo de texto. ${sameEvidence}`,
   };
 }
 
@@ -107,14 +99,13 @@ export function buildEvaluatorGovernancePrompt(
   return lines.join('\n');
 }
 
-export function buildEvaluatorVoicePrompt(
-  personality: EvaluatorPersonalityName | null,
-): string {
-  if (!personality) return '';
+export function buildEvaluatorVoicePrompt(instruction: string | null): string {
+  const text = instruction?.trim() ?? '';
+  if (!text) return '';
   return [
     'VOZ DEL EVALUADOR',
-    'Esta voz cambia solo la redacción. No cambia los hechos, la evidencia, el schema ni las calificaciones.',
-    PERSONALITY_VOICE[personality],
+    'Esta voz elige qué enfatizar y cómo decirlo. Las afirmaciones y su confianza tienen que respetar la evidencia disponible. Un conteo parcial no es un total.',
+    text,
     '',
   ].join('\n');
 }

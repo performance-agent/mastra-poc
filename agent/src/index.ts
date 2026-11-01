@@ -25,4 +25,7 @@ export {
   generationError,
   generationErrorDetails,
   projectEvidence,
+  packEvidence,
+  type EvidenceReceipt,
+  type EvidenceTrimAction,
 } from './generation.js';

@@ -21,18 +21,13 @@ import {
 } from '../../mastra/evaluation-guidelines';
 import {
   EVALUATOR_EFFORTS,
-  EVALUATOR_PERSONALITIES,
   EVALUATOR_SCOPES,
   type EvaluatorEffortLevel,
-  type EvaluatorPersonalityName,
   type EvaluatorScopeName,
 } from '../../reports/evaluator-run';
 
 const evaluatorScopes: EvaluatorScopeName[] = [...EVALUATOR_SCOPES];
 const evaluatorEfforts: EvaluatorEffortLevel[] = [...EVALUATOR_EFFORTS];
-const evaluatorPersonalities: EvaluatorPersonalityName[] = [
-  ...EVALUATOR_PERSONALITIES,
-];
 const MAX_QUESTIONS = 6;
 
 export class EvaluatorRuleDto {
@@ -83,8 +78,9 @@ export class CreateEvaluatorDto {
   avatar?: number;
 
   @IsOptional()
-  @IsEnum(evaluatorPersonalities)
-  personality?: EvaluatorPersonalityName;
+  @IsString()
+  @MaxLength(40)
+  personalityId?: string;
 
   @IsOptional()
   @IsArray()
@@ -109,6 +105,18 @@ export class CreateEvaluatorDto {
   @ValidateNested({ each: true })
   @Type(() => EvaluatorQuestionDto)
   questions?: EvaluatorQuestionDto[];
+}
+
+export class PersonalityDto {
+  @IsString()
+  @Matches(/\S/, { message: 'name must contain non-whitespace text' })
+  @MaxLength(40)
+  name!: string;
+
+  @IsString()
+  @Matches(/\S/, { message: 'instruction must contain non-whitespace text' })
+  @MaxLength(800)
+  instruction!: string;
 }
 
 export class UpdateEvaluatorDto extends PartialType(CreateEvaluatorDto) {

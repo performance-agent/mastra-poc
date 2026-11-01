@@ -120,6 +120,66 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+function ReadingCard({
+  receipt,
+}: {
+  receipt: NonNullable<GroupReport["coverage"]["evidenceReceipt"]>;
+}) {
+  const counts = receipt.counts.filter((count) => count.stored > 0);
+  const actions = [...new Set(receipt.operations.map((operation) => operation.action))];
+  const nested = (
+    [
+      ["Comentarios", receipt.nested.comments],
+      ["Reviews", receipt.nested.reviews],
+      ["Archivos", receipt.nested.files],
+    ] as const
+  ).filter(([, value]) => value.kept + value.omitted > 0);
+  const tokens =
+    receipt.tokens && (receipt.tokens.input !== null || receipt.tokens.output !== null)
+      ? `Entrada ${formatCount(receipt.tokens.input ?? 0)}, salida ${formatCount(receipt.tokens.output ?? 0)}`
+      : "El modelo no informó los tokens.";
+
+  return (
+    <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+      <h3 className="text-sm font-semibold">Qué llegó al modelo</h3>
+      <p className="mt-2 text-sm text-muted-foreground">Tokens: {tokens}</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Mensaje: {formatCount(receipt.bytes)} bytes de {formatCount(receipt.budgetBytes)}
+      </p>
+      {counts.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm">
+          {counts.map((count) => (
+            <li key={count.type}>
+              {readingTypeLabels[count.type] ?? count.type}: {formatCount(count.final)} de{" "}
+              {formatCount(count.stored)} guardados
+              {count.final !== count.initial
+                ? ` (la muestra arrancó en ${formatCount(count.initial)})`
+                : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {nested.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
+          {nested.map(([label, value]) => (
+            <li key={label}>
+              {label}: {formatCount(value.kept)} quedaron
+              {value.omitted > 0 ? `, ${formatCount(value.omitted)} no entraron` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {actions.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
+          {actions.map((action) => (
+            <li key={action}>{readingActionLabels[action] ?? action}</li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 function EvidenceContent({ evidence }: { evidence: GroupReportEvidence }) {
   return (
     <div className="flex items-start justify-between gap-3">
@@ -300,11 +360,37 @@ function CommitCard({ commit }: { commit: CommitReview }) {
 }
 
 const effortLabels = { LOW: "Bajo", MEDIUM: "Medio", HIGH: "Alto" } as const;
-const personalityLabels = {
+const personalityLabels: Record<string, string> = {
   demanding: "Exigente",
   direct: "Directo",
   careful: "Cuidadoso",
-} as const;
+  Demanding: "Exigente",
+  Direct: "Directo",
+  Careful: "Cuidadoso",
+};
+
+const readingTypeLabels: Record<string, string> = {
+  "github.commit": "Commits",
+  "github.pullRequest": "Pull requests",
+  "github.issue": "Issues",
+  "github.participation": "Participación",
+  "jira.issue": "Tickets",
+};
+
+const readingActionLabels: Record<string, string> = {
+  shorten_text: "Se acortaron textos largos para que entraran los demás registros.",
+  reduce_list: "Se achicaron comentarios, reviews o archivos, dejando al menos uno.",
+  drop_records:
+    "Se retiraron algunos registros. Los que quedaron siguen repartidos en el tiempo.",
+};
+
+function personalityLabel(value: string) {
+  return personalityLabels[value] ?? value;
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("es-AR").format(value);
+}
 
 function pdfFileName(title: string) {
   const cleaned = title
@@ -464,7 +550,7 @@ export function GroupReportRenderer({
                 </span>
                 {data.evaluator.personality && (
                   <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    {personalityLabels[data.evaluator.personality]}
+                    {personalityLabel(data.evaluator.personality)}
                   </span>
                 )}
               </div>
@@ -534,6 +620,10 @@ export function GroupReportRenderer({
         <Metric label="Datasets" value={data.coverage.datasetsAnalyzed} />
         <Metric label="Registros" value={data.coverage.recordsAnalyzed} />
       </div>
+
+      {data.coverage.evidenceReceipt && (
+        <ReadingCard receipt={data.coverage.evidenceReceipt} />
+      )}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">

@@ -17,6 +17,7 @@ import type {
   GroupReport,
   Evaluator,
   EvaluatorInput,
+  Personality,
   Role,
   EvaluationRequest,
   EvaluationReport,
@@ -374,6 +375,19 @@ export const api = {
     request<{ status: "failed" }>(`/groups/${groupId}/generation-jobs/${jobId}/cancel`, {
       method: "POST",
     }),
+  listPersonalities: (groupId: string) =>
+    request<Personality[]>(`/groups/${groupId}/personalities`),
+  createPersonality: (groupId: string, body: { name: string; instruction: string }) =>
+    request<Personality>(`/groups/${groupId}/personalities`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updatePersonality: (id: string, body: { name: string; instruction: string }) =>
+    request<Personality>(`/personalities/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deletePersonality: (id: string) => request<void>(`/personalities/${id}`, { method: "DELETE" }),
   listEvaluators: (groupId: string) => request<Evaluator[]>(`/groups/${groupId}/evaluators`),
   createEvaluator: (groupId: string, body: EvaluatorInput) =>
     request<Evaluator>(`/groups/${groupId}/evaluators`, {
