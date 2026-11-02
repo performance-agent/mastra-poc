@@ -45,8 +45,14 @@ describe('setup version compatibility', () => {
       version: 2,
       step: 'plugins',
       resourceIds: ['resource-a'],
+      pluginSelection: 'mcp',
+      mcpClient: 'local',
       teamDraft: { workspaceName: 'Product', groupName: 'Engineering' },
     });
     expect(setupSchema.parse(result)).toEqual(result);
+    expect(result).toMatchObject({
+      pluginSelection: 'mcp',
+      mcpClient: 'local',
+    });
   });
 });

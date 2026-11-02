@@ -11,6 +11,8 @@ import type {
   InvitationPreview,
   Resource,
   PluginCatalogItem,
+  WorkspacePeople,
+  McpConnection,
   PluginInstallation,
   DataType,
   PerformanceReport,
@@ -285,6 +287,11 @@ export const api = {
 
   // Plugins and installations
   listPlugins: () => request<PluginCatalogItem[]>("/plugins"),
+  getMcpConnection: () => request<McpConnection>("/mcp/connection"),
+  getWorkspacePeople: (workspaceId: string, evaluatorId?: string) =>
+    request<WorkspacePeople>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/people${evaluatorId ? `?evaluatorId=${encodeURIComponent(evaluatorId)}` : ""}`,
+    ),
   listOrgPluginInstallations: (id: string) =>
     request<PluginInstallation[]>(`/organizations/${id}/plugin-installations`),
   syncPluginInstallation: (id: string) =>

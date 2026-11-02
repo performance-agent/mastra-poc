@@ -4,6 +4,7 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
+    "test:people-mcp": "node --test --test-name-pattern=\"people workspace|MCP catalog|MCP setup\" tests/personalization.browser.test.mjs",
     "test:personalization": "node --test tests/personalization.browser.test.mjs",
     "test:progress": "node --test tests/evaluation-progress.browser.test.mjs",
     "dev": "vite dev",

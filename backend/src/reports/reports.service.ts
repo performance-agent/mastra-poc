@@ -12,11 +12,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { mastra } from '../mastra';
-import { GROUP_REPORT_GENERATION_PROMPT } from '../mastra/group-report-instructions';
-import {
-  buildEvaluationGuidelinesPrompt,
-  type EvaluationGuidelines,
-} from '../mastra/evaluation-guidelines';
+import type { EvaluationGuidelines } from '../mastra/evaluation-guidelines';
 import {
   groupReportContentSchema,
   groupReportSchema,
@@ -26,9 +22,7 @@ import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service'
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import {
-  buildEvaluatorGovernancePrompt,
-  buildEvaluatorQuestionsPrompt,
-  buildEvaluatorVoicePrompt,
+  buildEvaluatorReportPrompt,
   isEvaluatorVisibleToGroup,
   REPORT_COMPACT_INSTRUCTION,
   reportEffortPreset,
@@ -226,15 +220,6 @@ export class ReportsService {
       })}`,
     );
 
-    const guidelinesPrefix =
-      buildEvaluationGuidelinesPrompt(evaluationGuidelines);
-    const governancePrefix = buildEvaluatorGovernancePrompt(
-      source.snapshot?.rules ?? [],
-    );
-    const voicePrefix = buildEvaluatorVoicePrompt(source.voice);
-    const questionsPrefix = buildEvaluatorQuestionsPrompt(
-      source.snapshot?.questions ?? [],
-    );
     const { modelRequest, modelBudget, packEvidence, generationError } =
       await reportAgentTools();
     let generatedReport: unknown;
@@ -245,11 +230,13 @@ export class ReportsService {
     for (const model of groupReportModels()) {
       const budget = modelBudget(model);
       const effort = reportEffortPreset(source.effort, budget);
-      const effortLine = effort.instruction ? `${effort.instruction}\n\n` : '';
       const priorPrefix = options.revision
         ? revisionPrompt(options.priorReport, options.revision.notes)
         : priorReportPrompt(options.priorReport);
-      const prefix = `${guidelinesPrefix}${governancePrefix}${voicePrefix}${questionsPrefix}${effortLine}${priorPrefix}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
+      const prefix = buildEvaluatorReportPrompt(source, {
+        effortInstruction: effort.instruction,
+        priorContext: priorPrefix,
+      });
       const reserve = Buffer.byteLength(`${REPORT_COMPACT_INSTRUCTION}\n\n`);
       packed = packEvidence(reportInput, effort.sample, {
         budgetBytes: Math.max(1024, effort.inputBytes - reserve),
@@ -413,14 +400,51 @@ export class ReportsService {
     return { group, providerData, reportInput, coverage, evaluationGuidelines };
   }
 
-  async createGroupReportFromContent(groupId: string, content: unknown) {
-    const prepared = await this.prepareGroupReport(groupId);
+  async prepareExternalGroupReport(
+    groupId: string,
+    evaluatorId: string,
+    requestedPeriod?: { from: string; to: string },
+  ) {
+    const period = validateReportPeriod(requestedPeriod);
+    // Validate the evaluator before collecting potentially expensive provider data.
+    const group = await this.prisma.group.findUniqueOrThrow({
+      where: { id: groupId },
+    });
+    const source = await this.loadEvaluatorSource(group, evaluatorId);
+    const prepared = await this.prepareGroupReport(groupId, period);
+    return {
+      prepared,
+      source,
+      period,
+      generationPrompt: buildEvaluatorReportPrompt(source),
+    };
+  }
+
+  async createGroupReportFromContent(
+    groupId: string,
+    content: unknown,
+    options?: {
+      evaluatorId: string;
+      period?: { from: string; to: string };
+    },
+  ) {
+    const external = options
+      ? await this.prepareExternalGroupReport(
+          groupId,
+          options.evaluatorId,
+          options.period,
+        )
+      : undefined;
+    const prepared =
+      external?.prepared ?? (await this.prepareGroupReport(groupId));
     return this.persistGroupReport(
       groupId,
       content,
       prepared.coverage,
-      prepared.evaluationGuidelines,
-      null,
+      external ? external.source.guidelines : prepared.evaluationGuidelines,
+      external?.source.snapshot ?? null,
+      undefined,
+      external?.period,
     );
   }
 
@@ -789,7 +813,8 @@ function listedNotes(notes: ReportNote[]) {
       return `${index + 1}. On-screen passage: "${quote}"\nChange requested: ${comment}`;
     })
     .join('\n');
-  if (listed.length > NOTE_PROMPT_CAP) listed = listed.slice(0, NOTE_PROMPT_CAP);
+  if (listed.length > NOTE_PROMPT_CAP)
+    listed = listed.slice(0, NOTE_PROMPT_CAP);
   return listed;
 }
 
@@ -931,7 +956,8 @@ function withPeriod(payload: object, period?: { from: string; to: string }) {
 }
 
 export function readStoredPeriod(data: unknown) {
-  if (!data || typeof data !== 'object' || !('period' in data)) return undefined;
+  if (!data || typeof data !== 'object' || !('period' in data))
+    return undefined;
   const period = (data as { period?: unknown }).period;
   if (!period || typeof period !== 'object') return undefined;
   const from = (period as { from?: unknown }).from;

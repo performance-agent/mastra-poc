@@ -6,6 +6,7 @@ import { MembersModule } from '../members/members.module';
 import { ResourcesModule } from '../resources/resources.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { InvitationsModule } from '../invitations/invitations.module';
+import { WorkspacePeopleService } from './workspace-people.service';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { InvitationsModule } from '../invitations/invitations.module';
     InvitationsModule,
   ],
   controllers: [WorkspacesController],
-  providers: [WorkspacesService],
+  providers: [WorkspacesService, WorkspacePeopleService],
   exports: [WorkspacesService],
 })
 export class WorkspacesModule {}

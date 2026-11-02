@@ -98,6 +98,10 @@ export const setupV2Schema = z
       }),
     resourceIds: z.array(z.string().max(100)).max(1000).default([]),
     resourcesInitialized: z.boolean().default(false),
+    pluginSelection: z.enum(['', 'github', 'jira', 'mcp']).default(''),
+    mcpClient: z
+      .enum(['chatgpt', 'claude', 'cursor', 'vscode', 'local'])
+      .default('claude'),
     evaluatorDraft: z
       .object({
         baseId: z.string().max(100),

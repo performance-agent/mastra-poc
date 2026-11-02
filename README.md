@@ -271,3 +271,54 @@ not verify production Firebase or PostgreSQL deployment.
 
 Both frontend browser suites accept `UI_TEST_SCREENSHOTS=0` to run assertions
 without creating screenshot directories or modifying existing image evidence.
+
+### Workspace people and evaluator-aware MCP
+
+The workspace **People** tab shows the latest saved `GROUP_REPORT` from the
+selected evaluator for each accessible group. It reuses individual conclusions,
+metrics and evidence; opening the page never starts an evaluation. Periods stay
+visible per group, and a missing report never falls back to a different evaluator.
+Group-scoped evaluators are labeled with their group. The person drawer links to
+the exact source report, including its evaluator. Older reports remain readable
+with explicit missing-data states and do not require a content migration.
+
+`GET /api/workspaces/:id/people?evaluatorId=...` returns the available evaluators
+and the per-group summaries. Omitting the evaluator selects the first available
+one, listing workspace evaluators before group evaluators. Both the workspace
+context check and the individual group access filter apply.
+
+The plugin catalog and the setup wizard include **MCP connection** alongside
+GitHub and Jira. MCP connects an assistant rather than importing resources.
+Setup keeps the selected plugin and client in its existing saved draft, and
+connecting MCP is optional. Instructions cover ChatGPT, Claude, Cursor, VS Code
+and a local-agent example using Claude Code, with links to each official guide.
+Configuration snippets contain the deployment's server URL, never tokens.
+
+`GET /api/mcp/connection` returns that URL and the current account's clients with
+unexpired, non-revoked authorizations. These are account authorizations, not a
+live connection check or an organization-level installation. Copying a snippet
+does not change the authorization status. OAuth uses the existing
+`PUBLIC_API_URL` and `FRONTEND_URL` configuration.
+
+MCP server version 2 adds `list_evaluators(groupId)` and requires `evaluatorId`
+for both `get_group_report_context` and `create_group_report`. Both tools accept
+the same optional `{ from, to }` period. The external assistant generates the
+report; the platform validates and saves it with an evaluator snapshot. The
+web and MCP share the evaluator prompt builder, including governance rules,
+questions, voice, guidelines and effort. Existing MCP clients should refresh
+their tool catalog and use this flow:
+
+1. Call `list_groups` and choose a group.
+2. Call `list_evaluators` and ask the user to choose an evaluator.
+3. Get the report context with the selected IDs and optional period.
+4. Generate the report using the returned instructions and schema.
+5. Save with the same IDs and period. VIEWER can read; OWNER and ADMIN can save.
+
+Verification: run `npm run test:people-mcp` from `frontend` with Vite running at
+`http://127.0.0.1:5173`. The tests use simulated APIs and include responsive
+layout, filtering, report links, copyable client configurations and resumed
+setup. Their labeled screenshots are under
+`artifacts/people-mcp/implementation/`, separate from the approved PNG mockups.
+Backend coverage includes group permissions, evaluator selection and snapshots,
+periods, report compatibility, OAuth status and the catalog entry. No new
+database migration or external provider authorization is performed by these tests.

@@ -100,6 +100,7 @@ describe('ReportsService', () => {
     },
   };
   const prisma = {
+    evaluator: { findUnique: jest.fn() },
     group: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
     pluginInstallationResource: { findMany: jest.fn() },
     performanceReport: {
@@ -121,6 +122,7 @@ describe('ReportsService', () => {
 
   const baseGroup = {
     id: 'group-1',
+    workspaceId: 'workspace-1',
     name: 'Core team',
     evaluationEmphasis: [],
     evaluationNotes: null,
@@ -140,6 +142,7 @@ describe('ReportsService', () => {
       runtime as unknown as PluginRuntimeService,
     );
     prisma.group.findUnique.mockResolvedValue(baseGroup);
+    prisma.group.findUniqueOrThrow.mockResolvedValue(baseGroup);
     prisma.pluginInstallationResource.findMany.mockResolvedValue([resource]);
     runtime.provide.mockResolvedValue({
       resources: [
@@ -176,6 +179,80 @@ describe('ReportsService', () => {
     } else {
       process.env.GROUP_REPORT_MODEL = originalGroupReportModel;
     }
+  });
+
+  it('uses the selected evaluator for external context and persistence without generating internally', async () => {
+    prisma.evaluator.findUnique.mockResolvedValue({
+      id: 'evaluator-1',
+      name: 'Coach',
+      scope: 'WORKSPACE',
+      groupId: null,
+      workspaceId: 'workspace-1',
+      avatar: 2,
+      effort: 'HIGH',
+      evaluationEmphasis: [],
+      evaluationNotes: null,
+      personality: { name: 'Direct', instruction: 'Keep findings direct.' },
+      rules: [
+        { name: 'Review quality', description: 'Read reviews', valuation: 8 },
+      ],
+      questions: [{ text: 'What is blocked?' }],
+    });
+    const period = { from: '2026-10-01', to: '2026-10-31' };
+    const context = await service.prepareExternalGroupReport(
+      'group-1',
+      'evaluator-1',
+      period,
+    );
+    expect(context.generationPrompt).toContain('Review quality');
+    expect(context.generationPrompt).toContain('What is blocked?');
+    expect(context.generationPrompt).toContain('Keep findings direct.');
+    expect(context.generationPrompt).toContain('esfuerzo alto');
+    await service.createGroupReportFromContent(
+      'group-1',
+      minimalReportContent,
+      { evaluatorId: 'evaluator-1', period },
+    );
+    expect(groupGenerate).not.toHaveBeenCalled();
+    expect(runtime.provide).toHaveBeenCalledWith(
+      [resource],
+      'history',
+      undefined,
+      period,
+    );
+    expect(prisma.performanceReport.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          evaluatorId: 'evaluator-1',
+          data: expect.objectContaining({
+            period,
+            evaluator: expect.objectContaining({
+              id: 'evaluator-1',
+              name: 'Coach',
+            }),
+            evaluationGuidelines: null,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('rejects inaccessible evaluators and invalid periods before collecting external context', async () => {
+    prisma.evaluator.findUnique.mockResolvedValue({
+      scope: 'GROUP',
+      workspaceId: 'other-workspace',
+      groupId: 'other-group',
+    });
+    await expect(
+      service.prepareExternalGroupReport('group-1', 'wrong'),
+    ).rejects.toThrow('Evaluator not found');
+    await expect(
+      service.prepareExternalGroupReport('group-1', 'wrong', {
+        from: '2026-02-30',
+        to: '2026-03-01',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(runtime.provide).not.toHaveBeenCalled();
   });
 
   it('passes all plugin-native history to the group report agent', async () => {

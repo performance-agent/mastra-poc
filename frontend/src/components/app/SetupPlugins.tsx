@@ -16,6 +16,7 @@ import { savePendingGithubSetup } from "@/lib/github-setup";
 import { setupUrl, type Setup } from "@/lib/experience";
 import type { Resource } from "@/lib/types";
 import { PluginConfigurationFields } from "./PluginConfigurationFields";
+import { McpSetup } from "./McpSetup";
 
 export function SetupPlugins({
   org,
@@ -45,7 +46,7 @@ export function SetupPlugins({
     queryFn: () => api.listOrgPluginInstallations(org),
     refetchInterval: 3000,
   });
-  const [pluginId, setPluginId] = useState("");
+  const [pluginId, setPluginId] = useState(draft.pluginSelection ?? "");
   const [installationId, setInstallationId] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({ name: "Jira" });
@@ -164,6 +165,7 @@ export function SetupPlugins({
             disabled={busy || credentialDirty}
             onClick={() => {
               setPluginId(item.id);
+              onChange({ pluginSelection: item.id });
               setInstallationId("");
               setConnecting(false);
               setError("");
@@ -173,15 +175,29 @@ export function SetupPlugins({
             <span className="text-left">
               <span className="block font-semibold">{item.name}</span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                {installations.data?.some((i) => i.pluginId === item.id && i.status === "ACTIVE")
-                  ? "Connected"
-                  : "Connect"}
+                {item.configurationKind === "mcp"
+                  ? "Optional · AI assistant"
+                  : installations.data?.some((i) => i.pluginId === item.id && i.status === "ACTIVE")
+                    ? "Connected"
+                    : "Connect"}
               </span>
             </span>
           </Button>
         ))}
       </div>
-      {plugin && (
+      {plugin?.configurationKind === "mcp" && (
+        <div className="space-y-4 border-t pt-6">
+          <McpSetup
+            client={draft.mcpClient ?? "claude"}
+            onClientChange={(mcpClient) => onChange({ mcpClient })}
+          />
+          <p className="text-sm text-muted-foreground">
+            MCP is optional. GitHub and Jira provide the evidence for your analysis. You can
+            continue and finish connecting your assistant later.
+          </p>
+        </div>
+      )}
+      {plugin && plugin.configurationKind !== "mcp" && (
         <section className="space-y-5 border-t pt-6" aria-label={`${plugin.name} connection`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

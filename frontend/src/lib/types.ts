@@ -119,6 +119,8 @@ export interface PluginCatalogItem {
   description?: string;
   setupUrl?: string;
   installable: boolean;
+  category?: "data-source" | "assistant";
+  configurationKind?: "redirect" | "credentials" | "mcp";
   configurationFields: Array<{
     key: string;
     label: string;
@@ -130,6 +132,46 @@ export interface PluginCatalogItem {
   }>;
   resourceTypes: Array<{ key: string; name: string; description?: string }>;
   dataTypes: Array<{ key: string; schema: Record<string, unknown> }>;
+}
+
+export interface WorkspacePerson {
+  displayName: string;
+  assessment: GroupReportAssessment;
+  contributionSummary: string;
+  metrics: Array<{ label: string; value: string }>;
+  consistency: { summary: string; limitations: string[] } | null;
+  improvementAreas: string[];
+  suggestions: string[];
+  evidence: GroupReportEvidence[];
+}
+
+export interface WorkspacePeople {
+  evaluators: Array<{
+    id: string;
+    name: string;
+    avatar: number;
+    scope: "WORKSPACE" | "GROUP";
+    groupId: string | null;
+  }>;
+  evaluatorId: string | null;
+  groups: Array<{
+    id: string;
+    name: string;
+    available: boolean;
+    report: null | {
+      id: string;
+      createdAt: string;
+      updatedAt: string;
+      period: { from: string; to: string } | null;
+      evaluator: { id: string; name: string; avatar: number } | null;
+      people: WorkspacePerson[];
+    };
+  }>;
+}
+
+export interface McpConnection {
+  serverUrl: string;
+  clients: Array<{ id: string; name: string }>;
 }
 
 export interface PluginInstallation {

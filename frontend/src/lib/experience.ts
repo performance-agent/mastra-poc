@@ -61,6 +61,8 @@ export type Setup = {
   };
   resourceIds: string[];
   resourcesInitialized: boolean;
+  pluginSelection?: string;
+  mcpClient?: "chatgpt" | "claude" | "cursor" | "vscode" | "local";
   evaluatorDraft: SetupEvaluatorDraft | null;
   period: { preset: "7" | "30" | "90" | "custom"; from?: string; to?: string };
 };
@@ -116,6 +118,8 @@ export const DEFAULT_SETUP: Setup = {
   teamDraft: { creating: true, workspaceName: "", groupName: "", description: "", invitations: [] },
   resourceIds: [],
   resourcesInitialized: false,
+  pluginSelection: "",
+  mcpClient: "claude",
   evaluatorDraft: null,
   period: { preset: "30" },
 };

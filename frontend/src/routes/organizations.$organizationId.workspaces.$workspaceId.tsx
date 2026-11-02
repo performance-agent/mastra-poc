@@ -20,6 +20,7 @@ import { MemberList } from "@/components/app/MemberList";
 import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
+import { WorkspacePeople } from "@/components/app/WorkspacePeople";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -37,7 +38,7 @@ import type { Group, Role } from "@/lib/types";
 const tabSchema = z.object({
   tab: z.string().optional(),
 });
-const workspaceTabs = ["overview", "groups", "members", "resources"] as const;
+const workspaceTabs = ["overview", "groups", "people", "members", "resources"] as const;
 type WorkspaceTab = (typeof workspaceTabs)[number];
 
 export const Route = createFileRoute("/organizations/$organizationId/workspaces/$workspaceId")({
@@ -126,11 +127,15 @@ function WorkspacePage() {
             items={[
               { value: "overview", label: "Overview" },
               { value: "groups", label: "Groups", count: groupsQ.data?.length },
+              { value: "people", label: "People" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
             ]}
           />
 
+          {tab === "people" && (
+            <WorkspacePeople organizationId={organizationId} workspaceId={workspaceId} />
+          )}
           {tab === "overview" && (
             <div className="space-y-6">
               <div className="grid gap-3 sm:grid-cols-3">

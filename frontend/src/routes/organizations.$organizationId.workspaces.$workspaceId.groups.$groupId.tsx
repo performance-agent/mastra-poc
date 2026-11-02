@@ -38,6 +38,7 @@ import type { Role } from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.enum(["overview", "members", "resources", "reports", "evaluation", "rules"]).optional(),
+  reportId: z.string().optional(),
 });
 type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation" | "rules";
 
@@ -447,6 +448,7 @@ function GroupPage() {
           {tab === "reports" && (
             <ReportsPanel
               groupId={groupId}
+              initialReportId={search.reportId}
               canDelete={canManageRoles}
               onOpenEvaluators={() => setTab("evaluation")}
             />

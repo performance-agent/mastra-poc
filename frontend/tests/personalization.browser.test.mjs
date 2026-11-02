@@ -1,8 +1,9 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
+import { savedGroupReport, workspacePeople } from "./fixtures/workspace-people.mjs";
 const base = process.env.PROGRESS_TEST_BASE_URL ?? "http://127.0.0.1:5173";
 const evidence = resolve("../artifacts/personalization/revision-simulated");
 let browser;
@@ -55,6 +56,7 @@ async function setup(t, options = {}) {
     posts: 0,
     noResources: false,
     setupSaveFails: false,
+    mcpClients: [],
     connections: [
       {
         id: "inst-a",
@@ -196,6 +198,10 @@ async function setup(t, options = {}) {
           photoUrl: ["avatar:iris", "avatar:fern", "avatar:rose", "avatar:sun"][i],
         },
       }));
+    else if (path.endsWith("/people"))
+      data = workspacePeople(new URL(req.url()).searchParams.get("evaluatorId") ?? undefined);
+    else if (path === "/mcp/connection")
+      data = { serverUrl: "https://api.example.test/api/mcp", clients: state.mcpClients };
     else if (path === "/plugins")
       data = [
         {
@@ -224,6 +230,19 @@ async function setup(t, options = {}) {
               sensitive: true,
             },
           ],
+        },
+        {
+          id: "mcp",
+          name: "MCP connection",
+          version: "2.0.0",
+          installable: false,
+          category: "assistant",
+          configurationKind: "mcp",
+          description:
+            "Analyze and save reports from your preferred assistant, using your workspace evaluators.",
+          configurationFields: [],
+          resourceTypes: [],
+          dataTypes: [],
         },
       ];
     else if (path.endsWith("/plugin-installations")) data = state.connections;
@@ -325,7 +344,7 @@ async function choose(page, label, option) {
   await page.getByRole("combobox", { name: label, exact: true }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
 }
-async function screenshot(page, name) {
+async function screenshot(page, name, directory = evidence) {
   if (process.env.UI_TEST_SCREENSHOTS === "0") return;
   await page.evaluate(() => {
     let marker = document.getElementById("simulated-evidence");
@@ -348,7 +367,8 @@ async function screenshot(page, name) {
       zIndex: "99999",
     });
   });
-  await page.screenshot({ path: resolve(evidence, name + ".png"), fullPage: true });
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: resolve(directory, name + ".png"), fullPage: true });
 }
 test(
   "home personalization persists, restores inheritance, and renders on mobile",
@@ -397,11 +417,11 @@ test(
     await choose(page, "Workspace", "Product & Engineering");
     await choose(page, "Team", "Platform team");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    await page.getByRole("heading", { name: "Connect your tools" }).waitFor();
     assert.equal(await page.getByRole("dialog").count(), 0);
     await page.getByRole("button", { name: "Save & exit" }).click();
     await page.getByRole("button", { name: "Continue setup", exact: true }).click();
-    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    await page.getByRole("heading", { name: "Connect your tools" }).waitFor();
     assert.equal(state.setup.step, "plugins");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     await page.getByRole("button", { name: /Grace/ }).click();
@@ -549,7 +569,7 @@ test(
     await page.getByLabel("Workspace", { exact: true }).fill("Product");
     await page.getByLabel("Team", { exact: true }).fill("Engineering");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    await page.getByRole("heading", { name: "Connect your tools" }).waitFor();
     await page.getByRole("button", { name: "Set up later", exact: true }).click();
     await page.getByRole("heading", { name: "Choose your evaluator" }).waitFor();
     await page.getByRole("button", { name: "Set up later", exact: true }).click();
@@ -894,7 +914,7 @@ async function enterSetup(t, step = "plugins") {
     .getByRole("heading", {
       name:
         step === "plugins"
-          ? "Connect your team's plugins"
+          ? "Connect your tools"
           : step === "evaluator"
             ? "Choose your evaluator"
             : "Ready for your first evaluation",
@@ -943,7 +963,7 @@ test(
     await page.getByRole("button", { name: "Add connection", exact: true }).click();
     await page.getByRole("button", { name: "Authorize GitHub", exact: true }).click();
     await page.waitForURL("**/organizations/org-a/setup/plugins");
-    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    await page.getByRole("heading", { name: "Connect your tools" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/organizations/org-a/setup/plugins");
     assert.equal(
       await page.evaluate(() => sessionStorage.getItem("performance-agent:github-setup")),
@@ -1097,7 +1117,7 @@ test(
       }),
     );
     await page.reload();
-    await page.getByRole("heading", { name: "Connect your team's plugins" }).waitFor();
+    await page.getByRole("heading", { name: "Connect your tools" }).waitFor();
     await page.getByRole("button", { name: "Jira Connect", exact: true }).click();
     await page
       .getByText("An organization admin can connect this plugin.", { exact: false })
@@ -1178,6 +1198,233 @@ test(
     }
   },
 );
+
+const peopleMcpEvidence = resolve("../artifacts/people-mcp/implementation");
+
+test(
+  "people workspace filters, opens a person, handles missing evidence and deep-links to its report",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await setup(t);
+    await page.route("**/api/groups/group-a/evaluators", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            ...savedGroupReport.evaluator,
+            id: "first-other",
+            name: "Another evaluator",
+            personality: { name: "Neutral" },
+          },
+          { ...savedGroupReport.evaluator, personality: { name: "Neutral" } },
+        ]),
+      }),
+    );
+    await page.route("**/api/groups/group-a/reports", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            id: "report-people",
+            groupId: "group-a",
+            evaluatorId: "eva-a",
+            type: "GROUP_REPORT",
+            createdAt: "2026-11-02T12:00:00Z",
+            data: savedGroupReport,
+          },
+        ]),
+      }),
+    );
+    await page.goto(base + "/organizations/org-a/workspaces/ws-a?tab=people");
+    await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).waitFor();
+    await screenshot(page, "01-workspace-people", peopleMcpEvidence);
+    await choose(page, "Filter people by status", "Insufficient evidence");
+    assert.equal(
+      await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).count(),
+      0,
+    );
+    await page.getByRole("button", { name: "View Ana Torres in Platform team" }).waitFor();
+    await choose(page, "Filter people by status", "All statuses");
+    await page.getByPlaceholder("Search people or groups").fill("Lucía");
+    assert.equal(
+      await page.getByRole("button", { name: "View Ana Torres in Platform team" }).count(),
+      0,
+    );
+    await page.getByPlaceholder("Search people or groups").fill("");
+    await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).click();
+    await page.getByRole("heading", { name: "At a glance" }).waitFor();
+    await page.getByRole("link", { name: "Review #142" }).waitFor();
+    await screenshot(page, "02-person-detail", peopleMcpEvidence);
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+    await screenshot(page, "03-people-mobile", peopleMcpEvidence);
+    await choose(page, "Evaluator", "Careful · Platform team");
+    await page.getByText("No report from this evaluator yet.", { exact: true }).waitFor();
+    await page.getByText("This evaluator belongs to another group.", { exact: true }).waitFor();
+    await choose(page, "Evaluator", "Balanced");
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.getByRole("link", { name: "View report", exact: true }).click();
+    await page.waitForURL("**/groups/group-a?tab=reports&reportId=report-people");
+    await page.getByText("A steady month of reviewed delivery.", { exact: true }).first().waitFor();
+  },
+);
+
+test(
+  "MCP catalog separates assistants and copies provider configuration without inventing authorization",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await setup(t);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto(base + "/organizations/org-a?tab=plugins");
+    await page.getByRole("button", { name: "Configure MCP", exact: true }).waitFor();
+    await screenshot(page, "04-plugin-catalog", peopleMcpEvidence);
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+    await screenshot(page, "07-plugin-catalog-mobile", peopleMcpEvidence);
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const github = page.getByRole("region", { name: "GitHub plugin", exact: true });
+    await github.getByRole("button", { name: "Manage connection", exact: true }).click();
+    const connections = page.getByRole("dialog", { name: "GitHub connections", exact: true });
+    await connections.getByText("acme-team", { exact: true }).waitFor();
+    await connections.getByRole("button", { name: "Sync", exact: true }).click();
+    await page.getByText("acme-team synced", { exact: true }).waitFor();
+    await connections.getByRole("button", { name: "Edit", exact: true }).click();
+    const edit = page.getByRole("dialog", { name: "Edit plugin connection", exact: true });
+    await edit.waitFor();
+    assert.equal(await edit.getByLabel("Name", { exact: true }).inputValue(), "acme-team");
+    await page.keyboard.press("Escape");
+    await edit.waitFor({ state: "hidden" });
+    await page.keyboard.press("Escape");
+    await connections.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Connect Jira", exact: true }).click();
+    await page.getByRole("dialog", { name: "Connect Jira", exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    await page.getByPlaceholder("Search plugins", { exact: true }).fill("Jira");
+    assert.equal(await github.count(), 0);
+    await page.getByRole("region", { name: "Jira plugin", exact: true }).waitFor();
+    await page.getByPlaceholder("Search plugins", { exact: true }).fill("");
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.getByRole("button", { name: "Configure MCP", exact: true }).click();
+    await page.getByText("Not authorized yet", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Cursor", exact: true }).click();
+    await page.getByRole("button", { name: "Copy config", exact: true }).click();
+    const cursor = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+    assert.equal(cursor.mcpServers.platformance.url, "https://api.example.test/api/mcp");
+    await page.getByRole("button", { name: "VS Code", exact: true }).click();
+    await page.getByRole("button", { name: "Copy config", exact: true }).click();
+    const vscode = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+    assert.equal(vscode.servers.platformance.type, "http");
+    await page.getByRole("button", { name: "Local agent", exact: true }).click();
+    await page.getByRole("button", { name: "Copy agent instructions", exact: true }).click();
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /list_evaluators/);
+    await page.getByText("Not authorized yet", { exact: true }).waitFor();
+    await screenshot(page, "05-mcp-setup", peopleMcpEvidence);
+    state.mcpClients = [{ id: "client-a", name: "Cursor desktop" }];
+    await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+    await page.getByText("Cursor desktop", { exact: true }).waitFor();
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+  },
+);
+
+test(
+  "MCP setup preserves client selection and continues without authorizing an assistant",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await enterSetup(t);
+    await page
+      .getByRole("button", { name: "MCP connection Optional · AI assistant", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Local agent", exact: true }).click();
+    await page.getByText("Not authorized yet", { exact: true }).waitFor();
+    await screenshot(page, "06-setup-wizard", peopleMcpEvidence);
+    await page.getByRole("button", { name: "Save & exit", exact: true }).click();
+    assert.equal(state.setup.pluginSelection, "mcp");
+    assert.equal(state.setup.mcpClient, "local");
+    await page.getByRole("button", { name: "Continue setup", exact: true }).click();
+    await page.getByRole("heading", { name: "Local agent setup" }).waitFor();
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await page.getByRole("heading", { name: "Choose your evaluator" }).waitFor();
+    assert.equal(state.mcpClients.length, 0);
+    assert.equal(state.posts, 0);
+  },
+);
+
+for (const [scope, membersPath] of [
+  ["organizations/org-a", "/organizations/org-a?tab=members"],
+  ["workspaces/ws-a", "/organizations/org-a/workspaces/ws-a?tab=members"],
+  ["groups/group-a", "/organizations/org-a/workspaces/ws-a/groups/group-a?tab=members"],
+]) {
+  test(`invitation revocation requires confirmation in ${scope}`, { timeout: 60000 }, async (t) => {
+    const { page } = await setup(t);
+    let deletes = 0;
+    await page.route(
+      /\/api\/(organizations|workspaces|groups)\/[^/]+\/invitations(?:\/[^/?]+)?$/,
+      async (route) => {
+        if (route.request().method() === "DELETE") {
+          assert.equal(
+            new URL(route.request().url()).pathname,
+            `/api/${scope}/invitations/pending-a`,
+          );
+          deletes += 1;
+          return route.fulfill({ status: 204 });
+        }
+        return route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify(
+            deletes
+              ? []
+              : [
+                  {
+                    id: "pending-a",
+                    email: "invitee@example.test",
+                    role: "VIEWER",
+                    status: "PENDING",
+                    expiresAt: "2026-12-01T00:00:00Z",
+                    inviteUrl: "https://example.test/invite/pending-a",
+                  },
+                ],
+          ),
+        });
+      },
+    );
+    await page.goto(base + membersPath);
+    const revoke = page.getByRole("button", { name: "Revoke invitation", exact: true });
+    await revoke.click();
+    const confirmation = page.getByRole("alertdialog", { name: "Revoke invitation?" });
+    await confirmation.getByText(/invitee@example\.test/).waitFor();
+    assert.equal(deletes, 0);
+    await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+    await confirmation.waitFor({ state: "hidden" });
+    assert.equal(deletes, 0);
+    await revoke.click();
+    await page.keyboard.press("Escape");
+    await confirmation.waitFor({ state: "hidden" });
+    assert.equal(deletes, 0);
+    await revoke.click();
+    await confirmation.getByRole("button", { name: "Revoke invitation", exact: true }).click();
+    await page.getByText("Invitation revoked", { exact: true }).waitFor();
+    await revoke.waitFor({ state: "hidden" });
+    assert.equal(deletes, 1);
+  });
+}
 
 test(
   "removed plugin resources can be cleared without losing setup progress",

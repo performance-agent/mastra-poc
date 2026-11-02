@@ -23,14 +23,14 @@ const LABELS = {
 };
 const TITLES = {
   team: "Give your team a home",
-  plugins: "Connect your team's plugins",
+  plugins: "Connect your tools",
   evaluator: "Choose your evaluator",
   review: "Ready for your first evaluation",
   welcome: "Welcome",
 };
 const DESCRIPTIONS = {
   team: "Start small. You can organize more teams later.",
-  plugins: "Connect a plugin and choose the resources to include in your evaluation.",
+  plugins: "Choose your evidence sources and set up your assistant.",
   evaluator: "Start with an evaluator, then make it yours.",
   review: "Check the details before you start.",
   welcome: "",
@@ -412,7 +412,7 @@ export function SetupPage({
             <ol className="my-10 grid gap-5 sm:grid-cols-3">
               {[
                 { icon: Users, title: "Your team", description: "Create your space" },
-                { icon: Plug, title: "Your plugins", description: "GitHub, Jira and more" },
+                { icon: Plug, title: "Your plugins", description: "GitHub, Jira and MCP" },
                 { icon: Sparkles, title: "Your evaluator", description: "Choose what matters" },
               ].map(({ icon: Icon, title, description }) => (
                 <li key={title} className="setup-welcome-item">

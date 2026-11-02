@@ -1,14 +1,20 @@
 import { Module } from '@nestjs/common';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { ReportsModule } from '../reports/reports.module';
+import { EvaluatorsModule } from '../evaluators/evaluators.module';
+import { McpConnectionsController } from './mcp-connections.controller';
 import { McpOAuthController } from './mcp-oauth.controller';
 import { McpOAuthService } from './mcp-oauth.service';
 import { PerformanceMcpController } from './performance-mcp.controller';
 import { PerformanceMcpService } from './performance-mcp.service';
 
 @Module({
-  imports: [AccessControlModule, ReportsModule],
-  controllers: [McpOAuthController, PerformanceMcpController],
+  imports: [AccessControlModule, ReportsModule, EvaluatorsModule],
+  controllers: [
+    McpOAuthController,
+    PerformanceMcpController,
+    McpConnectionsController,
+  ],
   providers: [McpOAuthService, PerformanceMcpService],
   exports: [McpOAuthService],
 })

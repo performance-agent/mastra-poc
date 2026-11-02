@@ -29,10 +29,12 @@ export class PluginRegistryService {
     return Promise.all([
       this.getGitHub().then((plugin) => this.toCatalogEntry(plugin)),
       this.getJira().then((plugin) => this.toCatalogEntry(plugin)),
+      Promise.resolve(this.mcpCatalogEntry()),
     ]);
   }
 
   async findOne(pluginId: string) {
+    if (pluginId === 'mcp') return this.mcpCatalogEntry();
     return this.toCatalogEntry(await this.get(pluginId));
   }
 
@@ -63,10 +65,31 @@ export class PluginRegistryService {
     return plugin;
   }
 
+  private mcpCatalogEntry() {
+    return {
+      id: 'mcp',
+      name: 'MCP connection',
+      version: '2.0.0',
+      description:
+        'Analyze and save reports from ChatGPT, Claude, Cursor, VS Code or local agents using your workspace evaluators.',
+      category: 'assistant' as const,
+      configurationKind: 'mcp' as const,
+      installable: false,
+      configurationFields: [],
+      resourceTypes: [],
+      dataTypes: [],
+    };
+  }
+
   private toCatalogEntry(plugin: PluginDefinition) {
     return {
       ...plugin.manifest,
       installable: true,
+      category: 'data-source' as const,
+      configurationKind:
+        plugin.id === 'github'
+          ? ('redirect' as const)
+          : ('credentials' as const),
       ...(plugin.id === 'github'
         ? { setupUrl: process.env.GITHUB_SETUP_URL }
         : {}),

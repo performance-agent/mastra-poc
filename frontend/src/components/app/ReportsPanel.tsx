@@ -54,10 +54,12 @@ function reportEvaluatorId(report: ReportRow) {
 
 export function ReportsPanel({
   groupId,
+  initialReportId,
   onOpenEvaluators,
   canDelete = false,
 }: {
   groupId: string;
+  initialReportId?: string;
   onOpenEvaluators: () => void;
   canDelete?: boolean;
 }) {
@@ -81,6 +83,15 @@ export function ReportsPanel({
   runsRef.current = runs;
   const [focus, setFocus] = useState<string>("general");
   const [openedReportId, setOpenedReportId] = useState<string | null>(null);
+  const initializedReport = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!initialReportId || initializedReport.current === initialReportId || !reportsQ.data) return;
+    const target = reportsQ.data.find((report) => report.id === initialReportId);
+    if (!target) return;
+    initializedReport.current = initialReportId;
+    setFocus(reportEvaluatorId(target) ?? "general");
+    setOpenedReportId(target.id);
+  }, [initialReportId, reportsQ.data]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -172,9 +183,10 @@ export function ReportsPanel({
 
   useEffect(() => {
     if (focus !== "general") return;
+    if (initialReportId && reportsQ.data?.some((report) => report.id === initialReportId)) return;
     if (entries.some((entry) => entry.key === "general")) return;
     if (entries[0]) setFocus(entries[0].key);
-  }, [entries, focus]);
+  }, [entries, focus, initialReportId, reportsQ.data]);
 
   const focusedReports = reports.filter((report) => {
     const id = reportEvaluatorId(report);

@@ -1,4 +1,8 @@
-import type { EvaluationGuidelines } from '../mastra/evaluation-guidelines';
+import {
+  buildEvaluationGuidelinesPrompt,
+  type EvaluationGuidelines,
+} from '../mastra/evaluation-guidelines';
+import { GROUP_REPORT_GENERATION_PROMPT } from '../mastra/group-report-instructions';
 
 export const EVALUATOR_EFFORTS = ['LOW', 'MEDIUM', 'HIGH'] as const;
 export type EvaluatorEffortLevel = (typeof EVALUATOR_EFFORTS)[number];
@@ -47,6 +51,25 @@ export interface EvaluatorSnapshot {
   guidelines: EvaluationGuidelines;
   rules: GovernanceRule[];
   questions: string[];
+}
+
+/** Shared by platform generation and external MCP assistants. */
+export function buildEvaluatorReportPrompt(
+  source: {
+    guidelines: EvaluationGuidelines | null;
+    snapshot: EvaluatorSnapshot | null;
+    voice: string | null;
+    effort: EvaluatorEffortLevel;
+  },
+  options: { effortInstruction?: string; priorContext?: string } = {},
+) {
+  const effort =
+    options.effortInstruction ??
+    reportEffortPreset(source.effort, {
+      inputBytes: FULL_INPUT_BYTES,
+      outputTokens: 0,
+    }).instruction;
+  return `${buildEvaluationGuidelinesPrompt(source.guidelines)}${buildEvaluatorGovernancePrompt(source.snapshot?.rules ?? [])}${buildEvaluatorVoicePrompt(source.voice)}${buildEvaluatorQuestionsPrompt(source.snapshot?.questions ?? [])}${effort ? `${effort}\n\n` : ''}${options.priorContext ?? ''}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
 }
 
 export function reportEffortPreset(

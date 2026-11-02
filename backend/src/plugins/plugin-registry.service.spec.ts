@@ -1,6 +1,18 @@
 import { PluginRegistryService } from './plugin-registry.service';
 
 describe('PluginRegistryService', () => {
+  it('exposes MCP as an assistant connection without resource or credential configuration', async () => {
+    await expect(
+      new PluginRegistryService().findOne('mcp'),
+    ).resolves.toMatchObject({
+      id: 'mcp',
+      category: 'assistant',
+      configurationKind: 'mcp',
+      installable: false,
+      resourceTypes: [],
+      configurationFields: [],
+    });
+  });
   it('exposes GitHub without secret values', async () => {
     const service = new PluginRegistryService();
     jest.spyOn(service, 'getGitHub').mockResolvedValue({
