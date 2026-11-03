@@ -20,6 +20,7 @@ export function FormModal({
   submitLabel = "Save",
   onSubmit,
   submitting,
+  submitDisabled,
   children,
   contentClassName,
   dirty,
@@ -30,6 +31,7 @@ export function FormModal({
   description?: string;
   submitLabel?: string;
   submitting?: boolean;
+  submitDisabled?: boolean;
   children: React.ReactNode;
   contentClassName?: string;
   dirty?: boolean;
@@ -104,7 +106,7 @@ export function FormModal({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting || uploading}>
+              <Button type="submit" disabled={submitting || uploading || submitDisabled}>
                 {submitting || uploading ? "Saving..." : submitLabel}
               </Button>
             </DialogFooter>

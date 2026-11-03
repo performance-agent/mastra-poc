@@ -23,6 +23,8 @@ import { LoadingState } from "@/components/app/LoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -600,26 +602,26 @@ export function ReportsPanel({
             })}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-xs text-muted-foreground">
+            <Label className="space-y-1.5">
               From (optional)
-              <input
+              <Input
                 aria-label="Report period from"
                 type="date"
                 value={periodFrom}
                 onChange={(e) => setPeriodFrom(e.target.value)}
-                className="mt-1 block h-9 w-full rounded-lg border bg-card px-3 text-xs"
+                className="mt-1"
               />
-            </label>
-            <label className="text-xs text-muted-foreground">
+            </Label>
+            <Label className="space-y-1.5">
               To (optional)
-              <input
+              <Input
                 aria-label="Report period to"
                 type="date"
                 value={periodTo}
                 onChange={(e) => setPeriodTo(e.target.value)}
-                className="mt-1 block h-9 w-full rounded-lg border bg-card px-3 text-xs"
+                className="mt-1"
               />
-            </label>
+            </Label>
           </div>
           <KnowledgeSourcePicker key={groupId} groupId={groupId} onChange={setKnowledgeIds} />
           <DialogFooter>

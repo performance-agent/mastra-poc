@@ -94,6 +94,7 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
     failUpload: false,
     reports: [],
     reconnect: false,
+    disconnects: 0,
   };
   await page.route(/\/src\/lib\/auth\.tsx(?:\?|$)/, (route) =>
     route.fulfill({
@@ -243,7 +244,10 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
           },
         ],
       };
-    else if (path === "/knowledge/drive/connections/drive-1/files")
+    else if (path === "/knowledge/drive/connections/drive-1" && method === "DELETE") {
+      state.disconnects++;
+      data = {};
+    } else if (path === "/knowledge/drive/connections/drive-1/files")
       data = {
         files: [
           {
@@ -339,13 +343,11 @@ test("knowledge library separates plugins, creates folders, retries uploads and 
   await page.getByRole("button", { name: "Research references", exact: true }).first().waitFor();
   await page.getByRole("button", { name: "Add sources", exact: true }).click();
   await page.getByRole("menuitem", { name: "Upload files", exact: true }).click();
-  await page
-    .getByLabel("Choose knowledge files")
-    .setInputFiles({
-      name: "requirements.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("Fictional upload"),
-    });
+  await page.getByLabel("Choose knowledge files").setInputFiles({
+    name: "requirements.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Fictional upload"),
+  });
   state.failUpload = true;
   await page.getByRole("button", { name: "Upload files", exact: true }).click();
   await page.getByText("Upload failed", { exact: true }).waitFor();
@@ -362,6 +364,53 @@ test("knowledge library separates plugins, creates folders, retries uploads and 
   await page.getByRole("textbox", { name: "Search knowledge sources" }).fill("");
   await shot("03-workspace-library");
 });
+test("shared forms keep folder drafts, support keyboard selection and confirm Drive disconnection", async (t) => {
+  const { page, state } = await setup(t);
+  await page.goto(base + root + "?tab=resources");
+  await page.getByRole("heading", { name: "Knowledge base", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Add sources", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New folder", exact: true }).click();
+  assert.equal(
+    await page.getByRole("button", { name: "Create folder", exact: true }).isDisabled(),
+    true,
+  );
+  await page.getByRole("textbox", { name: "Folder or source name" }).fill("Draft references");
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("alertdialog")
+    .getByRole("heading", { name: "Discard unsaved changes?" })
+    .waitFor();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  assert.equal(
+    await page.getByRole("textbox", { name: "Folder or source name" }).inputValue(),
+    "Draft references",
+  );
+  await page.getByRole("combobox", { name: "Parent folder", exact: true }).click();
+  await page.getByRole("option", { name: "Documentation", exact: true }).click();
+  await page.getByRole("textbox", { name: "Folder or source name" }).press("Enter");
+  await page.getByRole("button", { name: "Draft references", exact: true }).first().waitFor();
+  assert.equal(state.nodes.find((n) => n.name === "Draft references").parentId, "folder");
+  await page.getByRole("combobox", { name: "Filter sources by origin" }).click();
+  await page.getByRole("option", { name: "Google Drive", exact: true }).click();
+  await page.getByRole("heading", { name: "No matching sources", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(state.disconnects, 0);
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  const disconnection = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/knowledge/drive/connections/drive-1") &&
+      response.request().method() === "DELETE",
+  );
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Disconnect", exact: true })
+    .click();
+  await disconnection;
+  assert.equal(state.disconnects, 1);
+});
+
 test("project exclusions and explicit report source selection are sent to report generation", async (t) => {
   const { page, state, shot } = await setup(t);
   await page.goto(base + project + "?tab=resources");
@@ -410,7 +459,13 @@ test("Drive picker supports folder and file selection, disabled formats and conn
     await page.getByRole("button", { name: "Connect selected", exact: true }).isDisabled(),
     true,
   );
-  await page.getByRole("checkbox", { name: "Connect Project objectives", exact: true }).check();
+  await page.getByText("Project objectives", { exact: true }).click();
+  assert.equal(
+    await page
+      .getByRole("checkbox", { name: "Connect Project objectives", exact: true })
+      .isChecked(),
+    true,
+  );
   await shot("06-drive-picker");
   await page.getByRole("button", { name: "Connect selected", exact: true }).click();
   await page.getByRole("heading", { name: "Connections", exact: true }).waitFor();

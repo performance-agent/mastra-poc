@@ -2,7 +2,7 @@
   "date": "2026-11-03",
   "migration": "20261103000000_knowledge_base applied to local PostgreSQL",
   "backend": { "build": "passed", "focusedSuites": 8, "focusedTestsPassed": 66, "productionKnowledgeLint": "passed" },
-  "frontend": { "build": "passed", "knowledgeBrowserScenariosPassed": 5, "existingWorkflowRegressionScenariosPassed": 41, "focusedLint": "passed" },
+  "frontend": { "build": "passed", "knowledgeBrowserScenariosPassed": 6, "existingWorkflowRegressionScenariosPassed": 41, "focusedLint": "passed", "consistencyCorrection": "Reused application tabs, sidebar card, breadcrumbs, form modal, confirmation, search, inputs, selects, labels, tables, statuses, alerts, progress and empty states; 11 relevant existing browser regressions rechecked" },
   "httpSmoke": { "swagger": 200, "unauthenticatedKnowledgeLibrary": 401, "unauthenticatedDriveConnections": 401 },
   "liveIntegration": "See integration.json: real PostgreSQL, private Firebase Storage, PDF/DOCX extraction and configured-model knowledge-only report generation; isolated test records and blobs removed afterward",
   "browserEvidence": "ui/: labeled simulated API/auth scenarios, separate from the real service integration",

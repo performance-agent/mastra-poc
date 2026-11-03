@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, FileText, Folder, Info, Link2, Search } from "lucide-react";
+import { BookOpen, FileText, Folder, Info, Link2 } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import {
   knowledgeApi,
@@ -12,6 +12,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { SearchInput } from "./SearchInput";
+import { StatusBadge } from "./StatusBadge";
+import { EmptyState } from "./EmptyState";
 import {
   Dialog,
   DialogContent,
@@ -23,16 +28,18 @@ import { ErrorState } from "./ErrorState";
 import { LoadingState } from "./LoadingState";
 
 export function KnowledgeStatus({ node }: { node: Pick<KnowledgeNode, "status" | "error"> }) {
-  const classes =
-    node.status === "READY"
-      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-      : node.status === "PROCESSING"
-        ? "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-        : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300";
   return (
-    <span
+    <StatusBadge
       title={node.error ?? undefined}
-      className={`inline-flex shrink-0 items-center rounded-md px-2 py-1 text-[10px] ${classes}`}
+      variant={
+        node.status === "READY"
+          ? "success"
+          : node.status === "PROCESSING"
+            ? "neutral"
+            : node.status === "ERROR"
+              ? "danger"
+              : "warning"
+      }
     >
       {node.status === "READY"
         ? "Ready"
@@ -41,15 +48,17 @@ export function KnowledgeStatus({ node }: { node: Pick<KnowledgeNode, "status" |
           : node.status === "UNAVAILABLE"
             ? "Access unavailable"
             : "Needs attention"}
-    </span>
+    </StatusBadge>
   );
 }
 export function KnowledgeUse({ usage }: { usage: KnowledgeNode["usage"] }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      <BookOpen className="h-3 w-3" />
-      {usageLabel(usage)}
-    </span>
+    <StatusBadge>
+      <span className="inline-flex items-center gap-1">
+        <BookOpen className="h-3 w-3" />
+        {usageLabel(usage)}
+      </span>
+    </StatusBadge>
   );
 }
 
@@ -154,7 +163,7 @@ export function KnowledgeSourcePicker({
                     update(next);
                   }}
                 />
-                <Folder className="h-4 w-4 text-amber-600" />
+                <Folder className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{node.name}</span>
                 {node.connectionId && <Link2 className="h-3 w-3 text-muted-foreground" />}
                 <span className="ml-auto text-[10px] text-muted-foreground">
@@ -166,7 +175,7 @@ export function KnowledgeSourcePicker({
           );
         const disabled = node.status !== "READY" || !node.version;
         return (
-          <label
+          <Label
             key={node.id}
             className={`flex items-center gap-3 border-b px-4 py-3 ${disabled ? "bg-muted/15 opacity-70" : ""}`}
           >
@@ -194,7 +203,7 @@ export function KnowledgeSourcePicker({
               <KnowledgeUse usage={node.usage} />
             </span>
             {disabled && <KnowledgeStatus node={node} />}
-          </label>
+          </Label>
         );
       });
   }
@@ -207,16 +216,12 @@ export function KnowledgeSourcePicker({
         </p>
       </div>
       {nodes.length > 0 && (
-        <label className="flex items-center gap-2 rounded-lg border px-3 py-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            aria-label="Find report source"
-            className="min-w-0 flex-1 bg-transparent text-xs outline-none"
-            placeholder="Find a source…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
+        <SearchInput
+          ariaLabel="Find report source"
+          placeholder="Find a source…"
+          value={search}
+          onChange={setSearch}
+        />
       )}
       <Card className="overflow-hidden rounded-xl">
         <div className="flex flex-wrap items-center gap-3 border-b p-3 text-xs">
@@ -254,15 +259,20 @@ export function KnowledgeSourcePicker({
         </div>
         {renderGroup(null)}
         {!visible.length && (
-          <p className="p-4 text-xs text-muted-foreground">
-            No knowledge documents are available for this project yet.
-          </p>
+          <EmptyState
+            title="No knowledge documents"
+            description="No knowledge documents are available for this project yet."
+            icon={<BookOpen className="h-5 w-5" />}
+          />
         )}
       </Card>
       {selected.size === 0 && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          No knowledge selected. This report will use the configured plugin resources only.
-        </p>
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            No knowledge selected. This report will use the configured plugin resources only.
+          </AlertDescription>
+        </Alert>
       )}
       <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -298,14 +308,13 @@ export function ReportKnowledgeSources({
       ) : (
         <div className="mt-3 divide-y">
           {snapshot.sources.map((source, index) => (
-            <button
+            <Button
+              variant="ghost"
               key={source.versionId}
               onClick={() => setOpened(source)}
-              className="flex w-full items-start gap-3 py-3 text-left"
+              className="h-auto w-full items-start justify-start gap-3 whitespace-normal py-3 text-left"
             >
-              <span className="rounded bg-[var(--brand-soft)] px-1.5 py-0.5 text-[10px] text-[var(--brand-ink)]">
-                {index + 1}
-              </span>
+              <StatusBadge>{index + 1}</StatusBadge>
               <span className="min-w-0 flex-1">
                 <strong className="block break-words text-xs">{source.name}</strong>
                 <span className="mt-1 block break-all text-[10px] text-muted-foreground">
@@ -317,7 +326,7 @@ export function ReportKnowledgeSources({
                 </span>
               </span>
               <KnowledgeUse usage={source.usage} />
-            </button>
+            </Button>
           ))}
         </div>
       )}

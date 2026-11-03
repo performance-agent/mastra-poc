@@ -2,10 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  ArrowLeft,
-  ArrowRight,
   BookOpen,
-  Check,
   ChevronDown,
   ChevronRight,
   Download,
@@ -16,9 +13,7 @@ import {
   Link2,
   MoreHorizontal,
   Plus,
-  Plug,
   RefreshCw,
-  Search,
   Share2,
   Upload,
   X,
@@ -39,6 +34,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -54,11 +68,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { Breadcrumbs } from "./Breadcrumbs";
+import { ContextTabs } from "./ContextTabs";
+import { EmptyState } from "./EmptyState";
+import { FormModal } from "./FormModal";
+import { SearchInput } from "./SearchInput";
 import { ErrorState } from "./ErrorState";
 import { LoadingState } from "./LoadingState";
 import { KnowledgeStatus, KnowledgeUse } from "./KnowledgeSources";
 
-const field = "h-10 w-full rounded-lg border border-input bg-card px-3 text-xs";
+const ROOT_DESTINATION = "__all_sources__";
 const DRIVE_FOLDER = "application/vnd.google-apps.folder";
 type UploadRow = {
   file: File;
@@ -69,9 +88,7 @@ type UploadRow = {
 function FileMark({ folder = false }: { folder?: boolean }) {
   const Icon = folder ? Folder : FileText;
   return (
-    <span
-      className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${folder ? "bg-amber-50 text-amber-700 dark:bg-amber-950" : "bg-[var(--brand-soft)] text-[var(--brand)]"}`}
-    >
+    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
       <Icon className="h-4 w-4" />
     </span>
   );
@@ -86,27 +103,30 @@ function UsageSelect({
   disabled?: boolean;
 }) {
   return (
-    <select
-      aria-label="Use in reports"
-      className={field}
+    <Select
       value={value}
-      onChange={(e) => onChange(e.target.value as KnowledgeUsage)}
+      onValueChange={(next) => onChange(next as KnowledgeUsage)}
       disabled={disabled}
     >
-      {(["CONTEXT", "EVIDENCE", "BOTH"] as const).map((v) => (
-        <option key={v} value={v}>
-          {usageLabel(v)}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger aria-label="Use in reports">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {(["CONTEXT", "EVIDENCE", "BOTH"] as const).map((v) => (
+          <SelectItem key={v} value={v}>
+            {usageLabel(v)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 function Note({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-2 rounded-xl border border-[var(--brand)]/15 bg-[var(--brand-soft)] p-3 text-xs leading-relaxed text-[var(--brand-ink)]">
-      <Info className="mt-0.5 h-4 w-4 shrink-0" />
-      <div>{children}</div>
-    </div>
+    <Alert>
+      <Info className="h-4 w-4" />
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -142,12 +162,14 @@ export function KnowledgeResources({
   );
   const [editing, setEditing] = useState<KnowledgeNode | null>(null);
   const [folderName, setFolderName] = useState("");
+  const folderBaseline = useRef({ name: "", destination: "" });
   const [destination, setDestination] = useState("");
   const [usage, setUsage] = useState<KnowledgeUsage>("CONTEXT");
   const [saving, setSaving] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(initialNodeId ?? null);
   const [detailUsage, setDetailUsage] = useState<KnowledgeUsage>("CONTEXT");
   const [removing, setRemoving] = useState<KnowledgeNode | null>(null);
+  const [disconnecting, setDisconnecting] = useState<DriveConnection | null>(null);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [uploading, setUploading] = useState(false);
   const [driveId, setDriveId] = useState(initialConnectionId ?? "");
@@ -248,11 +270,15 @@ export function KnowledgeResources({
     setModal("upload");
   }
   function openFolder(node?: KnowledgeNode) {
+    const parent = node
+      ? (node.parentId ?? "")
+      : current && !current.connectionId && !current.inherited
+        ? current.id
+        : "";
+    folderBaseline.current = { name: node?.name ?? "", destination: parent };
     setEditing(node ?? null);
     setFolderName(node?.name ?? "");
-    setDestination(
-      node?.parentId ?? (current && !current.connectionId && !current.inherited ? current.id : ""),
-    );
+    setDestination(parent);
     setModal("folder");
   }
   function openDrive(id?: string) {
@@ -349,45 +375,44 @@ export function KnowledgeResources({
     ancestor = nodes.find((n) => n.id === ancestor!.parentId);
   }
   const moveForbidden = editing ? knowledgeDescendants(nodes, [editing.id]) : new Set<string>();
-  const folderOptions = (exclude = false) => (
-    <>
-      <option value="">All sources</option>
-      {folders
-        .filter((f) => !exclude || !moveForbidden.has(f.id))
-        .map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.name}
-          </option>
-        ))}
-    </>
+  const folderSelect = (label: string, exclude = false, disabled = false) => (
+    <Select
+      value={destination || ROOT_DESTINATION}
+      onValueChange={(next) => setDestination(next === ROOT_DESTINATION ? "" : next)}
+      disabled={disabled}
+    >
+      <SelectTrigger aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ROOT_DESTINATION}>All sources</SelectItem>
+        {folders
+          .filter((f) => !exclude || !moveForbidden.has(f.id))
+          .map((f) => (
+            <SelectItem key={f.id} value={f.id}>
+              {f.name}
+            </SelectItem>
+          ))}
+      </SelectContent>
+    </Select>
   );
   return (
     <div className="space-y-5" data-testid="knowledge-resources">
-      <div className="inline-flex max-w-full rounded-xl bg-muted p-1">
-        <button
-          onClick={() => setCategory("knowledge")}
-          aria-pressed={category === "knowledge"}
-          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${category === "knowledge" ? "bg-card font-medium shadow-sm" : "text-muted-foreground"}`}
-        >
-          <BookOpen className="h-4 w-4" />
-          Knowledge base
-        </button>
-        <button
-          onClick={() => setCategory("plugins")}
-          aria-pressed={category === "plugins"}
-          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${category === "plugins" ? "bg-card font-medium shadow-sm" : "text-muted-foreground"}`}
-        >
-          <Plug className="h-4 w-4" />
-          Plugin resources
-        </button>
-      </div>
+      <ContextTabs
+        items={[
+          { value: "knowledge", label: "Knowledge base" },
+          { value: "plugins", label: "Plugin resources" },
+        ]}
+        value={category}
+        onChange={(next) => setCategory(next as "knowledge" | "plugins")}
+      />
       {category === "plugins" ? (
         children
       ) : (
         <>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold tracking-tight">
+              <h2 className="text-sm font-semibold">
                 {view === "connections" ? "Connections" : "Knowledge base"}
               </h2>
               <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
@@ -437,60 +462,76 @@ export function KnowledgeResources({
             <ErrorState message={errorMessage(library.error)} onRetry={() => library.refetch()} />
           ) : (
             <div className="grid gap-5 md:grid-cols-[205px_minmax(0,1fr)]">
-              <aside className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible">
-                <button
-                  onClick={() => {
-                    setView("library");
-                    setFolderId(null);
-                    setSearch("");
-                  }}
-                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs ${view === "library" && !folderId ? "bg-[var(--brand-soft)] font-medium text-[var(--brand-ink)]" : "text-muted-foreground"}`}
+              <Card className="min-w-0 h-fit rounded-xl p-3 shadow-card">
+                <nav
+                  aria-label="Knowledge navigation"
+                  className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible"
                 >
-                  <BookOpen className="h-4 w-4" />
-                  All sources
-                  <span className="ml-auto hidden text-[10px] md:block">
-                    {nodes.filter((n) => n.kind === "DOCUMENT").length}
-                  </span>
-                </button>
-                {nodes
-                  .filter((n) => n.kind === "FOLDER")
-                  .map((n) => (
-                    <button
-                      key={n.id}
-                      onClick={() => {
-                        setView("library");
-                        setFolderId(n.id);
-                        setSearch("");
-                      }}
-                      className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${folderId === n.id && view === "library" ? "bg-[var(--brand-soft)] font-medium text-[var(--brand-ink)]" : "text-muted-foreground"} ${n.parentId ? "md:ml-3" : ""}`}
-                    >
-                      <Folder className="h-4 w-4 shrink-0" />
-                      <span className="whitespace-nowrap md:whitespace-normal">{n.name}</span>
-                      {n.connectionId && <Link2 className="h-3 w-3 shrink-0" />}
-                    </button>
-                  ))}
-                <button
-                  onClick={() => setView("connections")}
-                  className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs md:mt-4 md:border-t ${view === "connections" ? "bg-[var(--brand-soft)] text-[var(--brand-ink)]" : "text-muted-foreground"}`}
-                >
-                  <Link2 className="h-4 w-4" />
-                  Connections
-                </button>
-                {canManage && (
-                  <button
-                    onClick={() => openFolder()}
-                    className="hidden items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground md:flex"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setView("library");
+                      setFolderId(null);
+                      setSearch("");
+                    }}
+                    aria-current={view === "library" && !folderId ? "page" : undefined}
+                    className={`h-auto shrink-0 justify-start py-2.5 text-left ${view === "library" && !folderId ? "bg-[var(--brand-soft)] text-[var(--brand-ink)]" : "text-muted-foreground"}`}
                   >
-                    <Plus className="h-4 w-4" />
-                    New folder
-                  </button>
-                )}
-                <p className="mt-5 hidden px-3 text-[11px] leading-relaxed text-muted-foreground md:block">
-                  {groupId
-                    ? "Shared workspace documents are referenced without making another copy."
-                    : "Knowledge in this workspace is available to its projects automatically."}
-                </p>
-              </aside>
+                    <BookOpen className="h-4 w-4" />
+                    All sources
+                    <span className="ml-auto hidden text-[10px] md:block">
+                      {nodes.filter((n) => n.kind === "DOCUMENT").length}
+                    </span>
+                  </Button>
+                  {nodes
+                    .filter((n) => n.kind === "FOLDER")
+                    .map((n) => (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        key={n.id}
+                        onClick={() => {
+                          setView("library");
+                          setFolderId(n.id);
+                          setSearch("");
+                        }}
+                        aria-current={folderId === n.id && view === "library" ? "page" : undefined}
+                        className={`h-auto shrink-0 justify-start py-2 text-left ${folderId === n.id && view === "library" ? "bg-[var(--brand-soft)] text-[var(--brand-ink)]" : "text-muted-foreground"} ${n.parentId ? "md:ml-3" : ""}`}
+                      >
+                        <Folder className="h-4 w-4 shrink-0" />
+                        <span className="whitespace-nowrap md:whitespace-normal">{n.name}</span>
+                        {n.connectionId && <Link2 className="h-3 w-3 shrink-0" />}
+                      </Button>
+                    ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setView("connections")}
+                    aria-current={view === "connections" ? "page" : undefined}
+                    className={`h-auto shrink-0 justify-start py-2.5 text-left md:mt-4 ${view === "connections" ? "bg-[var(--brand-soft)] text-[var(--brand-ink)]" : "text-muted-foreground"}`}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Connections
+                  </Button>
+                  {canManage && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openFolder()}
+                      className="hidden items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground md:flex"
+                    >
+                      <Plus className="h-4 w-4" />
+                      New folder
+                    </Button>
+                  )}
+                  <p className="mt-5 hidden px-3 text-[11px] leading-relaxed text-muted-foreground md:block">
+                    {groupId
+                      ? "Shared workspace documents are referenced without making another copy."
+                      : "Knowledge in this workspace is available to its projects automatically."}
+                  </p>
+                </nav>
+              </Card>
               <section className="min-w-0">
                 {view === "connections" ? (
                   <div className="space-y-3">
@@ -510,24 +551,17 @@ export function KnowledgeResources({
                           </Note>
                         )}
                         {!connections.data?.connections.length && (
-                          <Card className="p-8 text-center">
-                            <Link2 className="mx-auto mb-3 h-7 w-7 text-[var(--brand)]" />
-                            <h3 className="font-medium">Keep your knowledge connected</h3>
-                            <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
-                              Connect a Google account, choose files or folders and keep them
-                              synchronized automatically.
-                            </p>
-                            {canManage && (
-                              <Button
-                                className="mt-5"
-                                size="sm"
-                                disabled={!connections.data?.configured || saving}
-                                onClick={() => authorize()}
-                              >
-                                Connect Google Drive
-                              </Button>
-                            )}
-                          </Card>
+                          <EmptyState
+                            icon={<Link2 className="h-5 w-5" />}
+                            title="No Drive connections yet"
+                            description="Connect a Google account and choose files or folders to synchronize automatically."
+                            actionLabel={
+                              canManage && connections.data?.configured && !saving
+                                ? "Connect Google Drive"
+                                : undefined
+                            }
+                            onAction={() => authorize()}
+                          />
                         )}
                         {connections.data?.connections.map((connection) => {
                           const inherited = Boolean(groupId && !connection.groupId);
@@ -563,9 +597,9 @@ export function KnowledgeResources({
                                 />
                               </div>
                               {connection.error && (
-                                <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                                  {connection.error}
-                                </p>
+                                <Alert variant="destructive" className="mt-4">
+                                  <AlertDescription>{connection.error}</AlertDescription>
+                                </Alert>
                               )}
                               <div className="my-4 flex flex-wrap gap-6 border-y py-3 text-[11px] text-muted-foreground">
                                 <span>
@@ -638,17 +672,7 @@ export function KnowledgeResources({
                                       variant="ghost"
                                       size="sm"
                                       disabled={saving}
-                                      onClick={() => {
-                                        if (
-                                          window.confirm(
-                                            "Disconnect this account and remove its sources from this knowledge base? Saved report references will remain.",
-                                          )
-                                        )
-                                          void perform(
-                                            () => knowledgeApi.disconnect(connection.id),
-                                            "Drive disconnected",
-                                          );
-                                      }}
+                                      onClick={() => setDisconnecting(connection)}
                                     >
                                       Disconnect
                                     </Button>
@@ -664,104 +688,83 @@ export function KnowledgeResources({
                 ) : (
                   <>
                     <div className="mb-4 flex flex-wrap items-center gap-2">
-                      <label className="flex min-w-40 flex-1 items-center gap-2 rounded-lg border bg-card px-3 py-2.5">
-                        <Search className="h-4 w-4 text-muted-foreground" />
-                        <input
-                          aria-label="Search knowledge sources"
-                          className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                      <div className="min-w-40 flex-1">
+                        <SearchInput
+                          ariaLabel="Search knowledge sources"
                           placeholder="Search files and folders…"
                           value={search}
-                          onChange={(e) => setSearch(e.target.value)}
+                          onChange={setSearch}
                         />
-                      </label>
-                      <select
-                        aria-label="Filter sources by origin"
-                        className="h-10 max-w-40 rounded-lg border bg-card px-2 text-xs"
-                        value={origin}
-                        onChange={(e) => setOrigin(e.target.value)}
-                      >
-                        <option value="all">All origins</option>
-                        <option value="UPLOAD">Uploaded / platform</option>
-                        <option value="GOOGLE_DRIVE">Google Drive</option>
-                      </select>
+                      </div>
+                      <Select value={origin} onValueChange={setOrigin}>
+                        <SelectTrigger aria-label="Filter sources by origin" className="w-44">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All origins</SelectItem>
+                          <SelectItem value="UPLOAD">Uploaded / platform</SelectItem>
+                          <SelectItem value="GOOGLE_DRIVE">Google Drive</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <Card className="overflow-hidden rounded-2xl">
-                      <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-4 text-xs">
-                        <button
-                          onClick={() => {
-                            setFolderId(null);
-                            setSearch("");
-                          }}
-                          className="flex items-center gap-2"
-                        >
-                          <BookOpen className="h-4 w-4" />
-                          All sources
-                        </button>
-                        {breadcrumbs.map((n) => (
-                          <span key={n.id} className="flex items-center gap-1">
-                            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                            <button onClick={() => setFolderId(n.id)} className="font-medium">
-                              {n.name}
-                            </button>
-                          </span>
-                        ))}
+                    <Card className="overflow-hidden rounded-xl shadow-card">
+                      <div className="border-b p-3">
+                        <Breadcrumbs
+                          items={[
+                            {
+                              label: "All sources",
+                              onClick: () => {
+                                setFolderId(null);
+                                setSearch("");
+                              },
+                            },
+                            ...breadcrumbs.map((node) => ({
+                              label: node.name,
+                              onClick: () => {
+                                setFolderId(node.id);
+                                setSearch("");
+                              },
+                            })),
+                          ]}
+                        />
                       </div>
                       {nodes.length === 0 ? (
-                        <div className="p-8 text-center sm:p-14">
-                          <span className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--brand-soft)] text-[var(--brand)]">
-                            <BookOpen className="h-7 w-7" />
-                          </span>
-                          <h3 className="text-lg font-semibold">
-                            A little context goes a long way
-                          </h3>
-                          <p className="mx-auto mt-3 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                            Add project briefs, reference material or deliverables. Your teams can
-                            use them as context and evidence in their reports.
-                          </p>
-                          {canManage && (
-                            <div className="mt-6 flex flex-wrap justify-center gap-2">
-                              <Button size="sm" onClick={openUpload}>
-                                <Upload className="mr-2 h-4 w-4" />
-                                Upload files
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => openDrive()}>
-                                Connect Google Drive
-                              </Button>
-                            </div>
-                          )}
-                        </div>
+                        <EmptyState
+                          icon={<BookOpen className="h-5 w-5" />}
+                          title="No knowledge sources yet"
+                          description="Add project briefs, reference material or deliverables to use as context and evidence in reports."
+                          actionLabel={canManage ? "Upload files" : undefined}
+                          onAction={canManage ? openUpload : undefined}
+                        />
                       ) : (
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs">
-                            <thead className="border-b bg-muted/20 text-[10px] text-muted-foreground">
-                              <tr>
-                                <th className="px-4 py-3 font-medium">Name</th>
-                                <th className="hidden px-3 py-3 font-medium lg:table-cell">
-                                  Origin
-                                </th>
-                                <th className="hidden px-3 py-3 font-medium sm:table-cell">
-                                  Report use
-                                </th>
-                                <th className="px-2 py-3 font-medium">Status</th>
-                                <th className="pr-3">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead className="hidden lg:table-cell">Origin</TableHead>
+                                <TableHead className="hidden sm:table-cell">Report use</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="pr-3">
                                   <span className="sr-only">Actions</span>
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y">
+                                </TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
                               {visible.map((node) => (
-                                <tr
+                                <TableRow
                                   key={node.id}
-                                  className={node.excluded ? "opacity-55" : "hover:bg-muted/15"}
+                                  className={node.excluded ? "opacity-55" : undefined}
                                 >
-                                  <td className="max-w-xs px-4 py-4">
-                                    <button
+                                  <TableCell className="max-w-xs">
+                                    <Button
+                                      variant="ghost"
                                       onClick={() =>
                                         node.kind === "FOLDER"
                                           ? (setFolderId(node.id), setSearch(""))
                                           : setDetailId(node.id)
                                       }
-                                      className="flex items-center gap-3 text-left"
+                                      className="h-auto w-full justify-start gap-3 whitespace-normal text-left"
                                     >
                                       <FileMark folder={node.kind === "FOLDER"} />
                                       <span className="min-w-0">
@@ -778,9 +781,9 @@ export function KnowledgeResources({
                                           {node.excluded ? " · Excluded for this project" : ""}
                                         </span>
                                       </span>
-                                    </button>
-                                  </td>
-                                  <td className="hidden px-3 text-[11px] text-muted-foreground lg:table-cell">
+                                    </Button>
+                                  </TableCell>
+                                  <TableCell className="hidden text-muted-foreground lg:table-cell">
                                     {node.origin === "GOOGLE_DRIVE" ? (
                                       <span className="flex items-center gap-1">
                                         <Link2 className="h-3 w-3" />
@@ -791,18 +794,18 @@ export function KnowledgeResources({
                                     ) : (
                                       "Uploaded"
                                     )}
-                                  </td>
-                                  <td className="hidden px-3 sm:table-cell">
+                                  </TableCell>
+                                  <TableCell className="hidden sm:table-cell">
                                     {node.kind === "DOCUMENT" ? (
                                       <KnowledgeUse usage={node.usage} />
                                     ) : (
                                       <span className="text-muted-foreground">—</span>
                                     )}
-                                  </td>
-                                  <td className="px-2">
+                                  </TableCell>
+                                  <TableCell className="px-2">
                                     <KnowledgeStatus node={node} />
-                                  </td>
-                                  <td className="pr-3">
+                                  </TableCell>
+                                  <TableCell className="pr-3">
                                     {node.inherited && canManage ? (
                                       <Button
                                         variant="ghost"
@@ -879,20 +882,30 @@ export function KnowledgeResources({
                                         <ChevronRight className="h-4 w-4" />
                                       </Button>
                                     ) : null}
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               ))}
                               {!visible.length && (
-                                <tr>
-                                  <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                    {search
-                                      ? "No matching sources. Try another search."
-                                      : "This folder is empty."}
-                                  </td>
-                                </tr>
+                                <TableRow>
+                                  <TableCell colSpan={5} className="p-3">
+                                    <EmptyState
+                                      icon={<Folder className="h-5 w-5" />}
+                                      title={
+                                        search || origin !== "all"
+                                          ? "No matching sources"
+                                          : "This folder is empty"
+                                      }
+                                      description={
+                                        search || origin !== "all"
+                                          ? "Try another search or origin filter."
+                                          : "Add files or create a folder to organize your knowledge."
+                                      }
+                                    />
+                                  </TableCell>
+                                </TableRow>
                               )}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
                       )}
                       <p className="flex gap-2 border-t bg-muted/10 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
@@ -909,62 +922,50 @@ export function KnowledgeResources({
           )}
         </>
       )}
-      <Dialog open={modal === "folder"} onOpenChange={closeModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? "Rename or move source" : "New folder"}</DialogTitle>
-            <DialogDescription>
-              Keep related references and deliverables together.
-            </DialogDescription>
-          </DialogHeader>
-          <label className="space-y-2 text-xs">
-            Name
-            <input
-              aria-label="Folder or source name"
-              className={field}
-              value={folderName}
-              maxLength={240}
-              onChange={(e) => setFolderName(e.target.value)}
-            />
-          </label>
-          <label className="space-y-2 text-xs">
-            Parent folder
-            <select
-              aria-label="Parent folder"
-              className={field}
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-            >
-              {folderOptions(true)}
-            </select>
-          </label>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setModal(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={saving || !folderName.trim()}
-              onClick={async () => {
-                if (
-                  await perform(
-                    () =>
-                      editing
-                        ? knowledgeApi.update(editing.id, {
-                            name: folderName.trim(),
-                            parentId: destination || null,
-                          })
-                        : knowledgeApi.folder(scope, folderName.trim(), destination || undefined),
-                    editing ? "Source updated" : "Folder created",
-                  )
-                )
-                  setModal(null);
-              }}
-            >
-              {editing ? "Save changes" : "Create folder"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FormModal
+        open={modal === "folder"}
+        onOpenChange={closeModal}
+        title={editing ? "Rename or move source" : "New folder"}
+        description="Keep related references and deliverables together."
+        submitLabel={editing ? "Save changes" : "Create folder"}
+        submitting={saving}
+        submitDisabled={!folderName.trim()}
+        dirty={
+          folderName !== folderBaseline.current.name ||
+          destination !== folderBaseline.current.destination
+        }
+        onSubmit={async () => {
+          if (!folderName.trim()) return;
+          if (
+            await perform(
+              () =>
+                editing
+                  ? knowledgeApi.update(editing.id, {
+                      name: folderName.trim(),
+                      parentId: destination || null,
+                    })
+                  : knowledgeApi.folder(scope, folderName.trim(), destination || undefined),
+              editing ? "Source updated" : "Folder created",
+            )
+          )
+            setModal(null);
+        }}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="knowledge-folder-name">Name</Label>
+          <Input
+            id="knowledge-folder-name"
+            aria-label="Folder or source name"
+            value={folderName}
+            maxLength={240}
+            onChange={(e) => setFolderName(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Parent folder</Label>
+          {folderSelect("Parent folder", true)}
+        </div>
+      </FormModal>
       <Dialog open={modal === "upload"} onOpenChange={closeModal}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -974,37 +975,29 @@ export function KnowledgeResources({
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-2 text-xs">
-              Destination folder
-              <select
-                aria-label="Upload destination"
-                className={field}
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                disabled={uploading}
-              >
-                {folderOptions()}
-              </select>
-            </label>
-            <label className="space-y-2 text-xs">
-              Use in reports
+            <div className="space-y-1.5">
+              <Label>Destination folder</Label>
+              {folderSelect("Upload destination", false, uploading)}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Use in reports</Label>
               <UsageSelect value={usage} onChange={setUsage} disabled={uploading} />
-            </label>
+            </div>
           </div>
-          <label
-            className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--brand)]/50 bg-[var(--brand-soft)]/30 p-7 text-center ${uploading ? "pointer-events-none opacity-50" : ""}`}
+          <Label
+            className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-surface p-7 text-center ${uploading ? "pointer-events-none opacity-50" : ""}`}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
               if (!uploading) appendFiles(e.dataTransfer.files);
             }}
           >
-            <Upload className="mb-1 h-7 w-7 text-[var(--brand)]" />
+            <Upload className="mb-1 h-7 w-7 text-muted-foreground" />
             <span className="text-sm font-medium">Drop files here, or browse files</span>
             <span className="text-[11px] text-muted-foreground">
               PDF, DOCX, TXT, Markdown and CSV · Up to 20 MB per file
             </span>
-            <input
+            <Input
               aria-label="Choose knowledge files"
               type="file"
               multiple
@@ -1016,7 +1009,7 @@ export function KnowledgeResources({
                 e.target.value = "";
               }}
             />
-          </label>
+          </Label>
           <div className="divide-y">
             {uploads.map((row, index) => (
               <div key={index} className="flex gap-3 py-3">
@@ -1037,9 +1030,9 @@ export function KnowledgeResources({
                     </span>
                   </div>
                   {row.state === "uploading" && (
-                    <progress
+                    <Progress
                       aria-label={`Upload progress for ${row.file.name}`}
-                      className="mt-2 h-1 w-full accent-[var(--brand)]"
+                      className="mt-2"
                       max={100}
                       value={row.progress}
                     />
@@ -1078,7 +1071,7 @@ export function KnowledgeResources({
             document serves both purposes. Files are selectable after processing finishes.
           </Note>
           <DialogFooter>
-            <Button variant="ghost" disabled={uploading} onClick={() => setModal(null)}>
+            <Button variant="outline" disabled={uploading} onClick={() => setModal(null)}>
               Close
             </Button>
             <Button
@@ -1108,22 +1101,24 @@ export function KnowledgeResources({
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  aria-label="Google Drive account"
-                  className={`${field} min-w-0 flex-1`}
+                <Select
                   value={driveId}
-                  onChange={(e) => {
-                    setDriveId(e.target.value);
+                  onValueChange={(next) => {
+                    setDriveId(next);
                     setDrivePath([{ id: "root", name: "My Drive" }]);
                   }}
                 >
-                  <option value="">Choose an account</option>
-                  {driveAccounts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.email}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger aria-label="Google Drive account" className="min-w-0 flex-1">
+                    <SelectValue placeholder="Choose an account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {driveAccounts.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button size="sm" variant="outline" disabled={saving} onClick={() => authorize()}>
                   Connect account
                 </Button>
@@ -1152,31 +1147,21 @@ export function KnowledgeResources({
                       Shared drives
                     </Button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1 text-xs">
-                    {drivePath.map((p, index) => (
-                      <span className="flex items-center gap-1" key={p.id}>
-                        {index > 0 && <ChevronRight className="h-3 w-3" />}
-                        <button
-                          onClick={() => {
-                            setDrivePath((path) => path.slice(0, index + 1));
-                            setDriveSearch("");
-                          }}
-                        >
-                          {p.name}
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <label className="flex items-center gap-2 rounded-lg border p-2">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                    <input
-                      aria-label="Search Google Drive"
-                      placeholder="Search in Google Drive…"
-                      className="min-w-0 flex-1 bg-transparent text-xs outline-none"
-                      value={driveSearch}
-                      onChange={(e) => setDriveSearch(e.target.value)}
-                    />
-                  </label>
+                  <Breadcrumbs
+                    items={drivePath.map((item, index) => ({
+                      label: item.name,
+                      onClick: () => {
+                        setDrivePath((path) => path.slice(0, index + 1));
+                        setDriveSearch("");
+                      },
+                    }))}
+                  />
+                  <SearchInput
+                    ariaLabel="Search Google Drive"
+                    placeholder="Search in Google Drive…"
+                    value={driveSearch}
+                    onChange={setDriveSearch}
+                  />
                   {driveFiles.isLoading ? (
                     <LoadingState />
                   ) : driveFiles.error ? (
@@ -1191,6 +1176,7 @@ export function KnowledgeResources({
                         .map((item) => (
                           <div key={item.id} className="flex items-center gap-3 p-3">
                             <Checkbox
+                              id={`drive-source-${item.id}`}
                               aria-label={`Connect ${item.name}`}
                               disabled={!item.supported || drivePath.at(-1)?.id === "shared-drives"}
                               checked={driveSelection.has(item.id)}
@@ -1204,30 +1190,44 @@ export function KnowledgeResources({
                               }
                             />
                             <FileMark folder={item.mimeType === DRIVE_FOLDER} />
-                            <button
-                              disabled={item.mimeType !== DRIVE_FOLDER}
-                              onClick={() => {
-                                setDrivePath((path) => [...path, { id: item.id, name: item.name }]);
-                                setDriveSearch("");
-                              }}
-                              className="min-w-0 flex-1 break-words text-left text-xs font-medium"
-                            >
-                              {item.name}
-                              {!item.supported && (
-                                <span className="mt-1 block font-normal text-muted-foreground">
-                                  Unsupported format
-                                </span>
-                              )}
-                            </button>
+                            {item.mimeType === DRIVE_FOLDER ? (
+                              <Button
+                                variant="ghost"
+                                onClick={() => {
+                                  setDrivePath((path) => [
+                                    ...path,
+                                    { id: item.id, name: item.name },
+                                  ]);
+                                  setDriveSearch("");
+                                }}
+                                className="h-auto min-w-0 flex-1 flex-col items-start whitespace-normal break-words text-left"
+                              >
+                                {item.name}
+                              </Button>
+                            ) : (
+                              <Label
+                                htmlFor={`drive-source-${item.id}`}
+                                className="min-w-0 flex-1 break-words leading-relaxed"
+                              >
+                                {item.name}
+                                {!item.supported && (
+                                  <span className="mt-1 block font-normal text-muted-foreground">
+                                    Unsupported format
+                                  </span>
+                                )}
+                              </Label>
+                            )}
                             {item.mimeType === DRIVE_FOLDER && (
                               <ChevronRight className="h-3 w-3 shrink-0" />
                             )}
                           </div>
                         ))}
                       {driveFiles.data?.pages.every((p) => !p.files.length) && (
-                        <p className="p-5 text-center text-xs text-muted-foreground">
-                          No files found.
-                        </p>
+                        <EmptyState
+                          title="No files found"
+                          description="Try another search or folder."
+                          icon={<FileText className="h-5 w-5" />}
+                        />
                       )}
                       {driveFiles.hasNextPage && (
                         <Button
@@ -1243,21 +1243,14 @@ export function KnowledgeResources({
                     </div>
                   )}
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="space-y-2 text-xs">
-                      Add to folder
-                      <select
-                        aria-label="Drive destination"
-                        className={field}
-                        value={destination}
-                        onChange={(e) => setDestination(e.target.value)}
-                      >
-                        {folderOptions()}
-                      </select>
-                    </label>
-                    <label className="space-y-2 text-xs">
-                      Default use for new documents
+                    <div className="space-y-1.5">
+                      <Label>Add to folder</Label>
+                      {folderSelect("Drive destination")}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Default use for new documents</Label>
                       <UsageSelect value={usage} onChange={setUsage} />
-                    </label>
+                    </div>
                   </div>
                   <Note>
                     Automatic synchronization includes new documents and subfolders. Later changes
@@ -1268,7 +1261,7 @@ export function KnowledgeResources({
                     <span className="mr-auto text-xs text-muted-foreground">
                       {driveSelection.size} items selected
                     </span>
-                    <Button variant="ghost" onClick={() => setModal(null)}>
+                    <Button variant="outline" onClick={() => setModal(null)}>
                       Cancel
                     </Button>
                     <Button
@@ -1358,14 +1351,14 @@ export function KnowledgeResources({
                       </div>
                     ))}
                   </dl>
-                  <label className="block space-y-2 text-xs">
-                    Use in reports
+                  <div className="space-y-1.5">
+                    <Label>Use in reports</Label>
                     <UsageSelect
                       value={detailUsage}
                       onChange={setDetailUsage}
                       disabled={!detail.data.canManage || Boolean(groupId && !detail.data.groupId)}
                     />
-                  </label>
+                  </div>
                   {groupId && !detail.data.groupId ? (
                     <Note>
                       <span className="mb-2 flex items-center gap-1">
@@ -1440,6 +1433,23 @@ export function KnowledgeResources({
           )}
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={Boolean(disconnecting)}
+        onOpenChange={(open) => {
+          if (!open) setDisconnecting(null);
+        }}
+        title="Disconnect Google Drive?"
+        description="This disconnects the account and removes its sources from this knowledge base. Saved report references remain available."
+        destructive
+        confirmLabel="Disconnect"
+        onConfirm={async () => {
+          if (
+            disconnecting &&
+            (await perform(() => knowledgeApi.disconnect(disconnecting.id), "Drive disconnected"))
+          )
+            setDisconnecting(null);
+        }}
+      />
       <ConfirmDialog
         open={Boolean(removing)}
         onOpenChange={(open) => {
