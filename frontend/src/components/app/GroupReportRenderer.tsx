@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import { ReportKnowledgeSources } from "./KnowledgeSources";
 import { ArrowLeft, Download, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -570,6 +571,7 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
         </div>
       </Card>
 
+      <ReportKnowledgeSources snapshot={data.knowledgeSources} />
       {(data.questionAnswers ?? []).length > 0 && (
         <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

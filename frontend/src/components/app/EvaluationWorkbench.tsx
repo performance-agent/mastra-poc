@@ -4,6 +4,7 @@ import { GenerationProgressPanel } from "./GenerationProgress";
 import { IndividualInsights } from "./IndividualInsights";
 import { GradingControls } from "./GradingControls";
 import { TaskAnalysis } from "./TaskAnalysis";
+import { KnowledgeSourcePicker, ReportKnowledgeSources } from "./KnowledgeSources";
 import type { GradingSettings } from "@/lib/types";
 import {
   createContext,
@@ -86,6 +87,8 @@ type WorkbenchState = {
   retryTracking: () => void;
   run: () => Promise<void>;
   setGradingOverrides: (value?: GradingSettings) => void;
+  knowledgeIds: string[] | null;
+  setKnowledgeIds: (ids: string[] | null) => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -125,6 +128,7 @@ function EvaluationProvider({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [gradingOverrides, setGradingOverrides] = useState<GradingSettings>();
+  const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
   const [jobId, setJobId] = useState<string>();
   const submittedJobId = useRef<string | undefined>(undefined);
   const [error, setError] = useState<string>();
@@ -210,6 +214,10 @@ function EvaluationProvider({
   );
 
   const run = async () => {
+    if (knowledgeIds === null) {
+      setError("Wait for knowledge sources to load before generating.");
+      return;
+    }
     const invalidPeriod = Boolean(from) !== Boolean(to) || (from && to && from > to);
     if (invalidPeriod) {
       setError("Choose both dates and make sure the end date is after the start date.");
@@ -230,6 +238,7 @@ function EvaluationProvider({
         period: from && to ? { from, to } : undefined,
         groupId,
         gradingOverrides,
+        knowledgeSelection: { sourceIds: knowledgeIds },
       });
       submittedJobId.current = response.jobId;
       setJobId(response.jobId);
@@ -276,6 +285,8 @@ function EvaluationProvider({
     },
     run,
     setGradingOverrides,
+    knowledgeIds,
+    setKnowledgeIds,
   };
 
   return <WorkbenchContext value={value}>{children}</WorkbenchContext>;
@@ -330,6 +341,9 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
 function EvaluationSetup() {
   const {
     workspaceId,
+    groupId,
+    knowledgeIds,
+    setKnowledgeIds,
     rules,
     setRules,
     packages,
@@ -610,11 +624,19 @@ function EvaluationSetup() {
         </p>
       ) : null}
 
+      <div className="mt-5">
+        <KnowledgeSourcePicker
+          key={groupId}
+          workspaceId={workspaceId}
+          groupId={groupId}
+          onChange={setKnowledgeIds}
+        />
+      </div>
       <Button
         type="button"
         size="lg"
         className="mt-5 h-12 w-full bg-[#173d52] text-white shadow-[0_8px_24px_-10px_rgba(23,61,82,0.9)] hover:bg-[#24566e] dark:bg-sky-200 dark:text-slate-950 dark:hover:bg-sky-100"
-        disabled={isRunning || !canRun}
+        disabled={isRunning || !canRun || knowledgeIds === null}
         onClick={run}
       >
         {isRunning ? (
@@ -1009,6 +1031,7 @@ function EvaluationOutput() {
           Retry progress updates
         </Button>
       )}
+      <ReportKnowledgeSources snapshot={report?.knowledgeSources} />
       {saved ? (
         <div className="mb-5 rounded-xl border p-4 text-sm">
           <p className="font-semibold">

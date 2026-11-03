@@ -21,6 +21,7 @@ import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { WorkspacePeople } from "@/components/app/WorkspacePeople";
+import { KnowledgeResources } from "@/components/app/KnowledgeResources";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -37,6 +38,10 @@ import type { Group, Role } from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.string().optional(),
+  knowledgeView: z.string().optional(),
+  driveConnection: z.string().optional(),
+  driveError: z.string().optional(),
+  knowledgeNode: z.string().optional(),
 });
 const workspaceTabs = ["overview", "groups", "people", "members", "resources"] as const;
 type WorkspaceTab = (typeof workspaceTabs)[number];
@@ -177,7 +182,17 @@ function WorkspacePage() {
             <WorkspaceMembersTab organizationId={organizationId} workspaceId={workspaceId} />
           )}
           {tab === "resources" && (
-            <WorkspaceResourcesTab organizationId={organizationId} workspaceId={workspaceId} />
+            <KnowledgeResources
+              key={workspaceId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              initialView={search.knowledgeView}
+              initialConnectionId={search.driveConnection}
+              initialError={search.driveError}
+              initialNodeId={search.knowledgeNode}
+            >
+              <WorkspaceResourcesTab organizationId={organizationId} workspaceId={workspaceId} />
+            </KnowledgeResources>
           )}
         </div>
       )}

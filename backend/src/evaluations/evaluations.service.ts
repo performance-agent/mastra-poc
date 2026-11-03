@@ -1,4 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { KnowledgeService } from '../knowledge/knowledge.service';
+import {
+  knowledgePackage,
+  type KnowledgeReportSnapshot,
+} from '../knowledge/knowledge-prompt';
 import { gradingSettings, studentSummaries, resolvedMembers } from './grading';
 import {
   IndividualInsightsService,
@@ -45,6 +50,7 @@ export class EvaluationsService {
     private readonly prisma: PrismaService,
     private readonly jobs: GenerationService,
     private readonly insights: IndividualInsightsService = new IndividualInsightsService(),
+    private readonly knowledge: KnowledgeService,
   ) {}
 
   async enqueue(
@@ -54,16 +60,35 @@ export class EvaluationsService {
   ) {
     validatePeriod(dto.period);
     await this.validateGroup(workspaceId, dto.groupId);
+    const knowledge = await this.prepareKnowledge(workspaceId, dto);
     return this.jobs.enqueue(
       workspaceId,
       dto.groupId,
       'evaluation',
-      dto,
-      (progress) => this.evaluate(workspaceId, dto, view, progress),
+      { ...dto, knowledgeSources: knowledge },
+      (progress) => this.evaluate(workspaceId, dto, view, progress, knowledge),
     );
   }
   jobStatus(workspaceId: string, jobId: string) {
     return this.jobs.status(jobId, { workspaceId });
+  }
+
+  private async prepareKnowledge(
+    workspaceId: string,
+    dto: CreateEvaluationDto,
+  ) {
+    const snapshot = dto.groupId
+      ? await this.knowledge.snapshot(dto.groupId, dto.knowledgeSelection)
+      : await this.knowledge.workspaceSnapshot(
+          workspaceId,
+          dto.knowledgeSelection,
+        );
+    return knowledgePackage(
+      snapshot,
+      await this.knowledge.snapshotText(snapshot),
+      dto.rules.map((r) => r.name + ' ' + (r.description ?? '')).join('\n'),
+      12_000,
+    );
   }
 
   async latestJob(workspaceId: string, groupId: string) {
@@ -76,6 +101,7 @@ export class EvaluationsService {
     dto: CreateEvaluationDto,
     view: EvaluationView = EvaluationView.REPORT,
     progress?: ReportProgress,
+    knowledge?: KnowledgeReportSnapshot,
   ) {
     const evaluationId = randomUUID();
     const { generationStage } = await import('@pa/agent');
@@ -83,7 +109,14 @@ export class EvaluationsService {
       'evaluation-request',
       { workspaceId, dto, view },
       () =>
-        this.evaluateRequest(workspaceId, dto, view, evaluationId, progress),
+        this.evaluateRequest(
+          workspaceId,
+          dto,
+          view,
+          evaluationId,
+          progress,
+          knowledge,
+        ),
       {
         evaluationId,
         workspaceId,
@@ -99,6 +132,7 @@ export class EvaluationsService {
     view: EvaluationView,
     evaluationId: string,
     progress?: ReportProgress,
+    capturedKnowledge?: KnowledgeReportSnapshot,
   ) {
     await progress?.('preparing');
     const period = validatePeriod(dto.period);
@@ -112,6 +146,8 @@ export class EvaluationsService {
       dto.gradingOverrides,
     );
     await this.validateGroup(workspaceId, dto.groupId);
+    const knowledge =
+      capturedKnowledge ?? (await this.prepareKnowledge(workspaceId, dto));
     // Snapshot the request before running the agent, which may transform rules.
     const rules = JSON.parse(
       JSON.stringify(dto.rules),
@@ -119,10 +155,15 @@ export class EvaluationsService {
     let flow: Awaited<ReturnType<EvaluationFlowFactory>>;
     try {
       const flowKey = dto.groupId ?? '*';
-      let flowPromise = this.flowPromises.get(flowKey);
+      let flowPromise = knowledge.sources.length
+        ? undefined
+        : this.flowPromises.get(flowKey);
       if (!flowPromise) {
-        flowPromise = this.flowFactory(dto.groupId);
-        this.flowPromises.set(flowKey, flowPromise);
+        flowPromise = knowledge.sources.length
+          ? this.flowFactory(dto.groupId, knowledge)
+          : this.flowFactory(dto.groupId);
+        if (!knowledge.sources.length)
+          this.flowPromises.set(flowKey, flowPromise);
       }
       flow = await flowPromise;
     } catch (error) {
@@ -170,6 +211,7 @@ export class EvaluationsService {
         })) ?? [];
     const report = {
       ...toReportResponse(result),
+      knowledgeSources: knowledge,
       studentSummaries: summaries,
       individualInsightsJobId: randomUUID(),
       period: period ?? null,

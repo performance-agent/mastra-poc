@@ -1,4 +1,12 @@
 import { reportAgentTools } from './report-agent-tools';
+import { KnowledgeService } from '../knowledge/knowledge.service';
+import type { KnowledgeSnapshot } from '../knowledge/knowledge.types';
+import {
+  knowledgePackage,
+  KNOWLEDGE_INSTRUCTIONS,
+  validateKnowledgeReferences,
+  type KnowledgeReportSnapshot,
+} from '../knowledge/knowledge-prompt';
 import type { EvidenceReceipt } from '@pa/agent';
 import { RequestContext } from '@mastra/core/request-context';
 import { groupReportModels } from '../mastra/model-configuration';
@@ -38,6 +46,7 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly runtime: PluginRuntimeService,
     private readonly jobs: GenerationService,
+    private readonly knowledge: KnowledgeService,
   ) {}
 
   createGroupReport(groupId: string, dto: CreateReportDto) {
@@ -46,9 +55,12 @@ export class ReportsService {
         'Only GROUP_REPORT can be generated. Legacy report types are read-only.',
       );
     }
-    return this.createSoftwareReport(groupId, {
-      period: validateReportPeriod(dto.period),
-    });
+    const period = validateReportPeriod(dto.period);
+    return this.knowledge
+      .snapshot(groupId, dto.knowledgeSelection)
+      .then((knowledgeSnapshot) =>
+        this.createSoftwareReport(groupId, { period, knowledgeSnapshot }),
+      );
   }
 
   async createGroupReportAsync(groupId: string, dto: CreateReportDto) {
@@ -59,13 +71,22 @@ export class ReportsService {
       where: { id: groupId },
     });
     const evaluatorIds = [...new Set(dto.evaluatorIds ?? [])];
+    const knowledgeSnapshot = await this.knowledge.snapshot(
+      groupId,
+      dto.knowledgeSelection,
+    );
     if (evaluatorIds.length === 0) {
       return this.jobs.enqueue(
         group.workspaceId,
         groupId,
         'group_report',
-        dto,
-        (progress) => this.createSoftwareReport(groupId, { progress, period }),
+        { ...dto, knowledgeSnapshot },
+        (progress) =>
+          this.createSoftwareReport(groupId, {
+            progress,
+            period,
+            knowledgeSnapshot,
+          }),
       );
     }
     for (const evaluatorId of evaluatorIds) {
@@ -76,7 +97,11 @@ export class ReportsService {
       evaluatorIds,
       dto.contextByEvaluator,
     );
-    const prepared = this.prepareGroupReport(groupId, period);
+    const prepared = this.prepareGroupReport(
+      groupId,
+      period,
+      knowledgeSnapshot,
+    );
     void prepared.catch(() => undefined);
     const jobs: Array<{
       jobId: string;
@@ -88,7 +113,12 @@ export class ReportsService {
         group.workspaceId,
         groupId,
         'group_report',
-        { type: 'GROUP_REPORT', evaluatorId, ...(period ? { period } : {}) },
+        {
+          type: 'GROUP_REPORT',
+          evaluatorId,
+          knowledgeSnapshot,
+          ...(period ? { period } : {}),
+        },
         (progress) =>
           this.createSoftwareReport(groupId, {
             evaluatorId,
@@ -169,6 +199,7 @@ export class ReportsService {
       progress?: ReportProgress;
       prepared?: ReturnType<ReportsService['prepareGroupReport']>;
       priorReport?: unknown;
+      knowledgeSnapshot?: KnowledgeSnapshot;
       revision?: { reportId: string; notes: ReportNote[] };
     } = {},
   ) {
@@ -177,12 +208,28 @@ export class ReportsService {
     await progress?.('preparing', 'completed');
     await progress?.('collecting_evidence');
     const prepared = await (options.prepared ??
-      this.prepareGroupReport(groupId, options.period));
+      this.prepareGroupReport(
+        groupId,
+        options.period,
+        options.knowledgeSnapshot,
+      ));
     const source = await this.loadEvaluatorSource(
       prepared.group,
       options.evaluatorId,
     );
     const { group, providerData, reportInput } = prepared;
+    const knowledge = knowledgePackage(
+      prepared.knowledgeSnapshot,
+      await this.knowledge.snapshotText(prepared.knowledgeSnapshot),
+      buildEvaluatorReportPrompt(source) +
+        '\n' +
+        group.name +
+        '\n' +
+        (group.description ?? ''),
+    );
+    const knowledgePrompt = knowledge.sources.length
+      ? `\n\n${KNOWLEDGE_INSTRUCTIONS}\n${JSON.stringify(knowledge)}\n\n`
+      : '';
     const evaluationGuidelines = source.guidelines;
     await progress?.('collecting_evidence', 'completed');
     await progress?.('generating');
@@ -240,7 +287,7 @@ export class ReportsService {
       const reserve = Buffer.byteLength(`${REPORT_COMPACT_INSTRUCTION}\n\n`);
       packed = packEvidence(reportInput, effort.sample, {
         budgetBytes: Math.max(1024, effort.inputBytes - reserve),
-        prefix,
+        prefix: prefix + knowledgePrompt,
         textCap: 8000,
         listCap: effort.sample,
       });
@@ -250,7 +297,7 @@ export class ReportsService {
       const closing = options.revision
         ? `\n\n${revisionClosing(options.revision.notes)}`
         : '';
-      const boundedPrompt = `${prefix}${JSON.stringify(packed.evidence)}${closing}`;
+      const boundedPrompt = `${prefix}${knowledgePrompt}${JSON.stringify(packed.evidence)}${closing}`;
       const requestContext = new RequestContext();
       requestContext.set('generationModel', model);
       let promptText = boundedPrompt;
@@ -276,7 +323,9 @@ export class ReportsService {
                 },
               );
               tokenUsage = readTokenUsage(response);
-              return groupReportContentSchema.parse(response.object);
+              const content = groupReportContentSchema.parse(response.object);
+              validateKnowledgeReferences(content, knowledge);
+              return content;
             },
             { inputBytes: effort.inputBytes, timeoutMs: 180000 },
           );
@@ -321,6 +370,7 @@ export class ReportsService {
       source.snapshot,
       options.revision?.reportId,
       options.period,
+      knowledge,
     );
     await progress?.('saving', 'completed');
     return saved;
@@ -329,6 +379,7 @@ export class ReportsService {
   async prepareGroupReport(
     groupId: string,
     period?: { from: string; to: string },
+    capturedKnowledge?: KnowledgeSnapshot,
   ) {
     const [group, assignedResources] = await Promise.all([
       this.prisma.group.findUnique({
@@ -350,9 +401,11 @@ export class ReportsService {
     ]);
     if (!group) throw new NotFoundException('Group not found');
 
-    if (!assignedResources.length) {
+    const knowledgeSnapshot =
+      capturedKnowledge ?? (await this.knowledge.snapshot(groupId));
+    if (!assignedResources.length && !knowledgeSnapshot.sources.length) {
       throw new BadRequestException(
-        'This group has no active plugin resources assigned',
+        'This project has no ready knowledge sources or active plugin resources',
       );
     }
 
@@ -366,7 +419,7 @@ export class ReportsService {
     const hasSuccessfulDataset = providerData.resources.some(
       (resource) => resource.datasets.length > 0,
     );
-    if (!hasSuccessfulDataset) {
+    if (!hasSuccessfulDataset && !knowledgeSnapshot.sources.length) {
       throw new BadRequestException({
         message: 'No plugin data provider could produce report input',
         limitations: providerData.limitations,
@@ -397,13 +450,22 @@ export class ReportsService {
       coverage,
     };
 
-    return { group, providerData, reportInput, coverage, evaluationGuidelines };
+    return {
+      group,
+      providerData,
+      reportInput,
+      coverage,
+      evaluationGuidelines,
+      knowledgeSnapshot,
+    };
   }
 
   async prepareExternalGroupReport(
     groupId: string,
     evaluatorId: string,
     requestedPeriod?: { from: string; to: string },
+    knowledgeSelection?: { sourceIds?: string[]; folderIds?: string[] },
+    userId?: string,
   ) {
     const period = validateReportPeriod(requestedPeriod);
     // Validate the evaluator before collecting potentially expensive provider data.
@@ -411,13 +473,59 @@ export class ReportsService {
       where: { id: groupId },
     });
     const source = await this.loadEvaluatorSource(group, evaluatorId);
-    const prepared = await this.prepareGroupReport(groupId, period);
+    const snapshot = await this.knowledge.snapshot(groupId, knowledgeSelection);
+    const prepared = await this.prepareGroupReport(groupId, period, snapshot);
+    const knowledge = knowledgePackage(
+      prepared.knowledgeSnapshot,
+      await this.knowledge.snapshotText(prepared.knowledgeSnapshot),
+      buildEvaluatorReportPrompt(source),
+    );
+    let knowledgeContextId: string | undefined;
+    if (userId) {
+      await this.prisma.knowledgeReportContext.deleteMany({
+        where: { expiresAt: { lt: new Date() } },
+      });
+      const context = await this.prisma.knowledgeReportContext.create({
+        data: {
+          userId,
+          groupId,
+          evaluatorId,
+          snapshot: JSON.parse(
+            JSON.stringify({
+              knowledge,
+              source,
+              coverage: prepared.coverage,
+              period: period ?? null,
+            }),
+          ) as object,
+          expiresAt: new Date(Date.now() + 60 * 60_000),
+        },
+      });
+      knowledgeContextId = context.id;
+    }
     return {
-      prepared,
+      prepared: {
+        ...prepared,
+        reportInput: { ...prepared.reportInput, knowledge },
+      },
       source,
+      knowledge,
+      knowledgeContextId,
       period,
-      generationPrompt: buildEvaluatorReportPrompt(source),
+      generationPrompt:
+        buildEvaluatorReportPrompt(source) + '\n\n' + KNOWLEDGE_INSTRUCTIONS,
     };
+  }
+
+  async listKnowledgeSources(groupId: string, userId: string) {
+    const group = await this.prisma.group.findUniqueOrThrow({
+      where: { id: groupId },
+      select: { workspaceId: true },
+    });
+    return this.knowledge.list(userId, {
+      workspaceId: group.workspaceId,
+      groupId,
+    });
   }
 
   async createGroupReportFromContent(
@@ -426,8 +534,46 @@ export class ReportsService {
     options?: {
       evaluatorId: string;
       period?: { from: string; to: string };
+      knowledgeContextId?: string;
+      userId?: string;
     },
   ) {
+    if (options?.knowledgeContextId) {
+      const context = await this.prisma.knowledgeReportContext.findFirst({
+        where: {
+          id: options.knowledgeContextId,
+          userId: options.userId ?? '',
+          groupId,
+          evaluatorId: options.evaluatorId,
+          expiresAt: { gt: new Date() },
+        },
+      });
+      if (!context)
+        throw new BadRequestException(
+          'The report context expired or does not belong to this account and evaluator. Collect context again.',
+        );
+      const captured = context.snapshot as unknown as {
+        knowledge: KnowledgeReportSnapshot;
+        source: Awaited<ReturnType<ReportsService['loadEvaluatorSource']>>;
+        coverage: ReturnType<typeof buildCoverage>;
+        period: { from: string; to: string } | null;
+      };
+      const requested = validateReportPeriod(options.period) ?? null;
+      if (JSON.stringify(captured.period) !== JSON.stringify(requested))
+        throw new BadRequestException(
+          'Use the same report period as the captured context',
+        );
+      return this.persistGroupReport(
+        groupId,
+        content,
+        captured.coverage,
+        captured.source.guidelines,
+        captured.source.snapshot,
+        undefined,
+        requested ?? undefined,
+        captured.knowledge,
+      );
+    }
     const external = options
       ? await this.prepareExternalGroupReport(
           groupId,
@@ -445,6 +591,12 @@ export class ReportsService {
       external?.source.snapshot ?? null,
       undefined,
       external?.period,
+      external?.knowledge ??
+        knowledgePackage(
+          prepared.knowledgeSnapshot,
+          await this.knowledge.snapshotText(prepared.knowledgeSnapshot),
+          prepared.group.name,
+        ),
     );
   }
 
@@ -533,15 +685,20 @@ export class ReportsService {
     evaluator: EvaluatorSnapshot | null,
     reportId?: string,
     period?: { from: string; to: string },
+    knowledge?: KnowledgeReportSnapshot,
   ) {
     const generatedReport = groupReportContentSchema.parse(content);
+    validateKnowledgeReferences(generatedReport, knowledge);
     const reportData = groupReportSchema.parse({
       ...generatedReport,
       coverage,
       evaluationGuidelines: evaluationGuidelines ?? null,
       evaluator,
     });
-    const payload = JSON.parse(JSON.stringify(reportData)) as object;
+    const payload = {
+      ...JSON.parse(JSON.stringify(reportData)),
+      ...(knowledge ? { knowledgeSources: knowledge } : {}),
+    } as object;
 
     if (reportId) {
       const existing = await this.prisma.performanceReport.findUnique({
@@ -684,6 +841,13 @@ export class ReportsService {
       progress,
       priorReport: report.data,
       revision: { reportId: report.id, notes },
+      knowledgeSnapshot: (
+        report.data as { knowledgeSources?: KnowledgeSnapshot }
+      ).knowledgeSources ?? {
+        capturedAt: new Date().toISOString(),
+        sources: [],
+        unavailable: 0,
+      },
     });
   }
 
@@ -874,15 +1038,18 @@ function noteAuthor(note: {
   authorPhotoUrl?: unknown;
   createdAt?: unknown;
 }): Pick<ReportNote, 'authorName' | 'authorPhotoUrl' | 'createdAt'> {
-  const author: Pick<ReportNote, 'authorName' | 'authorPhotoUrl' | 'createdAt'> =
-    {};
+  const author: Pick<
+    ReportNote,
+    'authorName' | 'authorPhotoUrl' | 'createdAt'
+  > = {};
   if (typeof note.authorName === 'string') {
     const name = note.authorName.trim().slice(0, 120);
     if (name) author.authorName = name;
   }
   if (typeof note.authorPhotoUrl === 'string') {
     const photo = note.authorPhotoUrl.trim();
-    if (/^(https:\/\/|media:)\S{1,500}$/.test(photo)) author.authorPhotoUrl = photo;
+    if (/^(https:\/\/|media:)\S{1,500}$/.test(photo))
+      author.authorPhotoUrl = photo;
   }
   if (
     typeof note.createdAt === 'string' &&

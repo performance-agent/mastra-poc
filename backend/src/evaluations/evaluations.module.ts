@@ -14,9 +14,10 @@ import {
 import { EvaluationsService } from './evaluations.service';
 import { RulePackagesController } from './rule-packages.controller';
 import { RulePackagesService } from './rule-packages.service';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
-  imports: [PluginsModule, ResourcesModule],
+  imports: [PluginsModule, ResourcesModule, KnowledgeModule],
   controllers: [EvaluationsController, RulePackagesController],
   providers: [
     IndividualInsightsService,

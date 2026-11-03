@@ -1,4 +1,7 @@
 model Group {
+  knowledgeNodes KnowledgeNode[]
+  knowledgeConnections KnowledgeConnection[]
+  knowledgeExclusions KnowledgeExclusion[]
   id          String  @id @default(cuid())
   name        String
   description String?

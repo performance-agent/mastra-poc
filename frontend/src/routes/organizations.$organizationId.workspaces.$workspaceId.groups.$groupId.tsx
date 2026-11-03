@@ -22,6 +22,7 @@ import { SearchInput } from "@/components/app/SearchInput";
 import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
 import { RulesTab } from "@/components/app/RulesTab";
 import { ReportsPanel } from "@/components/app/ReportsPanel";
+import { KnowledgeResources } from "@/components/app/KnowledgeResources";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -39,6 +40,10 @@ import type { Role } from "@/lib/types";
 const tabSchema = z.object({
   tab: z.enum(["overview", "members", "resources", "reports", "evaluation", "rules"]).optional(),
   reportId: z.string().optional(),
+  knowledgeView: z.string().optional(),
+  driveConnection: z.string().optional(),
+  driveError: z.string().optional(),
+  knowledgeNode: z.string().optional(),
 });
 type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation" | "rules";
 
@@ -352,97 +357,108 @@ function GroupPage() {
           )}
 
           {tab === "resources" && (
-            <div className="space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="w-full sm:w-72">
-                  <SearchInput
-                    value={resSearch}
-                    onChange={setResSearch}
-                    placeholder="Search resources…"
+            <KnowledgeResources
+              key={groupId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              groupId={groupId}
+              initialView={search.knowledgeView}
+              initialConnectionId={search.driveConnection}
+              initialError={search.driveError}
+              initialNodeId={search.knowledgeNode}
+            >
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="w-full sm:w-72">
+                    <SearchInput
+                      value={resSearch}
+                      onChange={setResSearch}
+                      placeholder="Search resources…"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Search assigned resources and organization resources available to assign.
+                  </p>
+                </div>
+                {groupResourcesQ.isLoading || orgResourcesQ.isLoading ? (
+                  <LoadingState />
+                ) : groupResourcesQ.error || orgResourcesQ.error ? (
+                  <ErrorState
+                    message={errorMessage(groupResourcesQ.error ?? orgResourcesQ.error)}
+                    onRetry={() => {
+                      groupResourcesQ.refetch();
+                      orgResourcesQ.refetch();
+                    }}
                   />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Search assigned resources and organization resources available to assign.
-                </p>
-              </div>
-              {groupResourcesQ.isLoading || orgResourcesQ.isLoading ? (
-                <LoadingState />
-              ) : groupResourcesQ.error || orgResourcesQ.error ? (
-                <ErrorState
-                  message={errorMessage(groupResourcesQ.error ?? orgResourcesQ.error)}
-                  onRetry={() => {
-                    groupResourcesQ.refetch();
-                    orgResourcesQ.refetch();
-                  }}
-                />
-              ) : (
-                <div className="space-y-6">
-                  <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-muted-foreground">
-                      Assigned resources
-                    </h2>
-                    {filteredAssignedResources.length === 0 ? (
-                      <EmptyState
-                        icon={<Boxes className="h-4 w-4" />}
-                        title="No assigned resources"
-                        description="Assign organization resources to make them available in this group."
-                      />
-                    ) : (
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {filteredAssignedResources.map((r) => (
-                          <ResourceCard
-                            key={r.id}
-                            resource={r}
-                            action={
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={pending[r.id] === "unassign"}
-                                onClick={() => toggleResource(r.id, "unassign")}
-                              >
-                                Unassign
-                              </Button>
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
+                ) : (
+                  <div className="space-y-6">
+                    <section className="space-y-3">
+                      <h2 className="text-sm font-semibold text-muted-foreground">
+                        Assigned resources
+                      </h2>
+                      {filteredAssignedResources.length === 0 ? (
+                        <EmptyState
+                          icon={<Boxes className="h-4 w-4" />}
+                          title="No assigned resources"
+                          description="Assign organization resources to make them available in this group."
+                        />
+                      ) : (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {filteredAssignedResources.map((r) => (
+                            <ResourceCard
+                              key={r.id}
+                              resource={r}
+                              action={
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={pending[r.id] === "unassign"}
+                                  onClick={() => toggleResource(r.id, "unassign")}
+                                >
+                                  Unassign
+                                </Button>
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
 
-                  <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-muted-foreground">
-                      Available to assign
-                    </h2>
-                    {availableResources.length === 0 ? (
-                      <EmptyState
-                        icon={<Boxes className="h-4 w-4" />}
-                        title="No resources available"
-                        description="Connect a plugin in the organization to bring in more resources."
-                      />
-                    ) : (
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {availableResources.map((r) => (
-                          <ResourceCard
-                            key={r.id}
-                            resource={r}
-                            action={
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={pending[r.id] === "assign"}
-                                onClick={() => toggleResource(r.id, "assign")}
-                              >
-                                <Check className="mr-1 h-3 w-3" /> Assign
-                              </Button>
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </div>
-              )}
-            </div>
+                    <section className="space-y-3">
+                      <h2 className="text-sm font-semibold text-muted-foreground">
+                        Available to assign
+                      </h2>
+                      {availableResources.length === 0 ? (
+                        <EmptyState
+                          icon={<Boxes className="h-4 w-4" />}
+                          title="No resources available"
+                          description="Connect a plugin in the organization to bring in more resources."
+                        />
+                      ) : (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {availableResources.map((r) => (
+                            <ResourceCard
+                              key={r.id}
+                              resource={r}
+                              action={
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={pending[r.id] === "assign"}
+                                  onClick={() => toggleResource(r.id, "assign")}
+                                >
+                                  <Check className="mr-1 h-3 w-3" /> Assign
+                                </Button>
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                )}
+              </div>
+            </KnowledgeResources>
           )}
 
           {tab === "reports" && (

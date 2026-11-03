@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { GenerationProgressPanel } from "@/components/app/GenerationProgress";
+import { KnowledgeSourcePicker } from "./KnowledgeSources";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { ReportThread } from "@/components/app/ReportThread";
@@ -92,6 +93,9 @@ export function ReportsPanel({
     setOpenedReportId(target.id);
   }, [initialReportId, reportsQ.data]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [deleteReportId, setDeleteReportId] = useState<string | null>(null);
@@ -218,6 +222,14 @@ export function ReportsPanel({
   };
 
   const generate = async () => {
+    if (knowledgeIds === null) {
+      toast.error("Wait for knowledge sources to load before generating.");
+      return;
+    }
+    if (Boolean(periodFrom) !== Boolean(periodTo) || (periodFrom && periodFrom > periodTo)) {
+      toast.error("Choose a valid report period with both dates.");
+      return;
+    }
     if (picked.length === 0) {
       toast.error("Choose at least one evaluator");
       return;
@@ -225,7 +237,10 @@ export function ReportsPanel({
     setSubmitting(true);
     const startedAt = Date.now();
     try {
-      const response = await api.startEvaluatorReports(groupId, picked);
+      const response = await api.startEvaluatorReports(groupId, picked, {
+        knowledgeSelection: { sourceIds: knowledgeIds },
+        ...(periodFrom && periodTo ? { period: { from: periodFrom, to: periodTo } } : {}),
+      });
       setRuns((current) => [
         ...current.filter((run) => !picked.includes(run.evaluatorId)),
         ...response.jobs.map((job) => ({
@@ -376,7 +391,13 @@ export function ReportsPanel({
               })}
             </div>
             <div className="mt-4 grid gap-2">
-              <Button onClick={() => setPickerOpen(true)} disabled={evaluators.length === 0}>
+              <Button
+                onClick={() => {
+                  setKnowledgeIds(null);
+                  setPickerOpen(true);
+                }}
+                disabled={evaluators.length === 0}
+              >
                 <FileText className="mr-1.5 h-4 w-4" /> Generate
               </Button>
               <Button variant="outline" onClick={() => void sharePage()}>
@@ -527,7 +548,7 @@ export function ReportsPanel({
       )}
 
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Generate reports</DialogTitle>
             <DialogDescription>
@@ -578,8 +599,34 @@ export function ReportsPanel({
               );
             })}
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-muted-foreground">
+              From (optional)
+              <input
+                aria-label="Report period from"
+                type="date"
+                value={periodFrom}
+                onChange={(e) => setPeriodFrom(e.target.value)}
+                className="mt-1 block h-9 w-full rounded-lg border bg-card px-3 text-xs"
+              />
+            </label>
+            <label className="text-xs text-muted-foreground">
+              To (optional)
+              <input
+                aria-label="Report period to"
+                type="date"
+                value={periodTo}
+                onChange={(e) => setPeriodTo(e.target.value)}
+                className="mt-1 block h-9 w-full rounded-lg border bg-card px-3 text-xs"
+              />
+            </label>
+          </div>
+          <KnowledgeSourcePicker key={groupId} groupId={groupId} onChange={setKnowledgeIds} />
           <DialogFooter>
-            <Button onClick={generate} disabled={submitting || picked.length === 0}>
+            <Button
+              onClick={generate}
+              disabled={submitting || picked.length === 0 || knowledgeIds === null}
+            >
               {submitting ? "Starting..." : "Generate"}
             </Button>
           </DialogFooter>

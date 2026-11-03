@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/app/ConfirmDialog";
+import { KnowledgeSourcePicker, ReportKnowledgeSources } from "./KnowledgeSources";
 import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { EvaluationTree, type TreePhase } from "@/components/app/EvaluationTree";
@@ -79,7 +80,7 @@ function viewFor(job?: GenerationJob<EvaluationReport> | null): {
   if (job.status === "succeeded") return { phase: "done", failAt: null, status: "Saved" };
   const stage = job.progress?.stage;
   const done = new Set(job.progress?.completed ?? []);
-  const status = stage ? STAGE_LABELS[stage] ?? stage : "Starting";
+  const status = stage ? (STAGE_LABELS[stage] ?? stage) : "Starting";
   if (stage === "rule_assessment" || stage === "saving" || done.has("rule_assessment")) {
     return { phase: "judgment", failAt: null, status };
   }
@@ -130,6 +131,8 @@ export function RulesTab({
   const [historyReport, setHistoryReport] = useState<EvaluationReport | null>(null);
   const [editor, setEditor] = useState<RulePackage | "new" | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
   const submitted = useRef<string | undefined>(undefined);
 
   const latestQ = useQuery({
@@ -192,11 +195,12 @@ export function RulesTab({
   }
 
   const run = async () => {
-    if (!selected || running) return;
+    if (!selected || running || knowledgeIds === null) return;
     setHistoryReport(null);
     try {
       const response = await api.startEvaluationWorkspace(workspaceId, {
         groupId,
+        knowledgeSelection: { sourceIds: knowledgeIds },
         rules: selected.rules.map((rule) => ({
           name: rule.name,
           description: rule.description?.trim() || undefined,
@@ -205,6 +209,7 @@ export function RulesTab({
       });
       submitted.current = response.jobId;
       setJobId(response.jobId);
+      setSourcesOpen(false);
     } catch (error) {
       toast.error(errorMessage(error));
     }
@@ -214,7 +219,11 @@ export function RulesTab({
     if (running) return;
     try {
       const saved = await api.getEvaluation(workspaceId, evaluationId);
-      setHistoryReport({ ...saved.data.report, evaluationId: saved.id, createdAt: saved.createdAt });
+      setHistoryReport({
+        ...saved.data.report,
+        evaluationId: saved.id,
+        createdAt: saved.createdAt,
+      });
     } catch (error) {
       toast.error(errorMessage(error));
     }
@@ -269,33 +278,33 @@ export function RulesTab({
                       </span>
                     </span>
                     <span className="flex shrink-0">
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          aria-label={`Edit ${item.name}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEditor(item);
-                          }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          aria-label={`Delete ${item.name}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDeleteId(item.id);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </span>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        aria-label={`Edit ${item.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setEditor(item);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        aria-label={`Delete ${item.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDeleteId(item.id);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </span>
                   </div>
                 </div>
               );
@@ -312,7 +321,13 @@ export function RulesTab({
                 <h2 className="text-sm font-semibold">{selected.name}</h2>
                 <p className="text-xs text-muted-foreground">{selected.evaluates}</p>
               </div>
-              <Button onClick={() => void run()} disabled={running}>
+              <Button
+                onClick={() => {
+                  setKnowledgeIds(null);
+                  setSourcesOpen(true);
+                }}
+                disabled={running}
+              >
                 {running ? "Running" : "Run"}
               </Button>
             </div>
@@ -324,7 +339,12 @@ export function RulesTab({
               failAt={view.failAt}
               status={view.status}
             />
-            {report && <AssessmentList report={report} />}
+            {report && (
+              <>
+                <ReportKnowledgeSources snapshot={report.knowledgeSources} />
+                <AssessmentList report={report} />
+              </>
+            )}
           </>
         ) : (
           <EmptyState
@@ -354,6 +374,24 @@ export function RulesTab({
           });
         }}
       />
+      <Dialog open={sourcesOpen} onOpenChange={setSourcesOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Knowledge for this rule evaluation</DialogTitle>
+          </DialogHeader>
+          <KnowledgeSourcePicker
+            key={groupId}
+            workspaceId={workspaceId}
+            groupId={groupId}
+            onChange={setKnowledgeIds}
+          />
+          <DialogFooter>
+            <Button onClick={() => void run()} disabled={knowledgeIds === null || running}>
+              Run evaluation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={deleteId !== null}
         onOpenChange={(open) => {
@@ -477,9 +515,9 @@ function PackageDialog({
 }) {
   const [name, setName] = useState("");
   const [evaluates, setEvaluates] = useState("");
-  const [rules, setRules] = useState<Array<{ name: string; description: string; valuation: number }>>(
-    [{ name: "", description: "", valuation: 5 }],
-  );
+  const [rules, setRules] = useState<
+    Array<{ name: string; description: string; valuation: number }>
+  >([{ name: "", description: "", valuation: 5 }]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -535,7 +573,11 @@ function PackageDialog({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="package-name">Name</Label>
-            <Input id="package-name" value={name} onChange={(event) => setName(event.target.value)} />
+            <Input
+              id="package-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="package-evaluates">What it evaluates</Label>
@@ -556,7 +598,9 @@ function PackageDialog({
                     variant="ghost"
                     className="h-7 w-7"
                     aria-label={`Remove rule ${index + 1}`}
-                    onClick={() => setRules((current) => current.filter((_, item) => item !== index))}
+                    onClick={() =>
+                      setRules((current) => current.filter((_, item) => item !== index))
+                    }
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>

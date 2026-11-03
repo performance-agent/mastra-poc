@@ -1,5 +1,106 @@
 # mastra-poc
 
+## Knowledge base
+
+Resources now separates **Knowledge base** from **Plugin resources** in workspaces
+and projects. Create folders, upload documents, or connect Google Drive from the
+Knowledge base. Workspace sources are inherited by projects; a project can exclude
+an inherited file or folder without deleting the shared source. Owners/admins
+manage their scope; viewers can read. Google Drive connections belong to the
+knowledge base and do not create plugin installations.
+
+Report generation selects all ready, non-excluded documents initially. Uncheck
+files, folders or all sources to change a particular report; an empty selection
+generates using plugins only. Documents can provide context, evidence or both.
+Reports save exact versions and the supplied excerpts, including coverage; later
+edits, synchronization or deletion do not rewrite previous report sources. Large
+documents supply relevance-selected excerpts, not necessarily their complete text.
+The same selection is available in evaluator setup, group reports and rule
+evaluations. Existing reports without knowledge sources remain readable.
+
+### Installation and Google Drive configuration
+
+From `backend`, install dependencies, generate Prisma, apply the additive migration
+and build:
+
+```sh
+npm install
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+```
+
+Migration `20261103000000_knowledge_base` adds folders, document versions,
+exclusions, Drive connections and frozen MCP contexts. Configure the existing
+PostgreSQL connection, Firebase Admin credentials, `FIREBASE_STORAGE_BUCKET`
+(a private bucket accessible to the backend service account), and
+`SECRETS_ENCRYPTION_KEY` (the existing base64 32-byte encryption key). Keep the
+encryption key stable so saved Drive credentials remain readable.
+
+To enable Drive later:
+
+1. In Google Cloud, enable **Google Drive API** and configure the OAuth consent
+   screen. For a development application in Testing, add your account as a test user.
+2. Create an OAuth client of type **Web application**. Register this exact authorized
+   redirect URI: `PUBLIC_API_URL` followed by `/api/knowledge/drive/callback`.
+   For example, `http://localhost:3000/api/knowledge/drive/callback` when
+   `PUBLIC_API_URL=http://localhost:3000` (the variable does not include `/api`).
+3. Set `GOOGLE_DRIVE_CLIENT_ID` and `GOOGLE_DRIVE_CLIENT_SECRET` in `backend/.env`.
+   Set `FRONTEND_URL` to the actual frontend origin and include that origin in
+   `CORS_ORIGIN` if configured. Restart the backend.
+4. Open **Resources → Knowledge base → Connections → Connect Google Drive**.
+   Authorize the account, choose files/folders, their destination and use.
+   Connecting a folder includes its subfolders and new files on subsequent syncs.
+
+OAuth uses `openid`, `email` and `https://www.googleapis.com/auth/drive.readonly`
+with offline access. The backend encrypts refresh tokens; the browser never receives
+them. Production use of this restricted Drive scope may require Google's OAuth
+verification. In Testing, Google normally expires these refresh tokens after seven
+days; use Reconnect when needed. See Google's
+[web-server OAuth instructions](https://developers.google.com/identity/protocols/oauth2/web-server),
+[Drive scope requirements](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
+and [token expiration rules](https://developers.google.com/identity/protocols/oauth2).
+
+Uploads support PDF, DOCX and UTF-8 TXT, Markdown and CSV, up to 20 MB per file.
+Scanned PDFs need extractable text; OCR is not included. Google Docs and Slides
+export as text; Sheets export as PDF. Processing checks the persistent queue every
+five seconds. Drive checks for due connections every 30 seconds and synchronizes
+approximately every five minutes, with manual sync and retries. A connection scan
+is bounded to 5,000 items and 64 folder levels; a report accepts 200 documents.
+Lost access disables affected sources for new reports while preserving saved
+report snapshots. Disconnect before deleting a platform folder containing linked
+Drive sources.
+
+MCP server version 3 exposes `list_knowledge_sources`. Call
+`get_group_report_context` with an optional `knowledgeSelection` and pass its
+`knowledgeContextId` unchanged to `create_group_report`. Contexts expire after one
+hour and bind the user, project, evaluator, period, versions and supplied excerpts.
+Refresh existing clients' tool lists after upgrading.
+
+### Verification
+
+Run `npm run test:knowledge` from `backend` for the focused unit suite. With the
+configured PostgreSQL and private bucket, `npm run test:knowledge:integration`
+performs real upload, extraction, download, permissions, exclusions and immutable
+snapshot checks. Add `-- --report` to also generate a real report with the configured
+model; this makes a provider request. The integration test creates isolated data
+and removes its database records and uploaded objects afterward.
+
+From `frontend`, run `npm run build` and, with Vite running,
+`npm run test:knowledge`. These browser scenarios use simulated API/auth responses
+and cover folders, upload retry, project exclusions, default/partial selections,
+Drive selection, saved references, viewer permissions and mobile layouts. Their
+screenshots are labeled as simulated and stored in
+`artifacts/knowledge-base/implementation/ui/`.
+
+Verified locally on 2026-11-03: migration applied; real PostgreSQL/private Firebase
+Storage round trip and PDF/DOCX extraction passed; a knowledge-only report was
+generated and persisted with the configured Gemini model and exact source version.
+The real Drive OAuth round trip remains pending the credentials to be configured
+by the administrator. Drive API behavior is covered with simulated provider
+responses. The full backend suite retains pre-existing ESM-loading and obsolete
+mock/expectation failures; the focused knowledge/report/MCP suite is separate.
+
 ## Evaluation progress
 
 Apply `20261031000000_generation_progress` through the normal Prisma migration

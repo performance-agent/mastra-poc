@@ -12,7 +12,13 @@ import {
 } from 'class-validator';
 import { PerformanceReportType } from '../../../generated/prisma/enums';
 
+import { KnowledgeSelectionDto } from '../../knowledge/knowledge-selection.dto';
+
 export class CreateReportDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => KnowledgeSelectionDto)
+  knowledgeSelection?: KnowledgeSelectionDto;
   @IsOptional()
   @ValidateNested()
   @Type(() => EvaluationPeriodDto)

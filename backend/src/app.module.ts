@@ -1,4 +1,5 @@
 import { GenerationModule } from './generation/generation.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
 import { ExperienceModule } from './experience/experience.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
@@ -28,6 +29,7 @@ import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
 @Module({
   imports: [
+    KnowledgeModule,
     ExperienceModule,
     GenerationModule,
     ConfigModule.forRoot(),

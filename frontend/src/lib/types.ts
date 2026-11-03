@@ -203,6 +203,7 @@ export interface DataType {
 export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface EvaluationRequest {
+  knowledgeSelection?: { sourceIds: string[]; folderIds?: string[] };
   gradingOverrides?: GradingSettings;
   rules: Array<{ name: string; description?: string; valuation: number }>;
   period?: { from: string; to: string };
@@ -244,6 +245,7 @@ export interface RulePackageInput {
 }
 
 export interface EvaluationReport {
+  knowledgeSources?: import("./knowledge").KnowledgeReportSnapshot;
   individualInsightsJobId?: string;
   individualInsightsJobStatus?: "queued" | "running" | "succeeded" | "failed";
   individualInsights?: {
@@ -501,6 +503,7 @@ export interface GroupReportDimensionAssessment {
 }
 
 export interface GroupReport {
+  knowledgeSources?: import("./knowledge").KnowledgeReportSnapshot;
   period?: { from: string; to: string };
   summary: string;
   overallAssessment: GroupReportAssessment & { score: number | null };

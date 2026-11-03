@@ -3,6 +3,7 @@ import { GenerationService } from '../generation/generation.service';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService, validateReportPeriod } from './reports.service';
+import type { KnowledgeService } from '../knowledge/knowledge.service';
 
 const groupGenerate = jest.fn();
 jest.mock('./report-agent-tools', () => ({
@@ -118,6 +119,7 @@ describe('ReportsService', () => {
     generationJob: { findMany: jest.fn() },
   };
   const runtime = { provide: jest.fn() };
+  const knowledge = { snapshot: jest.fn(), snapshotText: jest.fn() };
   let service: ReportsService;
 
   const baseGroup = {
@@ -137,9 +139,17 @@ describe('ReportsService', () => {
   beforeEach(() => {
     process.env.GROUP_REPORT_MODEL = 'custom-provider/report-model';
     jest.clearAllMocks();
+    knowledge.snapshot.mockResolvedValue({
+      capturedAt: '2026-11-03T12:00:00Z',
+      sources: [],
+      unavailable: 0,
+    });
+    knowledge.snapshotText.mockResolvedValue([]);
     service = new ReportsService(
       prisma as unknown as PrismaService,
       runtime as unknown as PluginRuntimeService,
+      {} as GenerationService,
+      knowledge as unknown as KnowledgeService,
     );
     prisma.group.findUnique.mockResolvedValue(baseGroup);
     prisma.group.findUniqueOrThrow.mockResolvedValue(baseGroup);
@@ -425,6 +435,7 @@ describe('ReportsService', () => {
       prisma as unknown as PrismaService,
       runtime as unknown as PluginRuntimeService,
       { enqueue } as unknown as GenerationService,
+      knowledge as unknown as KnowledgeService,
     );
     prisma.performanceReport.findUnique.mockResolvedValue({
       id: 'report-1',

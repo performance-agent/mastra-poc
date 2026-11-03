@@ -99,7 +99,12 @@ describe('evaluator MCP tools', () => {
     expect(reports.createGroupReportFromContent).toHaveBeenCalledWith(
       'g',
       {},
-      { evaluatorId: 'e', period },
+      {
+        evaluatorId: 'e',
+        period,
+        knowledgeContextId: undefined,
+        userId: 'user',
+      },
     );
   });
   it('rejects writes without write scope or group management access', async () => {

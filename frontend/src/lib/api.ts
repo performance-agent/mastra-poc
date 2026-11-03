@@ -34,7 +34,7 @@ import type {
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   statusCode: number;
@@ -46,13 +46,13 @@ export class ApiError extends Error {
   }
 }
 
-async function getAccessToken(): Promise<string | undefined> {
+export async function getAccessToken(): Promise<string | undefined> {
   const auth = getFirebaseAuth();
   await auth.authStateReady();
   return auth.currentUser?.getIdToken();
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     const token = await getAccessToken();
@@ -420,6 +420,7 @@ export const api = {
     options?: {
       contextByEvaluator?: Record<string, string>;
       period?: { from: string; to: string };
+      knowledgeSelection?: { sourceIds: string[]; folderIds?: string[] };
     },
   ) =>
     request<{ jobs: Array<{ jobId: string; evaluatorId: string; status: string }> }>(
@@ -433,6 +434,9 @@ export const api = {
             ? { contextByEvaluator: options.contextByEvaluator }
             : {}),
           ...(options?.period ? { period: options.period } : {}),
+          ...(options?.knowledgeSelection
+            ? { knowledgeSelection: options.knowledgeSelection }
+            : {}),
         }),
       },
     ),

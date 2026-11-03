@@ -1,4 +1,6 @@
 model Workspace {
+  knowledgeNodes KnowledgeNode[]
+  knowledgeConnections KnowledgeConnection[]
   generationJobs GenerationJob[]
   taskAnalyses TaskAnalysis[]
   gradingSettings Json?

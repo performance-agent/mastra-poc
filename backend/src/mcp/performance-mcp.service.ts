@@ -19,6 +19,12 @@ const writeSecurity = [
   { type: 'oauth2', scopes: ['reports:read', 'reports:write'] },
 ];
 const periodSchema = z.object({ from: z.string(), to: z.string() }).optional();
+const knowledgeSelectionSchema = z
+  .object({
+    sourceIds: z.array(z.string()).max(200).optional(),
+    folderIds: z.array(z.string()).max(200).optional(),
+  })
+  .optional();
 
 const groupSchema = z.object({
   id: z.string(),
@@ -138,6 +144,34 @@ export class PerformanceMcpService {
       },
     });
 
+    const listKnowledgeSources = createTool({
+      id: 'list_knowledge_sources',
+      description:
+        'Lista documentos y carpetas disponibles para el reporte. Por defecto se seleccionan todos los documentos listos; el usuario puede deseleccionar fuentes.',
+      inputSchema: z.object({ groupId: z.string() }),
+      outputSchema: z.object({
+        canManage: z.boolean(),
+        nodes: z.array(z.unknown()),
+      }),
+      mcp: {
+        annotations: {
+          title: 'List knowledge sources',
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: readSecurity },
+      },
+      execute: async ({ groupId }, context) => {
+        const identity = mcpIdentity(context, 'reports:read');
+        await this.requireGroupRole(groupId, identity.userId, [
+          MembershipRole.OWNER,
+          MembershipRole.ADMIN,
+          MembershipRole.VIEWER,
+        ]);
+        return this.reports.listKnowledgeSources(groupId, identity.userId);
+      },
+    });
     const getGroupReportContext = createTool({
       id: 'get_group_report_context',
       description:
@@ -149,10 +183,12 @@ export class PerformanceMcpService {
           .min(1)
           .describe('ID elegido desde list_evaluators.'),
         period: periodSchema,
+        knowledgeSelection: knowledgeSelectionSchema,
       }),
       outputSchema: z.object({
         groupId: z.string(),
         evaluatorId: z.string(),
+        knowledgeContextId: z.string(),
         evaluator: z.unknown(),
         period: z.object({ from: z.string(), to: z.string() }).nullable(),
         instructions: z.string(),
@@ -170,7 +206,10 @@ export class PerformanceMcpService {
         },
         _meta: { securitySchemes: readSecurity },
       },
-      execute: async ({ groupId, evaluatorId, period }, context) => {
+      execute: async (
+        { groupId, evaluatorId, period, knowledgeSelection },
+        context,
+      ) => {
         const identity = mcpIdentity(context, 'reports:read');
         await this.requireGroupRole(groupId, identity.userId, [
           MembershipRole.OWNER,
@@ -181,10 +220,13 @@ export class PerformanceMcpService {
           groupId,
           evaluatorId,
           period,
+          knowledgeSelection,
+          identity.userId,
         );
         return {
           groupId,
           evaluatorId,
+          knowledgeContextId: external.knowledgeContextId ?? '',
           evaluator: external.source.snapshot,
           period: external.period ?? null,
           instructions: GROUP_REPORT_INSTRUCTIONS,
@@ -192,7 +234,7 @@ export class PerformanceMcpService {
           schema: z.toJSONSchema(groupReportContentSchema),
           input: external.prepared.reportInput,
           nextStep:
-            'Genera únicamente el objeto report que cumple el schema y envíalo con el mismo groupId, evaluatorId y period a create_group_report. No cambies de evaluador.',
+            'Genera únicamente el objeto report que cumple el schema y envíalo con el mismo groupId, evaluatorId, period y knowledgeContextId a create_group_report. No cambies de evaluador ni de fuentes.',
         };
       },
     });
@@ -208,6 +250,12 @@ export class PerformanceMcpService {
           .min(1)
           .describe('Mismo evaluador usado para obtener el contexto.'),
         period: periodSchema,
+        knowledgeContextId: z
+          .string()
+          .min(1)
+          .describe(
+            'Contexto devuelto por get_group_report_context. Conserva las versiones exactas de las fuentes.',
+          ),
         report: groupReportContentSchema,
       }),
       outputSchema: z.object({
@@ -227,7 +275,10 @@ export class PerformanceMcpService {
         },
         _meta: { securitySchemes: writeSecurity },
       },
-      execute: async ({ groupId, evaluatorId, period, report }, context) => {
+      execute: async (
+        { groupId, evaluatorId, period, knowledgeContextId, report },
+        context,
+      ) => {
         const identity = mcpIdentity(context, 'reports:write');
         await this.requireGroupRole(groupId, identity.userId, [
           MembershipRole.OWNER,
@@ -236,7 +287,7 @@ export class PerformanceMcpService {
         const created = await this.reports.createGroupReportFromContent(
           groupId,
           report,
-          { evaluatorId, period },
+          { evaluatorId, period, knowledgeContextId, userId: identity.userId },
         );
         return {
           id: created.id,
@@ -251,12 +302,13 @@ export class PerformanceMcpService {
     this.server = new MCPServer({
       id: 'performance-platform',
       name: 'Performance Platform',
-      version: '2.0.0',
+      version: '3.0.0',
       description:
         'Genera y persiste evaluaciones Group Report con los datos conectados a Performance Platform.',
       instructions:
-        'Primero llama list_groups y list_evaluators para el grupo elegido. Pide al usuario que elija evaluador. Usa get_group_report_context con groupId, evaluatorId y período opcional. Aplica todas sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo grupo, evaluador y período. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
+        'Primero llama list_groups y list_evaluators para el grupo elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo grupo, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
       tools: {
+        list_knowledge_sources: listKnowledgeSources,
         list_groups: listGroups,
         list_evaluators: listEvaluators,
         get_group_report_context: getGroupReportContext,

@@ -81,7 +81,8 @@ async function setup(t, initialJob) {
     const url = new URL(request.url());
     let body = [];
     let status = 200;
-    if (url.pathname.endsWith("/rule-packages"))
+    if (url.pathname === '/api/knowledge') body = {canManage:true,nodes:[]};
+    else if (url.pathname.endsWith("/rule-packages"))
       body = [
         {
           id: "package-test",

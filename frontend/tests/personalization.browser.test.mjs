@@ -92,7 +92,9 @@ async function setup(t, options = {}) {
       patch = req.method() === "PATCH";
     let data = {},
       status = 200;
-    if (path.endsWith("/team-space")) {
+    if(path==='/knowledge') data={canManage:true,nodes:[]};
+    else if(path==='/knowledge/drive/connections') data={configured:false,connections:[]};
+    else if (path.endsWith("/team-space")) {
       if (state.createFails) {
         status = 503;
         data = { message: "Creation temporarily unavailable" };
