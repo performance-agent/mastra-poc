@@ -70,7 +70,7 @@ export function SetupTeam({
               onBlur={() => void flush().catch(() => {})}
             />
             <span className="text-xs font-normal text-muted-foreground">
-              The group you want to evaluate.
+              The project you want to evaluate.
             </span>
           </label>
         </div>

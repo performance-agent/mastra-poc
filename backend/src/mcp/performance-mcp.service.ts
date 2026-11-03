@@ -47,12 +47,12 @@ export class PerformanceMcpService {
     const listGroups = createTool({
       id: 'list_groups',
       description:
-        'Lista los grupos de Performance Platform que el usuario autenticado puede consultar.',
+        'Lista los proyectos de Performance Platform que el usuario autenticado puede consultar.',
       inputSchema: z.object({}),
       outputSchema: z.object({ groups: z.array(groupSchema) }),
       mcp: {
         annotations: {
-          title: 'List accessible groups',
+          title: 'List accessible projects',
           readOnlyHint: true,
           destructiveHint: false,
           openWorldHint: false,
@@ -100,7 +100,7 @@ export class PerformanceMcpService {
     const listEvaluators = createTool({
       id: 'list_evaluators',
       description:
-        'Lista los evaluadores disponibles para un grupo accesible. Pide al usuario que elija uno antes de analizar.',
+        'Lista los evaluadores disponibles para un proyecto accesible. Pide al usuario que elija uno antes de analizar.',
       inputSchema: z.object({ groupId: z.string().min(1) }),
       outputSchema: z.object({
         evaluators: z.array(
@@ -116,7 +116,7 @@ export class PerformanceMcpService {
       }),
       mcp: {
         annotations: {
-          title: 'List group evaluators',
+          title: 'List project evaluators',
           readOnlyHint: true,
           destructiveHint: false,
           openWorldHint: false,
@@ -175,7 +175,7 @@ export class PerformanceMcpService {
     const getGroupReportContext = createTool({
       id: 'get_group_report_context',
       description:
-        'Obtiene las instrucciones, el schema y todo el historial disponible de los recursos asignados a un grupo accesible.',
+        'Obtiene las instrucciones, el schema y todo el historial disponible de los recursos asignados a un proyecto accesible.',
       inputSchema: z.object({
         groupId: z.string().describe('ID obtenido desde list_groups.'),
         evaluatorId: z
@@ -242,7 +242,7 @@ export class PerformanceMcpService {
     const createGroupReport = createTool({
       id: 'create_group_report',
       description:
-        'Valida y guarda un Group Report generado con get_group_report_context. Sólo OWNER y ADMIN pueden usarla.',
+        'Valida y guarda un Project Report generado con get_group_report_context. Sólo OWNER y ADMIN pueden usarla.',
       inputSchema: z.object({
         groupId: z.string().describe('ID obtenido desde list_groups.'),
         evaluatorId: z
@@ -304,9 +304,9 @@ export class PerformanceMcpService {
       name: 'Performance Platform',
       version: '3.0.0',
       description:
-        'Genera y persiste evaluaciones Group Report con los datos conectados a Performance Platform.',
+        'Genera y persiste evaluaciones Project Report con los datos conectados a Performance Platform.',
       instructions:
-        'Primero llama list_groups y list_evaluators para el grupo elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo grupo, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
+        'Primero llama list_groups y list_evaluators para el proyecto elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo proyecto, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
       tools: {
         list_knowledge_sources: listKnowledgeSources,
         list_groups: listGroups,
@@ -329,7 +329,7 @@ export class PerformanceMcpService {
       roles,
     });
     if (!allowed) {
-      throw new ForbiddenException('You cannot access this group');
+      throw new ForbiddenException('You cannot access this project');
     }
   }
 }

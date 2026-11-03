@@ -94,7 +94,7 @@ function OrganizationsIndex() {
           <EmptyState
             icon={<Building2 className="h-4 w-4" />}
             title="Create your first organization"
-            description="Organizations group workspaces, members, resources, and plugins."
+            description="Organizations organize workspaces, members, resources, and plugins."
             actionLabel="New organization"
             onAction={() => setCreateOpen(true)}
           />
@@ -120,6 +120,7 @@ function OrganizationsIndex() {
       </div>
 
       <EntityFormDialog
+        scope="organization"
         open={createOpen}
         onOpenChange={setCreateOpen}
         title="New organization"
@@ -140,6 +141,7 @@ function OrganizationsIndex() {
         }}
       />
       <EntityFormDialog
+        scope="organization"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         title="Edit organization"

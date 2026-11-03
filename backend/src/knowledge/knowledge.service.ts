@@ -75,6 +75,15 @@ export class KnowledgeService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
+  canManage(userId: string, scope: KnowledgeScope): Promise<boolean> {
+    return this.access.canAccessResource({
+      userId,
+      resource: scope.groupId ? 'group' : 'workspace',
+      resourceId: scope.groupId ?? scope.workspaceId,
+      roles: ['OWNER', 'ADMIN'],
+    });
+  }
+
   async authorize(
     userId: string,
     raw: unknown,
@@ -95,10 +104,7 @@ export class KnowledgeService implements OnModuleInit, OnModuleDestroy {
       resourceId: scope.groupId ?? scope.workspaceId,
     };
     const allowed = edit
-      ? await this.access.canAccessResource({
-          ...request,
-          roles: ['OWNER', 'ADMIN'],
-        })
+      ? await this.canManage(userId, scope)
       : await this.access.canViewResourceContext(request);
     if (!allowed)
       throw new ForbiddenException('Insufficient knowledge base permissions');
@@ -167,12 +173,10 @@ export class KnowledgeService implements OnModuleInit, OnModuleDestroy {
       nodes,
       exclusions.map((e) => e.nodeId),
     );
-    const canManage = await this.access.canAccessResource({
-      userId,
-      resource: scope.groupId ? 'group' : 'workspace',
-      resourceId: scope.groupId ?? scope.workspaceId,
-      roles: ['OWNER', 'ADMIN'],
-    });
+    const canManage = await this.canManage(userId, scope);
+    const canManageWorkspace = scope.groupId
+      ? await this.canManage(userId, { workspaceId: scope.workspaceId })
+      : canManage;
     return {
       canManage,
       nodes: nodes.map(
@@ -187,6 +191,9 @@ export class KnowledgeService implements OnModuleInit, OnModuleDestroy {
           return {
             ...node,
             inherited: Boolean(scope.groupId && !node.groupId),
+            canRead: true,
+            canUseInReports: true,
+            canManage: node.groupId ? canManage : canManageWorkspace,
             excluded: excluded.has(node.id),
             directlyExcluded: exclusions.some((e) => e.nodeId === node.id),
             version: versions[0] ?? null,
@@ -281,13 +288,14 @@ export class KnowledgeService implements OnModuleInit, OnModuleDestroy {
     } = node;
     void _path;
     void _lease;
-    const canManage = await this.access.canAccessResource({
-      userId,
-      resource: node.groupId ? 'group' : 'workspace',
-      resourceId: node.groupId ?? node.workspaceId,
-      roles: ['OWNER', 'ADMIN'],
-    });
-    return { ...safeNode, version, canManage };
+    const canManage = await this.canManage(userId, this.nodeScope(node));
+    return {
+      ...safeNode,
+      version,
+      canRead: true,
+      canUseInReports: true,
+      canManage,
+    };
   }
   async download(userId: string, id: string, versionId?: string) {
     const node = await this.requireNode(userId, id);

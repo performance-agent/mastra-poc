@@ -143,7 +143,7 @@ export function WorkspacePeople({
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">People</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            A quick view of each person, in the context of their group.
+            A quick view of each person, in the context of their project.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -168,7 +168,7 @@ export function WorkspacePeople({
                   <SelectItem key={e.id} value={e.id}>
                     {e.name}
                     {e.scope === "GROUP"
-                      ? ` · ${query.data.groups.find((g) => g.id === e.groupId)?.name ?? "Group"}`
+                      ? ` · ${query.data.groups.find((g) => g.id === e.groupId)?.name ?? "Project"}`
                       : ""}
                   </SelectItem>
                 ))}
@@ -189,7 +189,11 @@ export function WorkspacePeople({
       </div>
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="sm:w-96">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search people or groups" />
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search people or projects"
+          />
         </div>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger aria-label="Filter people by status" className="sm:w-52">
@@ -209,14 +213,14 @@ export function WorkspacePeople({
         <EmptyState
           icon={<Users className="size-5" />}
           title="No evaluators yet"
-          description="Create an evaluator in a group to start building a picture of your team's work."
+          description="Create an evaluator in a project to start building a picture of your team's work."
         />
       )}
       {query.data?.evaluators.length && !groups.length ? (
         <EmptyState
           icon={<Users className="size-5" />}
           title="No people found"
-          description="Try a different search or status. People appear after a group report has been saved."
+          description="Try a different search or status. People appear after a project report has been saved."
         />
       ) : null}
       {groups.map((group) => (
@@ -290,7 +294,7 @@ export function WorkspacePeople({
           ) : (
             <p className="border-t px-5 py-6 text-sm text-muted-foreground">
               {!group.available
-                ? "This evaluator belongs to another group."
+                ? "This evaluator belongs to another project."
                 : !group.report
                   ? "No report from this evaluator yet."
                   : "No individual summaries are available in this saved report."}
@@ -299,7 +303,7 @@ export function WorkspacePeople({
         </section>
       ))}
       <p className="text-xs text-muted-foreground">
-        Metrics describe saved activity; they do not determine status. Each group retains its own
+        Metrics describe saved activity; they do not determine status. Each project retains its own
         report period.
       </p>
       <Sheet

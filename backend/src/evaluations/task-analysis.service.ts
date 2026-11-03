@@ -30,7 +30,7 @@ export class TaskAnalysisService {
         where: { id: groupId, workspaceId },
       }))
     )
-      throw new NotFoundException('Group not found');
+      throw new NotFoundException('Project not found');
     const resources = await this.prisma.pluginInstallationResource.findMany({
       where: {
         active: true,

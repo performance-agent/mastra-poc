@@ -383,7 +383,7 @@ export class EvaluationsService {
       select: { id: true },
     });
     if (!group)
-      throw new NotFoundException('Group not found in this workspace');
+      throw new NotFoundException('Project not found in this workspace');
   }
 }
 

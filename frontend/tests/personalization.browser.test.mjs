@@ -92,8 +92,8 @@ async function setup(t, options = {}) {
       patch = req.method() === "PATCH";
     let data = {},
       status = 200;
-    if(path==='/knowledge') data={canManage:true,nodes:[]};
-    else if(path==='/knowledge/drive/connections') data={configured:false,connections:[]};
+    if (path === "/knowledge") data = { canManage: true, nodes: [] };
+    else if (path === "/knowledge/drive/connections") data = { configured: false, connections: [] };
     else if (path.endsWith("/team-space")) {
       if (state.createFails) {
         status = 503;
@@ -625,7 +625,7 @@ test(
     await page.goto(base + "/organizations/org-a?tab=workspaces");
     await page.getByRole("button", { name: "New workspace", exact: true }).click();
     await page.getByLabel("New workspace name").fill("Customer experience");
-    await page.getByLabel("First group name").fill("Design");
+    await page.getByLabel("First project name").fill("Design");
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.getByRole("alertdialog").waitFor();
     await page.getByRole("button", { name: "Keep editing" }).click();
@@ -633,7 +633,7 @@ test(
     await page.getByRole("button", { name: "Create", exact: true }).click();
     await page.getByText("Creation temporarily unavailable").waitFor();
     assert.equal(state.spaces.length, 0);
-    assert.equal(await page.getByLabel("First group name").inputValue(), "Design");
+    assert.equal(await page.getByLabel("First project name").inputValue(), "Design");
     state.createFails = false;
     await page.getByRole("button", { name: "Create", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
@@ -1247,12 +1247,12 @@ test(
     );
     await page.getByRole("button", { name: "View Ana Torres in Platform team" }).waitFor();
     await choose(page, "Filter people by status", "All statuses");
-    await page.getByPlaceholder("Search people or groups").fill("Lucía");
+    await page.getByPlaceholder("Search people or projects").fill("Lucía");
     assert.equal(
       await page.getByRole("button", { name: "View Ana Torres in Platform team" }).count(),
       0,
     );
-    await page.getByPlaceholder("Search people or groups").fill("");
+    await page.getByPlaceholder("Search people or projects").fill("");
     await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).click();
     await page.getByRole("heading", { name: "At a glance" }).waitFor();
     await page.getByRole("link", { name: "Review #142" }).waitFor();
@@ -1267,7 +1267,7 @@ test(
     await screenshot(page, "03-people-mobile", peopleMcpEvidence);
     await choose(page, "Evaluator", "Careful · Platform team");
     await page.getByText("No report from this evaluator yet.", { exact: true }).waitFor();
-    await page.getByText("This evaluator belongs to another group.", { exact: true }).waitFor();
+    await page.getByText("This evaluator belongs to another project.", { exact: true }).waitFor();
     await choose(page, "Evaluator", "Balanced");
     await page.setViewportSize({ width: 1440, height: 1050 });
     await page.getByRole("link", { name: "View report", exact: true }).click();

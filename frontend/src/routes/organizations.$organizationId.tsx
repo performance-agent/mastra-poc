@@ -194,6 +194,7 @@ function OrganizationPage() {
       )}
 
       <EntityFormDialog
+        scope="organization"
         open={editOpen}
         onOpenChange={setEditOpen}
         title="Edit organization"
@@ -271,7 +272,7 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
         <EmptyState
           icon={<FolderTree className="h-4 w-4" />}
           title="No workspaces yet"
-          description="Create a workspace to organize groups, members, and resources."
+          description="Create a workspace to organize projects, members, and resources."
           actionLabel="New workspace"
           onAction={() => setCreateOpen(true)}
         />
@@ -298,6 +299,7 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
         organizationId={organizationId}
       />
       <EntityFormDialog
+        scope="workspace"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         title="Edit workspace"
@@ -490,6 +492,7 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
         </div>
       )}
       <EntityFormDialog
+        scope="organization"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         title="Edit resource"
@@ -1126,7 +1129,7 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
                 </Card>
                 <p className="flex items-start gap-2 text-xs text-muted-foreground">
                   <Info className="size-4 shrink-0" />
-                  Uses the same group permissions as the platform.
+                  Uses the same project permissions as the platform.
                 </p>
               </section>
             ))}

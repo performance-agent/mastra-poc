@@ -147,6 +147,37 @@ describe('knowledge authorization and snapshots', () => {
       groupId: null,
     });
   });
+  it('returns shared read/use capabilities but computes management in each original scope', async () => {
+    access.canAccessResource.mockImplementation(({ resource }) =>
+      Promise.resolve(resource === 'group'),
+    );
+    const result = await service.list('project-admin', {
+      workspaceId: 'w',
+      groupId: 'g',
+    });
+    expect(result.canManage).toBe(true);
+    expect(result.nodes.find((n) => n.id === 'brief')).toMatchObject({
+      canRead: true,
+      canUseInReports: true,
+      canManage: false,
+      inherited: true,
+    });
+    expect(result.nodes.find((n) => n.id === 'private')).toMatchObject({
+      canRead: true,
+      canUseInReports: true,
+      canManage: true,
+      inherited: false,
+    });
+    access.canAccessResource.mockResolvedValue(false);
+    const viewer = await service.list('viewer', { workspaceId: 'w' });
+    expect(
+      viewer.nodes.every((n) => n.canRead && n.canUseInReports && !n.canManage),
+    ).toBe(true);
+    access.canViewResourceContext.mockResolvedValue(false);
+    await expect(
+      service.list('outsider', { workspaceId: 'w' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
   it('loads the captured immutable version rather than the latest source', async () => {
     const snapshot = await service.snapshot('g', { sourceIds: ['brief'] });
     db.knowledgeVersion.findMany.mockResolvedValue([

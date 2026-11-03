@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -48,18 +49,6 @@ const selectionSchema = z.object({
 });
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
-const safeConnection = ({
-  credentials: _secret,
-  leaseUntil: _lease,
-  ownerId: _owner,
-  ...connection
-}: KnowledgeConnection) => {
-  void _secret;
-  void _lease;
-  void _owner;
-  return connection;
-};
-
 @Injectable()
 export class DriveService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DriveService.name);
@@ -100,6 +89,10 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
     });
     if (!connection) throw new NotFoundException('Drive connection not found');
     await this.knowledge.authorize(userId, this.scope(connection), edit);
+    if (edit && connection.ownerId !== userId)
+      throw new ForbiddenException(
+        'Only the person who connected this Google account can manage it',
+      );
     return connection;
   }
   async list(userId: string, raw: unknown) {
@@ -114,13 +107,56 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
       },
       orderBy: { createdAt: 'asc' },
     });
+    const owners = await this.db.user.findMany({
+      where: { id: { in: [...new Set(connections.map((c) => c.ownerId))] } },
+      select: { id: true, name: true },
+    });
+    const ownerNames = new Map(owners.map((owner) => [owner.id, owner.name]));
+    const scopePermissions = new Map<string, boolean>();
+    for (const connection of connections) {
+      const scopeKey = connection.groupId ?? '';
+      if (connection.ownerId === userId && !scopePermissions.has(scopeKey))
+        scopePermissions.set(
+          scopeKey,
+          await this.knowledge.canManage(userId, this.scope(connection)),
+        );
+    }
     return {
       configured: Boolean(
         process.env.GOOGLE_DRIVE_CLIENT_ID &&
         process.env.GOOGLE_DRIVE_CLIENT_SECRET &&
         process.env.PUBLIC_API_URL,
       ),
-      connections: connections.map(safeConnection),
+      connections: connections.map((connection) => {
+        const isOwner = connection.ownerId === userId;
+        return {
+          id: connection.id,
+          workspaceId: connection.workspaceId,
+          groupId: connection.groupId,
+          ownerName: ownerNames.get(connection.ownerId) ?? 'Former member',
+          isOwner,
+          canManage:
+            isOwner && Boolean(scopePermissions.get(connection.groupId ?? '')),
+          status: connection.status,
+          lastSyncedAt: connection.lastSyncedAt,
+          selectedItemCount: connection.rootIds.length,
+          error: isOwner
+            ? connection.error
+            : connection.status === 'CONNECTED'
+              ? null
+              : 'Synchronization needs attention. Ask the connection owner.',
+          ...(isOwner
+            ? {
+                email: connection.email,
+                accountId: connection.accountId,
+                rootIds: connection.rootIds,
+                destinationId: connection.destinationId,
+                usage: connection.usage,
+                nextSyncAt: connection.nextSyncAt,
+              }
+            : {}),
+        };
+      }),
     };
   }
   async authorize(userId: string, body: unknown) {
@@ -215,6 +251,19 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
         },
         true,
       );
+      // Re-check ownership before exchanging codes or accessing Google. A state
+      // issued before an ownership/permission change cannot reconnect an account.
+      const existing = state.connectionId
+        ? await this.connection(state.userId, state.connectionId, true)
+        : undefined;
+      if (
+        existing &&
+        (existing.workspaceId !== state.workspaceId ||
+          existing.groupId !== (state.groupId ?? null))
+      )
+        throw new BadRequestException(
+          'Reconnect from the original knowledge base',
+        );
       const client = driveOAuthClient();
       const { verifier } = decryptConfiguration({
         verifier: state.verifier,
@@ -238,24 +287,31 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
       const account = ticket.getPayload();
       if (!account?.sub || !account.email || !account.email_verified)
         throw new BadRequestException('A verified Google account is required');
+      await this.knowledge.authorize(
+        state.userId,
+        {
+          workspaceId: state.workspaceId,
+          ...(state.groupId ? { groupId: state.groupId } : {}),
+        },
+        true,
+      );
       const credentials = encryptConfiguration(tokens, [
         'access_token',
         'refresh_token',
         'id_token',
       ]) as Prisma.InputJsonValue;
       let saved: KnowledgeConnection;
-      if (state.connectionId) {
-        const existing = await this.connection(
-          state.userId,
-          state.connectionId,
-          true,
-        );
+      if (existing) {
         if (existing.accountId !== account.sub)
           throw new BadRequestException(
             'Reconnect with the same Google account',
           );
-        saved = await this.db.knowledgeConnection.update({
-          where: { id: existing.id },
+        const updated = await this.db.knowledgeConnection.updateMany({
+          where: {
+            id: existing.id,
+            ownerId: state.userId,
+            status: { not: 'DISCONNECTED' },
+          },
           data: {
             credentials,
             status: 'CONNECTED',
@@ -263,6 +319,11 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
             nextSyncAt: new Date(),
           },
         });
+        if (!updated.count)
+          throw new BadRequestException(
+            'The Drive connection was removed. Connect again from Knowledge base.',
+          );
+        saved = existing;
       } else
         saved = await this.db.knowledgeConnection.create({
           data: {
@@ -477,6 +538,11 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
     });
     if (!claimed.count) return;
     try {
+      await this.knowledge.authorize(
+        connection.ownerId,
+        this.scope(connection),
+        true,
+      );
       const api = await this.api(connection);
       const seen = new Set<string>();
       const failures: string[] = [];
@@ -554,9 +620,12 @@ export class DriveService implements OnModuleInit, OnModuleDestroy {
               ? 'RECONNECT'
               : 'ERROR',
           error:
-            error instanceof DriveApiError
-              ? error.message
-              : 'Synchronization was interrupted. Existing versions are preserved; the next synchronization will retry.',
+            error instanceof ForbiddenException ||
+            error instanceof NotFoundException
+              ? 'Synchronization paused: the connection owner no longer has permission to contribute sources.'
+              : error instanceof DriveApiError
+                ? error.message
+                : 'Synchronization was interrupted. Existing versions are preserved; the next synchronization will retry.',
           nextSyncAt: new Date(Date.now() + 5 * 60_000),
           leaseUntil: null,
         },

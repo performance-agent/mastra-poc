@@ -399,7 +399,7 @@ export class ReportsService {
         include: { pluginInstallation: true },
       }),
     ]);
-    if (!group) throw new NotFoundException('Group not found');
+    if (!group) throw new NotFoundException('Project not found');
 
     const knowledgeSnapshot =
       capturedKnowledge ?? (await this.knowledge.snapshot(groupId));

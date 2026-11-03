@@ -76,12 +76,18 @@ async function setup(t, initialJob) {
   };
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.route(/\/src\/lib\/auth\.tsx(?:\?|$)/, (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      body: 'export function useAuth(){return {firebaseUser:{uid:"progress-test-user"},isLoading:false};}',
+    }),
+  );
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     let body = [];
     let status = 200;
-    if (url.pathname === '/api/knowledge') body = {canManage:true,nodes:[]};
+    if (url.pathname === "/api/knowledge") body = { canManage: true, nodes: [] };
     else if (url.pathname.endsWith("/rule-packages"))
       body = [
         {

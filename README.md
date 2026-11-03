@@ -9,13 +9,40 @@ an inherited file or folder without deleting the shared source. Owners/admins
 manage their scope; viewers can read. Google Drive connections belong to the
 knowledge base and do not create plugin installations.
 
+The UI calls groups **Projects** throughout; existing `/groups` routes, `groupId`
+fields, database models and MCP tool names remain compatible. Workspace tabs are
+Overview, Projects, Members, Resources, People. Project tabs are Overview, Members,
+Resources, Evaluators, Reports, Rules. Entity image permissions use an explicit
+scope, independent of the wording of a form title.
+
+Google Drive connections are personal administration credentials. Only the user
+who authorized a connection, while retaining OWNER/ADMIN access in its original
+scope, can browse Drive, select sources, change destinations, request sync,
+reconnect or disconnect. Other administrators cannot use that connection. They
+receive only its platform owner name, status, selected-item count and last sync;
+Google account identifiers, email and selection configuration are returned only
+to the connection owner. Credentials are never returned. Deploy frontend and
+backend together because non-owner connection responses omit private fields.
+
+Published documents are shared with readers of the workspace/project: they can
+preview and download imported copies, and select them for reports under existing
+report permissions. Owners/admins manage uploaded files/platform folders and
+document usage; only the Drive connection owner changes its selected sources.
+Selecting a Drive folder shares new imported descendants as well. Sharing in the
+platform does not change the original file's Google permissions. There is no
+"Only me" source mode in this version. Losing contribution permissions pauses
+future automatic sync, preserving already-published copies and saved reports.
+These permission changes use the existing connection `ownerId` and require no
+additional database migration. Connection/file query caches are keyed by the
+signed-in Firebase user.
+
 Report generation selects all ready, non-excluded documents initially. Uncheck
 files, folders or all sources to change a particular report; an empty selection
 generates using plugins only. Documents can provide context, evidence or both.
 Reports save exact versions and the supplied excerpts, including coverage; later
 edits, synchronization or deletion do not rewrite previous report sources. Large
 documents supply relevance-selected excerpts, not necessarily their complete text.
-The same selection is available in evaluator setup, group reports and rule
+The same selection is available in evaluator setup, project reports and rule
 evaluations. Existing reports without knowledge sources remain readable.
 
 ### Installation and Google Drive configuration
@@ -85,6 +112,10 @@ performs real upload, extraction, download, permissions, exclusions and immutabl
 snapshot checks. Add `-- --report` to also generate a real report with the configured
 model; this makes a provider request. The integration test creates isolated data
 and removes its database records and uploaded objects afterward.
+The normal integration run also verifies Drive ownership with real database
+memberships and writes `permissions-integration.json`; it does not authorize a
+Google account or call Google Drive. With `--report`, the receipt is instead
+written to `integration.json` and includes the actual model generation.
 
 From `frontend`, run `npm run build` and, with Vite running,
 `npm run test:knowledge`. These browser scenarios use simulated API/auth responses

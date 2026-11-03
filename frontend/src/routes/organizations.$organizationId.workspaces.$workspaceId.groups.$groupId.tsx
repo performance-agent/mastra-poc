@@ -53,8 +53,8 @@ export const Route = createFileRoute(
   validateSearch: tabSchema,
   head: () => ({
     meta: [
-      { title: "Group — Performance Agent" },
-      { name: "description", content: "Manage group members and resource assignments." },
+      { title: "Project — Performance Agent" },
+      { name: "description", content: "Manage project members and resource assignments." },
     ],
   }),
   component: GroupPage,
@@ -228,11 +228,11 @@ function GroupPage() {
             onChange={setTab}
             items={[
               { value: "overview", label: "Overview" },
+              { value: "members", label: "Members", count: membersQ.data?.length },
+              { value: "resources", label: "Resources" },
               { value: "evaluation", label: "Evaluators" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
               { value: "rules", label: "Rules" },
-              { value: "members", label: "Members", count: membersQ.data?.length },
-              { value: "resources", label: "Resources" },
             ]}
           />
 
@@ -400,7 +400,7 @@ function GroupPage() {
                         <EmptyState
                           icon={<Boxes className="h-4 w-4" />}
                           title="No assigned resources"
-                          description="Assign organization resources to make them available in this group."
+                          description="Assign organization resources to make them available in this project."
                         />
                       ) : (
                         <div className="grid gap-3 lg:grid-cols-2">
@@ -473,14 +473,15 @@ function GroupPage() {
       )}
 
       <EntityFormDialog
+        scope="group"
         open={editOpen}
         onOpenChange={setEditOpen}
-        title="Edit group"
+        title="Edit project"
         initial={toFormInitial(group)}
         onSubmit={async (v) => {
           try {
             await api.updateGroup(groupId, v);
-            toast.success("Group updated");
+            toast.success("Project updated");
             qc.invalidateQueries({ queryKey: ["group", groupId] });
             qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "groups"] });
           } catch (e) {
@@ -497,7 +498,7 @@ function GroupPage() {
         onConfirm={async () => {
           try {
             await api.deleteGroup(groupId);
-            toast.success("Group deleted");
+            toast.success("Project deleted");
             qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "groups"] });
             navigate({
               to: "/organizations/$organizationId/workspaces/$workspaceId",

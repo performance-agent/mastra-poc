@@ -39,7 +39,7 @@ export class EvaluatorsService {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
     });
-    if (!group) throw new NotFoundException('Group not found');
+    if (!group) throw new NotFoundException('Project not found');
     return this.prisma.evaluator.findMany({
       where: {
         workspaceId: group.workspaceId,
@@ -57,7 +57,7 @@ export class EvaluatorsService {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
     });
-    if (!group) throw new NotFoundException('Group not found');
+    if (!group) throw new NotFoundException('Project not found');
     await this.assertCanManage(dto.scope, group.workspaceId, group.id, userId);
     const guidelines = this.guidelines(
       dto.evaluationEmphasis ?? [],
@@ -199,18 +199,22 @@ export class EvaluatorsService {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
     });
-    if (!group) throw new NotFoundException('Group not found');
+    if (!group) throw new NotFoundException('Project not found');
     return this.prisma.evaluatorVoice.findMany({
       where: { workspaceId: group.workspaceId },
       orderBy: { position: 'asc' },
     });
   }
 
-  async createPersonality(groupId: string, userId: string, dto: PersonalityDto) {
+  async createPersonality(
+    groupId: string,
+    userId: string,
+    dto: PersonalityDto,
+  ) {
     const group = await this.prisma.group.findUnique({
       where: { id: groupId },
     });
-    if (!group) throw new NotFoundException('Group not found');
+    if (!group) throw new NotFoundException('Project not found');
     await this.assertWorkspaceManager(group.workspaceId, userId);
     const existing = await this.prisma.evaluatorVoice.findMany({
       where: { workspaceId: group.workspaceId },

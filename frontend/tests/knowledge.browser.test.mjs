@@ -76,7 +76,7 @@ function initialNodes() {
     },
   ];
 }
-async function setup(t, { mobile = false, viewer = false } = {}) {
+async function setup(t, { mobile = false, viewer = false, ownDrive = true } = {}) {
   const context = await browser.newContext({
     viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1050 },
   });
@@ -86,7 +86,11 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
   page.on("pageerror", (e) => errors.push(e.message));
   t.after(() => assert.deepEqual(errors, []));
   const state = {
-    nodes: initialNodes(),
+    nodes: initialNodes().map((node) =>
+      !ownDrive && node.id === "brief"
+        ? { ...node, origin: "GOOGLE_DRIVE", connectionId: "drive-1" }
+        : node,
+    ),
     excluded: new Set(),
     uploads: 0,
     selection: null,
@@ -95,6 +99,9 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
     reports: [],
     reconnect: false,
     disconnects: 0,
+    driveBrowses: 0,
+    projectUpdate: null,
+    imageUploadPayload: null,
   };
   await page.route(/\/src\/lib\/auth\.tsx(?:\?|$)/, (route) =>
     route.fulfill({
@@ -148,9 +155,13 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
       data = [{ id: "ws-a", organizationId: "org-a", name: "Product & Engineering" }];
     else if (path.endsWith("/groups"))
       data = [{ id: "group-a", workspaceId: "ws-a", name: "Platform team" }];
-    else if (path === "/groups/group-a")
-      data = { id: "group-a", workspaceId: "ws-a", name: "Platform team" };
-    else if (path.endsWith("/members"))
+    else if (path === "/groups/group-a") {
+      if (method === "PATCH") state.projectUpdate = req.postDataJSON();
+      data = { id: "group-a", workspaceId: "ws-a", name: "Platform team", ...state.projectUpdate };
+    } else if (path === "/media" && method === "POST") {
+      state.imageUploadPayload = req.postData();
+      data = { photoUrl: "avatar:iris" };
+    } else if (path.endsWith("/members"))
       data = [
         {
           userId: "user-a",
@@ -171,6 +182,9 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
           .filter((n) => !n.deleted && (!n.groupId || n.groupId === group))
           .map((n) => ({
             ...n,
+            canRead: true,
+            canUseInReports: true,
+            canManage: !viewer,
             inherited: Boolean(group && !n.groupId),
             excluded: Boolean(
               group && (state.excluded.has(n.id) || (n.parentId && state.excluded.has(n.parentId))),
@@ -233,10 +247,18 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
             id: "drive-1",
             workspaceId: "ws-a",
             groupId: null,
-            email: "alex@example.test",
-            rootIds: ["course"],
-            destinationId: null,
-            usage: "CONTEXT",
+            ownerName: ownDrive ? "Alex Rivera" : "Jordan Lee",
+            isOwner: ownDrive,
+            canManage: ownDrive && !viewer,
+            selectedItemCount: 1,
+            ...(ownDrive
+              ? {
+                  email: "alex@example.test",
+                  rootIds: ["course"],
+                  destinationId: null,
+                  usage: "CONTEXT",
+                }
+              : {}),
             status: state.reconnect ? "RECONNECT" : "CONNECTED",
             lastSyncedAt: "2026-11-03T10:30:00Z",
             nextSyncAt: "2026-11-03T10:35:00Z",
@@ -247,7 +269,8 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
     else if (path === "/knowledge/drive/connections/drive-1" && method === "DELETE") {
       state.disconnects++;
       data = {};
-    } else if (path === "/knowledge/drive/connections/drive-1/files")
+    } else if (path === "/knowledge/drive/connections/drive-1/files") {
+      state.driveBrowses++;
       data = {
         files: [
           {
@@ -265,7 +288,7 @@ async function setup(t, { mobile = false, viewer = false } = {}) {
           { id: "unsupported", name: "Video.mov", mimeType: "video/quicktime", supported: false },
         ],
       };
-    else if (path.endsWith("/selection")) {
+    } else if (path.endsWith("/selection")) {
       state.driveSelection = req.postDataJSON();
       data = { id: "drive-1", status: "QUEUED" };
     } else if (path.endsWith("/sync")) data = { status: "QUEUED" };
@@ -472,6 +495,99 @@ test("Drive picker supports folder and file selection, disabled formats and conn
   assert.deepEqual(state.driveSelection.rootIds, ["drive-brief"]);
   await shot("07-connections");
 });
+test("Projects labels and tab order preserve project image permissions and existing routes", async (t) => {
+  const { page, state } = await setup(t);
+  await page.goto(base + root + "?tab=overview");
+  await page.getByRole("button", { name: /^Projects/ }).waitFor();
+  const workspaceTabs = await page
+    .locator('button[aria-current="page"]')
+    .filter({ hasText: "Overview" })
+    .locator("..")
+    .getByRole("button")
+    .allTextContents();
+  assert.deepEqual(
+    workspaceTabs.map((v) => v.replace(/\s*\d+\s*$/, "").trim()),
+    ["Overview", "Projects", "Members", "Resources", "People"],
+  );
+  await page.getByRole("button", { name: /^Projects/ }).click();
+  await page.getByRole("button", { name: "New project", exact: true }).first().click();
+  await page.getByRole("dialog", { name: "New project", exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await page.goto(base + project + "?tab=overview");
+  await page.getByRole("button", { name: "Overview", exact: true }).waitFor();
+  const projectTabs = await page
+    .locator('button[aria-current="page"]')
+    .filter({ hasText: "Overview" })
+    .locator("..")
+    .getByRole("button")
+    .allTextContents();
+  assert.deepEqual(
+    projectTabs.map((v) => v.replace(/\s*\d+\s*$/, "").trim()),
+    ["Overview", "Members", "Resources", "Evaluators", "Reports", "Rules"],
+  );
+  await page.getByRole("button", { name: "More options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit details", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit project", exact: true });
+  await dialog.getByLabel("Name", { exact: true }).fill("Updated project");
+  await dialog
+    .getByLabel("Choose image")
+    .setInputFiles({
+      name: "logo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  await dialog.getByRole("slider", { name: "Crop zoom", exact: true }).waitFor();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+  assert.equal(state.projectUpdate.name, "Updated project");
+  assert.match(state.imageUploadPayload, /name="scope"\r\n\r\ngroup\r\n/);
+  assert.match(state.imageUploadPayload, /name="targetId"\r\n\r\ngroup-a\r\n/);
+});
+
+test("other administrators read shared sources without administering another person's Drive", async (t) => {
+  const { page, state, shot } = await setup(t, { ownDrive: false });
+  await page.goto(base + root + "?tab=resources&knowledgeView=connections");
+  await page.getByRole("heading", { name: "Drive shared by Jordan Lee", exact: true }).waitFor();
+  for (const name of ["Sync now", "Manage sources", "Reconnect account", "Disconnect"]) {
+    assert.equal(await page.getByRole("button", { name, exact: true }).count(), 0);
+  }
+  assert.equal(
+    await page.getByRole("heading", { name: "alex@example.test", exact: true }).count(),
+    0,
+  );
+  await shot("12-shared-drive-permissions");
+  await page.goto(base + root + "?tab=resources&driveConnection=drive-1");
+  await page
+    .getByRole("dialog")
+    .getByRole("heading", { name: "Connect Google Drive", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByRole("checkbox", { name: "Connect Course materials", exact: true }).count(),
+    0,
+  );
+  assert.equal(state.driveBrowses, 0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("textbox", { name: "Search knowledge sources" }).fill("brief");
+  await page.getByRole("button", { name: /^Project brief.pdf/ }).click();
+  await page.getByText("Captured project requirements.", { exact: false }).waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: "Download saved version", exact: true }).isEnabled(),
+    true,
+  );
+  await page.keyboard.press("Escape");
+  await page.goto(base + project + "?tab=reports");
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Use Project brief.pdf", exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole("checkbox", { name: "Use Project brief.pdf", exact: true }).isChecked(),
+    true,
+  );
+  assert.equal(state.driveBrowses, 0);
+});
+
 test("saved report exposes immutable document references and the exact supplied excerpts", async (t) => {
   const { page, state, shot } = await setup(t);
   state.reports = [

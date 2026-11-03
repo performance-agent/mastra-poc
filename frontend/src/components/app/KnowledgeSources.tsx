@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, FileText, Folder, Info, Link2 } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   knowledgeApi,
   knowledgeDescendants,
@@ -71,6 +72,7 @@ export function KnowledgeSourcePicker({
   workspaceId?: string;
   onChange: (sourceIds: string[] | null) => void;
 }) {
+  const { firebaseUser } = useAuth();
   const group = useQuery({
     queryKey: ["group", groupId],
     queryFn: () => api.getGroup(groupId),
@@ -78,7 +80,7 @@ export function KnowledgeSourcePicker({
   });
   const targetWorkspace = workspaceId ?? group.data?.workspaceId;
   const library = useQuery({
-    queryKey: ["knowledge", targetWorkspace, groupId],
+    queryKey: ["knowledge", targetWorkspace, groupId, firebaseUser?.uid],
     queryFn: () => knowledgeApi.list({ workspaceId: targetWorkspace!, groupId }),
     enabled: Boolean(targetWorkspace),
     refetchInterval: 5000,

@@ -26,7 +26,7 @@ export const MCP_CLIENTS = [
     steps: [
       "Add the configuration below to .cursor/mcp.json in your project, merging it with existing servers.",
       "Enable the server in Cursor's MCP settings and complete the OAuth sign-in.",
-      "Ask your agent to list your groups and available evaluators.",
+      "Ask your agent to list your projects and available evaluators.",
     ],
   },
   {
@@ -63,7 +63,7 @@ export function mcpConfiguration(client: McpClient, serverUrl: string) {
 }
 
 export const MCP_AGENT_INSTRUCTIONS = `Use the platformance MCP tools to analyze my team's work.
-1. Call list_groups and let me choose an accessible group.
+1. Call list_groups and let me choose an accessible project.
 2. Call list_evaluators with its groupId. Ask me which evaluator to use; never silently choose another one.
 3. Ask for an optional report period. Call get_group_report_context with groupId, evaluatorId and that period.
 4. Follow its instructions, generationPrompt and schema, including the evaluator's rules, questions, personality and effort. Use only the supplied evidence. Keep uncertainty and missing data explicit.

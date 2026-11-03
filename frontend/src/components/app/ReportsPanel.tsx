@@ -518,7 +518,7 @@ export function ReportsPanel({
                                 {report.title?.trim() && report.createdAt
                                   ? new Date(report.createdAt).toLocaleString()
                                   : report.type === "GROUP_REPORT"
-                                    ? "Group report"
+                                    ? "Project report"
                                     : report.type === "GITHUB_HISTORY"
                                       ? "GitHub history"
                                       : "GitHub activity"}

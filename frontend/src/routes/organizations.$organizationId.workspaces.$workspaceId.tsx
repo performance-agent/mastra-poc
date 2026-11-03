@@ -51,7 +51,10 @@ export const Route = createFileRoute("/organizations/$organizationId/workspaces/
   head: () => ({
     meta: [
       { title: "Workspace — Performance Agent" },
-      { name: "description", content: "Manage groups, members, and resources for this workspace." },
+      {
+        name: "description",
+        content: "Manage projects, members, and resources for this workspace.",
+      },
     ],
   }),
   component: WorkspacePage,
@@ -131,10 +134,10 @@ function WorkspacePage() {
             onChange={setTab}
             items={[
               { value: "overview", label: "Overview" },
-              { value: "groups", label: "Groups", count: groupsQ.data?.length },
-              { value: "people", label: "People" },
+              { value: "groups", label: "Projects", count: groupsQ.data?.length },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
+              { value: "people", label: "People" },
             ]}
           />
 
@@ -146,7 +149,7 @@ function WorkspacePage() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <StatCard
                   icon={<Layers className="h-4 w-4" />}
-                  label="Groups"
+                  label="Projects"
                   value={groupsQ.data?.length ?? 0}
                 />
                 <StatCard
@@ -198,6 +201,7 @@ function WorkspacePage() {
       )}
 
       <EntityFormDialog
+        scope="workspace"
         open={editOpen}
         onOpenChange={setEditOpen}
         title="Edit workspace"
@@ -277,7 +281,7 @@ function GroupsTab({
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> New group
+          <Plus className="mr-1.5 h-4 w-4" /> New project
         </Button>
       </div>
       {q.isLoading ? (
@@ -287,9 +291,9 @@ function GroupsTab({
       ) : (q.data ?? []).length === 0 ? (
         <EmptyState
           icon={<Layers className="h-4 w-4" />}
-          title="No groups yet"
-          description="Groups let you organize members and resource assignments."
-          actionLabel="New group"
+          title="No projects yet"
+          description="Projects let you organize members and resource assignments."
+          actionLabel="New project"
           onAction={() => setCreateOpen(true)}
         />
       ) : (
@@ -309,14 +313,15 @@ function GroupsTab({
         </div>
       )}
       <EntityFormDialog
+        scope="group"
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="New group"
+        title="New project"
         submitLabel="Create"
         onSubmit={async (v) => {
           try {
             await api.createGroup(workspaceId, v);
-            toast.success("Group created");
+            toast.success("Project created");
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
@@ -324,15 +329,16 @@ function GroupsTab({
         }}
       />
       <EntityFormDialog
+        scope="group"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
-        title="Edit group"
+        title="Edit project"
         initial={toFormInitial(editing)}
         onSubmit={async (v) => {
           if (!editing) return;
           try {
             await api.updateGroup(editing.id, v);
-            toast.success("Group updated");
+            toast.success("Project updated");
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
@@ -349,7 +355,7 @@ function GroupsTab({
           if (!deleting) return;
           try {
             await api.deleteGroup(deleting.id);
-            toast.success("Group deleted");
+            toast.success("Project deleted");
             setDeleting(null);
             refresh();
           } catch (e) {

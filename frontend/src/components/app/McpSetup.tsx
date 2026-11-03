@@ -138,7 +138,7 @@ export function McpSetup({
             <div className="space-y-3 border-t pt-5">
               <h3 className="font-semibold">Give your agent the workflow</h3>
               <p className="text-sm text-muted-foreground">
-                Choose a group and evaluator, analyze the saved evidence, then save the report.
+                Choose a project and evaluator, analyze the saved evidence, then save the report.
               </p>
               <details className="rounded-xl border bg-[var(--brand-soft)] p-3">
                 <summary className="cursor-pointer text-sm font-medium">
@@ -198,7 +198,7 @@ export function McpSetup({
               </>
             )}
             <p className="border-t pt-4 text-xs leading-relaxed text-muted-foreground">
-              Viewers can read. Owners and admins can save reports. Access follows your group
+              Viewers can read. Owners and admins can save reports. Access follows your project
               memberships across the platform.
             </p>
             <Button

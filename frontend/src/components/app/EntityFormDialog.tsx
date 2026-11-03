@@ -17,6 +17,7 @@ export function EntityFormDialog({
   open,
   onOpenChange,
   title,
+  scope,
   initial,
   submitLabel,
   onSubmit,
@@ -24,17 +25,13 @@ export function EntityFormDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: string;
+  scope: "organization" | "workspace" | "group";
   initial?: Partial<EntityFormValues>;
   submitLabel?: string;
   onSubmit: (values: EntityFormValues) => Promise<void> | void;
 }) {
   const { pathname } = useLocation();
   const route = pathname.match(/^\/organizations\/([^/]+)(?:\/workspaces\/([^/]+))?/);
-  const scope = /group/i.test(title)
-    ? "group"
-    : /workspace/i.test(title)
-      ? "workspace"
-      : "organization";
   const target = initial?.id
     ? { scope, targetId: initial.id }
     : route?.[2]

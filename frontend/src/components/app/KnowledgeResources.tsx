@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   downloadKnowledge,
   knowledgeApi,
@@ -150,8 +151,10 @@ export function KnowledgeResources({
   initialNodeId?: string;
 }) {
   const scope: KnowledgeScope = { workspaceId, ...(groupId ? { groupId } : {}) };
+  const { firebaseUser } = useAuth();
+  const userKey = firebaseUser?.uid;
   const qc = useQueryClient();
-  const key = ["knowledge", workspaceId, groupId];
+  const key = ["knowledge", workspaceId, groupId, userKey];
   const [category, setCategory] = useState<"knowledge" | "plugins">("knowledge");
   const [view, setView] = useState(initialView === "connections" ? "connections" : "library");
   const [folderId, setFolderId] = useState<string | null>(null);
@@ -185,13 +188,13 @@ export function KnowledgeResources({
     refetchInterval: 5000,
   });
   const connections = useQuery({
-    queryKey: ["knowledge-connections", workspaceId, groupId],
+    queryKey: ["knowledge-connections", workspaceId, groupId, userKey],
     queryFn: () => knowledgeApi.connections(scope),
     enabled: category === "knowledge",
     refetchInterval: 10000,
   });
   const detail = useQuery({
-    queryKey: ["knowledge-node", detailId],
+    queryKey: ["knowledge-node", detailId, userKey],
     queryFn: () => knowledgeApi.detail(detailId!),
     enabled: Boolean(detailId),
     refetchInterval: (query) => (query.state.data?.status === "PROCESSING" ? 3000 : false),
@@ -203,15 +206,15 @@ export function KnowledgeResources({
   );
   const current = nodes.find((n) => n.id === folderId);
   const driveAccounts = (connections.data?.connections ?? []).filter(
-    (c) => (c.groupId ?? null) === (groupId ?? null),
+    (c) => c.canManage && (c.groupId ?? null) === (groupId ?? null),
   );
   const driveFiles = useInfiniteQuery({
-    queryKey: ["drive-files", driveId, drivePath.at(-1)?.id, driveQuery],
+    queryKey: ["drive-files", driveId, drivePath.at(-1)?.id, driveQuery, userKey],
     queryFn: ({ pageParam }) =>
       knowledgeApi.browse(driveId, drivePath.at(-1)!.id, pageParam, driveQuery || undefined),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextPageToken,
-    enabled: modal === "drive" && Boolean(driveId),
+    enabled: modal === "drive" && driveAccounts.some((c) => c.id === driveId),
   });
   const errorSeen = useRef("");
   useEffect(() => {
@@ -228,11 +231,11 @@ export function KnowledgeResources({
     if (detail.data) setDetailUsage(detail.data.usage);
   }, [detail.data]);
   useEffect(() => {
-    const connection = connections.data?.connections.find((c) => c.id === driveId);
+    const connection = connections.data?.connections.find((c) => c.id === driveId && c.canManage);
     if (connection && seededDrive.current !== driveId) {
       seededDrive.current = driveId;
-      setDriveSelection(new Set(connection.rootIds));
-      setUsage(connection.usage);
+      setDriveSelection(new Set(connection.rootIds ?? []));
+      setUsage(connection.usage ?? "CONTEXT");
       setDestination(connection.destinationId ?? "");
     }
   }, [driveId, connections.data]);
@@ -282,6 +285,7 @@ export function KnowledgeResources({
     setModal("folder");
   }
   function openDrive(id?: string) {
+    if (id && !driveAccounts.some((c) => c.id === id)) return;
     seededDrive.current = null;
     setDriveId(id ?? driveAccounts[0]?.id ?? "");
     setDrivePath([{ id: "root", name: "My Drive" }]);
@@ -573,7 +577,7 @@ export function KnowledgeResources({
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <h3 className="break-all text-sm font-semibold">
-                                    {connection.email}
+                                    {connection.email ?? `Drive shared by ${connection.ownerName}`}
                                   </h3>
                                   <p className="mt-1 text-[11px] text-muted-foreground">
                                     Google Drive ·{" "}
@@ -605,7 +609,7 @@ export function KnowledgeResources({
                                 <span>
                                   Connected items
                                   <strong className="mt-1 block font-medium text-foreground">
-                                    {connection.rootIds.length}
+                                    {connection.selectedItemCount}
                                   </strong>
                                 </span>
                                 <span>
@@ -623,7 +627,7 @@ export function KnowledgeResources({
                                   </strong>
                                 </span>
                               </div>
-                              {inherited ? (
+                              {inherited && connection.canManage ? (
                                 <Link
                                   to="/organizations/$organizationId/workspaces/$workspaceId"
                                   params={{ organizationId, workspaceId }}
@@ -632,52 +636,56 @@ export function KnowledgeResources({
                                 >
                                   Manage in workspace →
                                 </Link>
-                              ) : (
-                                canManage && (
-                                  <div className="flex flex-wrap gap-2">
-                                    {connection.status === "RECONNECT" ? (
-                                      <Button
-                                        size="sm"
-                                        disabled={saving}
-                                        onClick={() => authorize(connection)}
-                                      >
-                                        Reconnect account
-                                      </Button>
-                                    ) : (
-                                      <>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          disabled={saving}
-                                          onClick={() =>
-                                            perform(
-                                              () => knowledgeApi.sync(connection.id),
-                                              "Synchronization queued",
-                                            )
-                                          }
-                                        >
-                                          <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                                          Sync now
-                                        </Button>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => openDrive(connection.id)}
-                                        >
-                                          Manage sources
-                                        </Button>
-                                      </>
-                                    )}
+                              ) : connection.canManage ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {connection.status === "RECONNECT" ? (
                                     <Button
-                                      variant="ghost"
                                       size="sm"
                                       disabled={saving}
-                                      onClick={() => setDisconnecting(connection)}
+                                      onClick={() => authorize(connection)}
                                     >
-                                      Disconnect
+                                      Reconnect account
                                     </Button>
-                                  </div>
-                                )
+                                  ) : (
+                                    <>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={saving}
+                                        onClick={() =>
+                                          perform(
+                                            () => knowledgeApi.sync(connection.id),
+                                            "Synchronization queued",
+                                          )
+                                        }
+                                      >
+                                        <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                                        Sync now
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => openDrive(connection.id)}
+                                      >
+                                        Manage sources
+                                      </Button>
+                                    </>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={saving}
+                                    onClick={() => setDisconnecting(connection)}
+                                  >
+                                    Disconnect
+                                  </Button>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  Managed by {connection.ownerName}. Only selected documents are
+                                  shared; the account and the rest of Drive remain under its owner's
+                                  control.
+                                </p>
                               )}
                             </Card>
                           );
@@ -830,7 +838,7 @@ export function KnowledgeResources({
                                       >
                                         {node.excluded ? "Include" : "Exclude"}
                                       </Button>
-                                    ) : canManage ? (
+                                    ) : node.canManage ? (
                                       <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
                                           <Button
@@ -1090,10 +1098,16 @@ export function KnowledgeResources({
           <DialogHeader>
             <DialogTitle>Connect Google Drive</DialogTitle>
             <DialogDescription>
-              Choose files or folders to keep synchronized with this knowledge base.
+              Choose files or folders to share with this {groupId ? "project" : "workspace"}.
+              Members can read, download and use imported documents in reports. New files inside
+              selected folders are shared automatically. Only you manage this Drive connection.
             </DialogDescription>
           </DialogHeader>
-          {!connections.data?.configured ? (
+          {!canManage ? (
+            <Note>
+              Only workspace or project owners and administrators can connect Google Drive accounts.
+            </Note>
+          ) : !connections.data?.configured ? (
             <Note>
               Google Drive is not configured yet. An administrator must configure the Google OAuth
               client before connecting an account.
@@ -1123,7 +1137,7 @@ export function KnowledgeResources({
                   Connect account
                 </Button>
               </div>
-              {driveId && (
+              {driveAccounts.some((c) => c.id === driveId) && (
                 <>
                   <div className="flex flex-wrap gap-2">
                     <Button

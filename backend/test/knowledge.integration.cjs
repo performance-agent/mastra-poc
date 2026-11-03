@@ -202,17 +202,40 @@ async function main() {
     );
     checks.push('Actual PDF and DOCX text extraction with real parsers');
     if (process.argv.includes('--report')) {
-      const {ReportsService}=require('../dist/src/reports/reports.service');
-      const {PluginRuntimeService}=require('../dist/src/plugins/runtime/plugin-runtime.service');
-      const runtime=new PluginRuntimeService({get:async()=>{throw new Error('No plugins are assigned in this isolated test');}},{});
-      const reports=new ReportsService(db,runtime,{},service);
-      console.log('Generating an isolated real report using the configured model and the uploaded knowledge document…');
-      const report=await reports.createGroupReport(group.id,{type:'GROUP_REPORT',knowledgeSelection:{sourceIds:[uploaded.id]}});
-      assert.equal(report.data.knowledgeSources.sources.length,1);
-      assert.equal(report.data.knowledgeSources.sources[0].versionId,detail.version.id);
-      assert.ok(report.data.knowledgeSources.sources[0].excerpts.some(e=>e.text.includes('KNOWLEDGE-INTEGRATION-ONLY')));
-      assert.ok(report.data.summary.length>0);
-      checks.push('Actual configured-model generation and persisted knowledge-only report with the uploaded document’s exact version and excerpts');
+      const { ReportsService } = require('../dist/src/reports/reports.service');
+      const {
+        PluginRuntimeService,
+      } = require('../dist/src/plugins/runtime/plugin-runtime.service');
+      const runtime = new PluginRuntimeService(
+        {
+          get: async () => {
+            throw new Error('No plugins are assigned in this isolated test');
+          },
+        },
+        {},
+      );
+      const reports = new ReportsService(db, runtime, {}, service);
+      console.log(
+        'Generating an isolated real report using the configured model and the uploaded knowledge document…',
+      );
+      const report = await reports.createGroupReport(group.id, {
+        type: 'GROUP_REPORT',
+        knowledgeSelection: { sourceIds: [uploaded.id] },
+      });
+      assert.equal(report.data.knowledgeSources.sources.length, 1);
+      assert.equal(
+        report.data.knowledgeSources.sources[0].versionId,
+        detail.version.id,
+      );
+      assert.ok(
+        report.data.knowledgeSources.sources[0].excerpts.some((e) =>
+          e.text.includes('KNOWLEDGE-INTEGRATION-ONLY'),
+        ),
+      );
+      assert.ok(report.data.summary.length > 0);
+      checks.push(
+        'Actual configured-model generation and persisted knowledge-only report with the uploaded document’s exact version and excerpts',
+      );
     }
     await service.remove(owner.id, folder.id);
     assert.equal(
@@ -228,6 +251,121 @@ async function main() {
     checks.push(
       'Soft deletion removes sources from the library while preserving captured report text',
     );
+    const { DriveService } = require('../dist/src/knowledge/drive.service');
+    const drive = new DriveService(db, service, storage);
+    const anotherAdmin = await db.user.create({
+      data: {
+        name: 'Another administrator',
+        email: `knowledge-admin-${run}@example.test`,
+        firebaseUid: 'knowledge-admin-' + run,
+      },
+    });
+    users.push(anotherAdmin);
+    await db.membership.create({
+      data: { userId: anotherAdmin.id, workspaceId, role: 'ADMIN' },
+    });
+    const connection = await db.knowledgeConnection.create({
+      data: {
+        workspaceId,
+        ownerId: owner.id,
+        email: 'private-account@example.test',
+        accountId: 'private-google-account',
+        credentials: {},
+        rootIds: ['published-file'],
+      },
+    });
+    const original = await db.knowledgeVersion.findUniqueOrThrow({
+      where: { id: detail.version.id },
+    });
+    const shared = await db.knowledgeNode.create({
+      data: {
+        workspaceId,
+        connectionId: connection.id,
+        externalId: 'published-file',
+        name: 'Shared Drive document',
+        kind: 'DOCUMENT',
+        origin: 'GOOGLE_DRIVE',
+        status: 'READY',
+        versions: {
+          create: {
+            revision: '1',
+            digest: original.digest,
+            text: original.text,
+            objectPath: original.objectPath,
+            mimeType: original.mimeType,
+            bytes: original.bytes,
+          },
+        },
+      },
+    });
+    assert.equal(
+      (await drive.list(owner.id, { workspaceId })).connections[0].canManage,
+      true,
+    );
+    const summary = (await drive.list(anotherAdmin.id, { workspaceId }))
+      .connections[0];
+    assert.equal(summary.canManage, false);
+    for (const field of [
+      'email',
+      'accountId',
+      'credentials',
+      'rootIds',
+      'destinationId',
+      'usage',
+    ])
+      assert.equal(field in summary, false);
+    for (const actor of [anotherAdmin, viewer]) {
+      await assert.rejects(
+        drive.browse(actor.id, connection.id, {}),
+        /owner|person who connected|permissions/i,
+      );
+      await assert.rejects(
+        drive.configure(actor.id, connection.id, { rootIds: ['private-file'] }),
+        /owner|person who connected|permissions/i,
+      );
+      await assert.rejects(
+        drive.syncNow(actor.id, connection.id),
+        /owner|person who connected|permissions/i,
+      );
+      await assert.rejects(
+        drive.disconnect(actor.id, connection.id),
+        /owner|person who connected|permissions/i,
+      );
+      await assert.rejects(
+        drive.authorize(actor.id, { workspaceId, connectionId: connection.id }),
+        /owner|person who connected|permissions/i,
+      );
+      assert.equal(
+        (await service.detail(actor.id, shared.id)).version.text,
+        original.text,
+      );
+      assert.equal(
+        (await service.download(actor.id, shared.id)).buffer.toString(),
+        original.text,
+      );
+    }
+    assert.equal(
+      (await service.snapshot(group.id, { sourceIds: [shared.id] })).sources
+        .length,
+      1,
+    );
+    await db.membership.updateMany({
+      where: { userId: owner.id, workspaceId },
+      data: { role: 'VIEWER' },
+    });
+    await drive.synchronize(connection);
+    assert.match(
+      (
+        await db.knowledgeConnection.findUniqueOrThrow({
+          where: { id: connection.id },
+        })
+      ).error,
+      /Synchronization paused/,
+    );
+    assert.equal((await service.detail(viewer.id, shared.id)).status, 'READY');
+    checks.push(
+      'Real memberships: other admins/viewers read and download published Drive copies and select them for reports, but cannot browse or manage the private connection; lost owner permissions pause sync without removing copies',
+    );
     const evidence = {
       type: 'Real PostgreSQL and Firebase Storage integration; no simulated storage or memberships',
       run,
@@ -236,7 +374,12 @@ async function main() {
     const directory = resolve('../artifacts/knowledge-base/implementation');
     await mkdir(directory, { recursive: true });
     await writeFile(
-      resolve(directory, 'integration.json'),
+      resolve(
+        directory,
+        process.argv.includes('--report')
+          ? 'integration.json'
+          : 'permissions-integration.json',
+      ),
       JSON.stringify(evidence, null, 2) + '\n',
     );
     console.log(JSON.stringify(evidence, null, 2));

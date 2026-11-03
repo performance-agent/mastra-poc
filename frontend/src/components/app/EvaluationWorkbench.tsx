@@ -248,7 +248,7 @@ function EvaluationProvider({
     } catch (caught) {
       const message = errorMessage(caught);
       setError(
-        `${message}. Check your workspace access and the group's active resources, then try again.`,
+        `${message}. Check your workspace access and the project's active resources, then try again.`,
       );
       toast.error("Evaluation could not be completed");
     } finally {
@@ -325,8 +325,8 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
             Turn team signals into a defensible report.
           </h2>
           <p className="mt-2 max-w-xl text-pretty text-sm leading-6 text-[#496676] dark:text-slate-300">
-            Define what matters for {groupName}. The agent finds relevant group evidence, tests each
-            rule, and explains what supports its conclusion.
+            Define what matters for {groupName}. The agent finds relevant project evidence, tests
+            each rule, and explains what supports its conclusion.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 rounded-full border border-[#99b7c7] bg-white/55 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider dark:border-slate-600 dark:bg-black/15">
@@ -1067,7 +1067,7 @@ function EvaluationOutput() {
         </p>
       ) : isRunning ? (
         <p className="text-sm text-muted-foreground">
-          You can leave this group and return to follow the evaluation.
+          You can leave this project and return to follow the evaluation.
         </p>
       ) : report ? (
         <ReportView report={report} />

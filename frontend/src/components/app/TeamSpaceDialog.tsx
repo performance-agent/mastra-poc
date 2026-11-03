@@ -35,17 +35,17 @@ export function TeamSpaceFields({
         />
       </label>
       <label className="grid gap-2 text-sm font-medium">
-        First group name
+        First project name
         <Input
           required
-          aria-label="First group name"
+          aria-label="First project name"
           value={groupName}
           onChange={(e) => onGroup(e.target.value)}
           placeholder="Engineering"
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        A workspace brings your team together. Groups organize the work you evaluate.
+        A workspace brings your team together. Projects organize the work you evaluate.
       </p>
       <Collapsible>
         <CollapsibleTrigger asChild>
@@ -90,7 +90,7 @@ export function TeamSpaceDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Create your team space"
-      description="One workspace and its first group, ready together."
+      description="One workspace and its first project, ready together."
       submitLabel="Create"
       dirty={!!(workspaceName || groupName || description)}
       submitting={busy}

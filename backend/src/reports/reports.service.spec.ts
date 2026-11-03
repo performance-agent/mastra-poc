@@ -349,7 +349,7 @@ describe('ReportsService', () => {
     prisma.group.findUnique.mockResolvedValue(null);
     await expect(
       service.createGroupReport('missing', { type: 'GROUP_REPORT' }),
-    ).rejects.toThrow('Group not found');
+    ).rejects.toThrow('Project not found');
   });
 
   it('fails when the group has no active resources', async () => {

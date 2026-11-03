@@ -34,19 +34,26 @@ export type KnowledgeNode = {
   directlyExcluded?: boolean;
   version?: KnowledgeVersion | null;
   canManage?: boolean;
+  canRead: boolean;
+  canUseInReports: boolean;
 };
 export type KnowledgeLibrary = { canManage: boolean; nodes: KnowledgeNode[] };
 export type DriveConnection = {
   id: string;
   workspaceId: string;
   groupId: string | null;
-  email: string;
-  rootIds: string[];
-  destinationId: string | null;
-  usage: KnowledgeUsage;
+  ownerName: string;
+  isOwner: boolean;
+  canManage: boolean;
+  selectedItemCount: number;
+  email?: string;
+  accountId?: string;
+  rootIds?: string[];
+  destinationId?: string | null;
+  usage?: KnowledgeUsage;
   status: "CONNECTED" | "RECONNECT" | "ERROR";
   lastSyncedAt: string | null;
-  nextSyncAt: string;
+  nextSyncAt?: string;
   error: string | null;
 };
 export type DriveItem = {

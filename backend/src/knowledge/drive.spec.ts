@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { KnowledgeConnection } from '../../generated/prisma/client';
@@ -19,13 +19,11 @@ describe('Google Drive HTTP boundary', () => {
     global.fetch = original;
   });
   it('encodes queries, retains shared-drive flags and follows pagination tokens', async () => {
-    const fetch = jest
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ files: [], nextPageToken: 'next' }), {
-          status: 200,
-        }),
-      );
+    const fetch = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ files: [], nextPageToken: 'next' }), {
+        status: 200,
+      }),
+    );
     global.fetch = fetch;
     expect(
       await new DriveApi('secret-token').list("folder'\\id", 'page'),
@@ -114,6 +112,7 @@ describe('Google Drive authorization and automatic synchronization', () => {
     leaseUntil: null,
   } as unknown as KnowledgeConnection;
   let db: {
+    user: { findMany: jest.Mock };
     knowledgeConnection: {
       findFirst: jest.Mock;
       findMany: jest.Mock;
@@ -135,7 +134,11 @@ describe('Google Drive authorization and automatic synchronization', () => {
       findMany: jest.Mock;
     };
   };
-  let knowledge: { authorize: jest.Mock; validateParent: jest.Mock };
+  let knowledge: {
+    authorize: jest.Mock;
+    validateParent: jest.Mock;
+    canManage: jest.Mock;
+  };
   let storage: { save: jest.Mock };
   let service: DriveService;
   beforeEach(() => {
@@ -144,6 +147,9 @@ describe('Google Drive authorization and automatic synchronization', () => {
     process.env.GOOGLE_DRIVE_CLIENT_SECRET = 'test-secret';
     process.env.PUBLIC_API_URL = 'https://api.example.test';
     db = {
+      user: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'owner', name: 'Alex' }]),
+      },
       knowledgeConnection: {
         findFirst: jest.fn().mockResolvedValue(connection),
         findMany: jest.fn().mockResolvedValue([connection]),
@@ -176,6 +182,7 @@ describe('Google Drive authorization and automatic synchronization', () => {
         .fn()
         .mockImplementation((_user, scope) => Promise.resolve(scope)),
       validateParent: jest.fn(),
+      canManage: jest.fn().mockResolvedValue(true),
     };
     storage = { save: jest.fn().mockResolvedValue('private-object') };
     service = new DriveService(
@@ -238,58 +245,165 @@ describe('Google Drive authorization and automatic synchronization', () => {
     expect(JSON.stringify(result)).not.toContain('refresh_token');
     expect(JSON.stringify(result)).not.toContain('credentials');
     expect(JSON.stringify(result)).not.toContain('ownerId');
+    expect(result.connections[0]).toMatchObject({
+      ownerName: 'Alex',
+      canManage: false,
+      isOwner: false,
+      selectedItemCount: 1,
+    });
+    for (const key of [
+      'email',
+      'accountId',
+      'rootIds',
+      'destinationId',
+      'usage',
+      'nextSyncAt',
+    ])
+      expect(result.connections[0]).not.toHaveProperty(key);
+  });
+  it('shows account selection only to its owner and calculates rights in the original scope', async () => {
+    const result = await service.list('owner', {
+      workspaceId: 'w',
+      groupId: 'g',
+    });
+    expect(result.connections[0]).toMatchObject({
+      canManage: true,
+      isOwner: true,
+      email: connection.email,
+      rootIds: connection.rootIds,
+    });
+    expect(knowledge.canManage).toHaveBeenCalledWith('owner', {
+      workspaceId: 'w',
+    });
+    knowledge.canManage.mockResolvedValue(false);
+    expect(
+      (await service.list('owner', { workspaceId: 'w' })).connections[0]
+        .canManage,
+    ).toBe(false);
+  });
+  it.each([
+    'browse',
+    'configure',
+    'syncNow',
+    'disconnect',
+    'authorize',
+  ] as const)(
+    'rejects another administrator calling %s before Google or any mutation',
+    async (action) => {
+      const google = jest.spyOn(driveApi, 'driveOAuthClient');
+      const call =
+        action === 'browse'
+          ? service.browse('other-admin', 'c', {})
+          : action === 'configure'
+            ? service.configure('other-admin', 'c', {
+                rootIds: ['private-folder'],
+              })
+            : action === 'syncNow'
+              ? service.syncNow('other-admin', 'c')
+              : action === 'disconnect'
+                ? service.disconnect('other-admin', 'c')
+                : service.authorize('other-admin', {
+                    workspaceId: 'w',
+                    connectionId: 'c',
+                  });
+      await expect(call).rejects.toThrow(ForbiddenException);
+      expect(google).not.toHaveBeenCalled();
+      expect(db.knowledgeConnection.updateMany).not.toHaveBeenCalled();
+      expect(db.knowledgeConnection.update).not.toHaveBeenCalled();
+      expect(db.knowledgeOAuthState.create).not.toHaveBeenCalled();
+      expect(storage.save).not.toHaveBeenCalled();
+    },
+  );
+  it('rechecks callback ownership before exchanging an authorization code', async () => {
+    db.knowledgeOAuthState.findUnique.mockResolvedValue({
+      id: 'state-hash',
+      userId: 'other-admin',
+      workspaceId: 'w',
+      groupId: null,
+      connectionId: 'c',
+    });
+    const google = jest.spyOn(driveApi, 'driveOAuthClient');
+    const redirect = new URL(
+      await service.callback({ state: 'a'.repeat(32), code: 'unused-code' }),
+    );
+    expect(redirect.searchParams.has('driveError')).toBe(true);
+    expect(google).not.toHaveBeenCalled();
+    expect(db.knowledgeConnection.update).not.toHaveBeenCalled();
+  });
+  it('refuses viewers and outsiders before accessing a connection', async () => {
+    knowledge.authorize.mockRejectedValue(new ForbiddenException());
+    const google = jest.spyOn(driveApi, 'driveOAuthClient');
+    await expect(service.browse('viewer', 'c', {})).rejects.toThrow(
+      ForbiddenException,
+    );
+    await expect(
+      service.list('outsider', { workspaceId: 'w' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(google).not.toHaveBeenCalled();
+    expect(db.knowledgeConnection.findMany).not.toHaveBeenCalled();
+  });
+  it('pauses synchronization without discarding published copies when owner permissions are lost', async () => {
+    knowledge.authorize.mockRejectedValue(new ForbiddenException());
+    const google = jest.spyOn(driveApi, 'driveOAuthClient');
+    await service.synchronize(connection);
+    expect(google).not.toHaveBeenCalled();
+    expect(db.knowledgeNode.updateMany).not.toHaveBeenCalled();
+    expect(storage.save).not.toHaveBeenCalled();
+    expect(db.knowledgeConnection.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'ERROR',
+          leaseUntil: null,
+          error: expect.stringContaining('Synchronization paused'),
+        }),
+      }),
+    );
   });
   it('walks new subfolders and every page, then queues real private document processing', async () => {
     const api = {
-      get: jest
-        .fn()
-        .mockResolvedValue({
-          id: 'root-folder',
-          name: 'Root',
-          mimeType: DRIVE_FOLDER,
-        }),
-      list: jest
-        .fn()
-        .mockImplementation((id, page) =>
-          Promise.resolve(
-            id === 'nested'
+      get: jest.fn().mockResolvedValue({
+        id: 'root-folder',
+        name: 'Root',
+        mimeType: DRIVE_FOLDER,
+      }),
+      list: jest.fn().mockImplementation((id, page) =>
+        Promise.resolve(
+          id === 'nested'
+            ? {
+                files: [
+                  {
+                    id: 'b',
+                    name: 'B.txt',
+                    mimeType: 'text/plain',
+                    version: '2',
+                  },
+                ],
+              }
+            : page
               ? {
                   files: [
-                    {
-                      id: 'b',
-                      name: 'B.txt',
-                      mimeType: 'text/plain',
-                      version: '2',
-                    },
+                    { id: 'nested', name: 'Nested', mimeType: DRIVE_FOLDER },
                   ],
                 }
-              : page
-                ? {
-                    files: [
-                      { id: 'nested', name: 'Nested', mimeType: DRIVE_FOLDER },
-                    ],
-                  }
-                : {
-                    files: [
-                      {
-                        id: 'a',
-                        name: 'A.txt',
-                        mimeType: 'text/plain',
-                        version: '1',
-                      },
-                    ],
-                    nextPageToken: 'page-2',
-                  },
-          ),
+              : {
+                  files: [
+                    {
+                      id: 'a',
+                      name: 'A.txt',
+                      mimeType: 'text/plain',
+                      version: '1',
+                    },
+                  ],
+                  nextPageToken: 'page-2',
+                },
         ),
-      download: jest
-        .fn()
-        .mockImplementation((file) =>
-          Promise.resolve({
-            name: file.name,
-            buffer: Buffer.from('Actual synchronized source text'),
-          }),
-        ),
+      ),
+      download: jest.fn().mockImplementation((file) =>
+        Promise.resolve({
+          name: file.name,
+          buffer: Buffer.from('Actual synchronized source text'),
+        }),
+      ),
     };
     jest
       .spyOn(
@@ -323,13 +437,11 @@ describe('Google Drive authorization and automatic synchronization', () => {
   });
   it('does not reconcile unseen files after an interrupted page traversal', async () => {
     const api = {
-      get: jest
-        .fn()
-        .mockResolvedValue({
-          id: 'root-folder',
-          name: 'Root',
-          mimeType: DRIVE_FOLDER,
-        }),
+      get: jest.fn().mockResolvedValue({
+        id: 'root-folder',
+        name: 'Root',
+        mimeType: DRIVE_FOLDER,
+      }),
       list: jest.fn().mockRejectedValue(new DriveApiError(503)),
     };
     jest
@@ -386,13 +498,11 @@ describe('Google Drive authorization and automatic synchronization', () => {
   });
   it('rejects unsupported Drive selections before modifying the connection', async () => {
     const api = {
-      get: jest
-        .fn()
-        .mockResolvedValue({
-          id: 'video',
-          name: 'Video.mov',
-          mimeType: 'video/quicktime',
-        }),
+      get: jest.fn().mockResolvedValue({
+        id: 'video',
+        name: 'Video.mov',
+        mimeType: 'video/quicktime',
+      }),
     };
     jest
       .spyOn(

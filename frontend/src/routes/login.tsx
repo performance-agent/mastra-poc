@@ -130,7 +130,7 @@ function LoginPage() {
               <CardTitle>Connect {oauthClient?.clientName ?? "MCP client"}</CardTitle>
             </div>
             <CardDescription>
-              This client can read your permitted groups and create reports only where you are an
+              This client can read your permitted projects and create reports only where you are an
               owner or admin.
             </CardDescription>
           </CardHeader>
@@ -141,7 +141,7 @@ function LoginPage() {
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Access remains limited by your current organization, workspace, and group
+                Access remains limited by your current organization, workspace, and project
                 memberships. Callback: {oauthClient?.redirectHost ?? "loading..."}. Requested
                 scopes: {oauthClient?.scopes.join(", ") ?? "loading..."}
               </p>

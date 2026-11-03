@@ -88,7 +88,9 @@ export function OrganizationHome() {
             <Avatar name={item.name} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{item.name}</p>
-              <p className="text-xs capitalize text-muted-foreground">{item.kind}</p>
+              <p className="text-xs capitalize text-muted-foreground">
+                {item.kind === "group" ? "Project" : "Workspace"}
+              </p>
             </div>
             <ArrowUpRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
           </a>
@@ -201,8 +203,8 @@ export function OrganizationHome() {
                         ? preferences.favorites
                         : preferences.recent.slice(0, 6),
                       block === "favorites"
-                        ? "Star a workspace or group to keep it close. Your shortcuts will appear here."
-                        : "The workspaces and groups you visit will appear here, ready for your next session.",
+                        ? "Star a workspace or project to keep it close. Your shortcuts will appear here."
+                        : "The workspaces and projects you visit will appear here, ready for your next session.",
                     )}
                   </section>
                 );
@@ -214,7 +216,7 @@ export function OrganizationHome() {
                       <h2 className="font-semibold">Recent evaluations</h2>
                     </div>
                     <p className="mb-3 text-xs text-muted-foreground">
-                      From your recently visited groups
+                      From your recently visited projects
                     </p>
                     {reports.error ? (
                       <p role="alert" className="text-sm text-muted-foreground">
@@ -247,8 +249,8 @@ export function OrganizationHome() {
                       </div>
                     ) : (
                       <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-                        No saved evaluations in your recent groups yet. Start with the setup guide
-                        or visit a group's Reports.
+                        No saved evaluations in your recent projects yet. Start with the setup guide
+                        or visit a project's Reports.
                       </p>
                     )}
                   </section>
