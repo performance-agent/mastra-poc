@@ -75,7 +75,6 @@ export function ReportsPanel({
   const evaluators = evaluatorsQ.data ?? [];
   const reports = reportsQ.data ?? [];
   const [picked, setPicked] = useState<string[]>([]);
-  const [contextByEvaluator, setContextByEvaluator] = useState<Record<string, string>>({});
   const seeded = useRef(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [cancelling, setCancelling] = useState(false);
@@ -226,12 +225,7 @@ export function ReportsPanel({
     setSubmitting(true);
     const startedAt = Date.now();
     try {
-      const context = Object.fromEntries(
-        picked.flatMap((id) => (contextByEvaluator[id] ? [[id, contextByEvaluator[id]]] : [])),
-      );
-      const response = await api.startEvaluatorReports(groupId, picked, {
-        contextByEvaluator: context,
-      });
+      const response = await api.startEvaluatorReports(groupId, picked);
       setRuns((current) => [
         ...current.filter((run) => !picked.includes(run.evaluatorId)),
         ...response.jobs.map((job) => ({
@@ -537,8 +531,7 @@ export function ReportsPanel({
           <DialogHeader>
             <DialogTitle>Generate reports</DialogTitle>
             <DialogDescription>
-              Each selected evaluator writes its own report. They run one after another. You can
-              attach one earlier report from that same evaluator as context.
+              Each selected evaluator writes its own report. They run one after another.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end">
@@ -549,7 +542,6 @@ export function ReportsPanel({
               onClick={() => {
                 if (picked.length === evaluators.length) {
                   setPicked([]);
-                  setContextByEvaluator({});
                   return;
                 }
                 setPicked(evaluators.map((evaluator) => evaluator.id));
@@ -561,10 +553,6 @@ export function ReportsPanel({
           <div className="grid max-h-80 gap-2 overflow-y-auto">
             {evaluators.map((evaluator) => {
               const checked = picked.includes(evaluator.id);
-              const ownReports = reports.filter(
-                (report) =>
-                  report.type === "GROUP_REPORT" && reportEvaluatorId(report) === evaluator.id,
-              );
               return (
                 <div key={evaluator.id} className="rounded-lg border border-border px-3 py-2">
                   <label className="flex items-center gap-3">
@@ -576,13 +564,6 @@ export function ReportsPanel({
                             ? [...current, evaluator.id]
                             : current.filter((id) => id !== evaluator.id),
                         );
-                        if (value !== true) {
-                          setContextByEvaluator((current) => {
-                            const next = { ...current };
-                            delete next[evaluator.id];
-                            return next;
-                          });
-                        }
                       }}
                     />
                     <EvaluatorMark name={evaluator.name} avatar={evaluator.avatar} size={36} />
@@ -593,34 +574,6 @@ export function ReportsPanel({
                       </span>
                     </span>
                   </label>
-                  {checked && ownReports.length > 0 && (
-                    <Select
-                      value={contextByEvaluator[evaluator.id] ?? "none"}
-                      onValueChange={(value) =>
-                        setContextByEvaluator((current) => {
-                          const next = { ...current };
-                          if (value === "none") delete next[evaluator.id];
-                          else next[evaluator.id] = value;
-                          return next;
-                        })
-                      }
-                    >
-                      <SelectTrigger className="mt-2" aria-label={`Context for ${evaluator.name}`}>
-                        <SelectValue placeholder="No previous report" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No previous report</SelectItem>
-                        {ownReports.map((report) => (
-                          <SelectItem key={report.id} value={report.id}>
-                            {report.title?.trim() ||
-                              (report.createdAt
-                                ? new Date(report.createdAt).toLocaleString()
-                                : "Report")}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
                 </div>
               );
             })}

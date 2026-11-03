@@ -776,6 +776,9 @@ export type ReportNote = {
   id: string;
   quote: string;
   comment: string;
+  authorName?: string;
+  authorPhotoUrl?: string;
+  createdAt?: string;
 };
 
 function boundedReportText(data: unknown) {
@@ -840,7 +843,14 @@ function parseReportNote(value: unknown): ReportNote {
   if (!value || typeof value !== 'object') {
     throw new BadRequestException('Each note needs a quote and a comment');
   }
-  const note = value as { id?: unknown; quote?: unknown; comment?: unknown };
+  const note = value as {
+    id?: unknown;
+    quote?: unknown;
+    comment?: unknown;
+    authorName?: unknown;
+    authorPhotoUrl?: unknown;
+    createdAt?: unknown;
+  };
   const id = typeof note.id === 'string' ? note.id.trim() : '';
   const quote =
     typeof note.quote === 'string'
@@ -856,7 +866,31 @@ function parseReportNote(value: unknown): ReportNote {
   if (comment.length < 1 || comment.length > 2000) {
     throw new BadRequestException('Each note needs a comment');
   }
-  return { id, quote, comment };
+  return { id, quote, comment, ...noteAuthor(note) };
+}
+
+function noteAuthor(note: {
+  authorName?: unknown;
+  authorPhotoUrl?: unknown;
+  createdAt?: unknown;
+}): Pick<ReportNote, 'authorName' | 'authorPhotoUrl' | 'createdAt'> {
+  const author: Pick<ReportNote, 'authorName' | 'authorPhotoUrl' | 'createdAt'> =
+    {};
+  if (typeof note.authorName === 'string') {
+    const name = note.authorName.trim().slice(0, 120);
+    if (name) author.authorName = name;
+  }
+  if (typeof note.authorPhotoUrl === 'string') {
+    const photo = note.authorPhotoUrl.trim();
+    if (/^(https:\/\/|media:)\S{1,500}$/.test(photo)) author.authorPhotoUrl = photo;
+  }
+  if (
+    typeof note.createdAt === 'string' &&
+    !Number.isNaN(Date.parse(note.createdAt))
+  ) {
+    author.createdAt = new Date(note.createdAt).toISOString();
+  }
+  return author;
 }
 
 function readNotes(value: unknown): ReportNote[] {

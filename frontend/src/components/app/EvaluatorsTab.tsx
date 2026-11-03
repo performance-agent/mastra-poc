@@ -51,23 +51,12 @@ const EFFORTS: Array<{ value: EvaluatorEffort; label: string; hint: string }> = 
 ];
 
 const EFFORT_LOOK = [
+  { fill: "bg-[color-mix(in_srgb,var(--brand)_68%,white)]", sparkles: 5, duration: 3.4 },
+  { fill: "bg-[var(--brand)]", sparkles: 9, duration: 2.1 },
   {
-    fill: "bg-teal-400",
-    glow: "",
-    sparkles: 5,
-    duration: 3.4,
-  },
-  {
-    fill: "bg-cyan-500",
-    glow: "shadow-[0_0_18px_rgba(6,182,212,0.4)]",
-    sparkles: 9,
-    duration: 2.1,
-  },
-  {
-    fill: "bg-gradient-to-r from-cyan-400 via-teal-300 to-amber-400",
-    glow: "shadow-[0_0_24px_rgba(251,191,36,0.45)]",
-    sparkles: 16,
-    duration: 1.15,
+    fill: "bg-[linear-gradient(90deg,var(--brand),color-mix(in_srgb,var(--brand)_62%,#24164f))]",
+    sparkles: 22,
+    duration: 0.7,
   },
 ] as const;
 
@@ -217,13 +206,19 @@ function EffortSlider({
             }
           }}
         >
-          <div className="absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 rounded-full bg-neutral-200" />
+          <div className="absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--brand)_16%,var(--muted))]" />
           <div
             aria-hidden
-            className={`absolute left-0 top-1/2 h-8 -translate-y-1/2 overflow-hidden rounded-full ${look.fill} ${look.glow} ${
+            className={`absolute left-0 top-1/2 h-8 -translate-y-1/2 overflow-hidden rounded-full ${look.fill} ${
               dragging ? "" : "transition-[width,box-shadow] duration-300 ease-out"
             }`}
-            style={{ width: fillWidth }}
+            style={{
+              width: fillWidth,
+              boxShadow:
+                liveIndex === 0
+                  ? undefined
+                  : `0 0 ${liveIndex === 2 ? 24 : 18}px color-mix(in srgb, var(--brand) ${liveIndex === 2 ? 50 : 40}%, transparent)`,
+            }}
           >
             <EffortSparkles count={look.sparkles} duration={look.duration} />
           </div>
@@ -232,7 +227,7 @@ function EffortSlider({
               <span
                 key={effort.value}
                 aria-hidden
-                className="pointer-events-none absolute top-1/2 z-20 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-neutral-400"
+                className="pointer-events-none absolute top-1/2 z-20 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--brand)_55%,white)]"
                 style={{
                   left: stop === 0 ? "1.25rem" : stop === 1 ? "50%" : "calc(100% - 1.25rem)",
                 }}
@@ -241,7 +236,7 @@ function EffortSlider({
           )}
           <span
             aria-hidden
-            className={`pointer-events-none absolute top-1/2 z-10 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/10 bg-white shadow-lg ${
+            className={`pointer-events-none absolute top-1/2 z-10 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color-mix(in_srgb,var(--brand)_35%,transparent)] bg-white shadow-lg ${
               dragging ? "" : "transition-[left] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
             }`}
             style={{ left: thumbLeft }}

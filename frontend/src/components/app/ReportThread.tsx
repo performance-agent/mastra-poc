@@ -1,13 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquarePlus, Sparkles, X } from "lucide-react";
+import { MessageSquarePlus, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { Avatar } from "@/components/app/Avatar";
 import { GenerationProgressPanel } from "@/components/app/GenerationProgress";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { useExperience } from "@/lib/experience-context";
 import { quoteFromSelection, quoteLayout, type QuoteBox } from "@/lib/report-notes";
 import type { GenerationJob, GroupReport, PerformanceReport, ReportNote } from "@/lib/types";
 
@@ -42,6 +45,29 @@ function sameMarks(current: Record<string, QuoteBox[]>, next: Record<string, Quo
   });
 }
 
+function commentWhen(createdAt?: string) {
+  if (!createdAt) return "";
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+  const time = date.toLocaleTimeString("es-AR", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  const diff = Math.round((today.getTime() - day.getTime()) / 86_400_000);
+  const label =
+    diff === 0
+      ? "Hoy"
+      : diff === 1
+        ? "Ayer"
+        : date.toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+  return `${time} ${label}`;
+}
+
 function versionLabel(createdAt: string) {
   const date = new Date(createdAt);
   if (Number.isNaN(date.getTime())) return "Versión";
@@ -69,6 +95,11 @@ export function ReportThread({
   onRename?: (title: string | null) => void;
 }) {
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
+  const experience = useExperience();
+  const authorName =
+    experience.profile?.name || firebaseUser?.displayName || firebaseUser?.email || "Usuario";
+  const authorPhotoUrl = experience.profile?.photoUrl ?? firebaseUser?.photoURL ?? null;
   const revisionsQ = useQuery({
     queryKey: ["report", report.id, "revisions"],
     queryFn: () => api.listReportRevisions(report.id),
@@ -91,6 +122,8 @@ export function ReportThread({
   const [saving, setSaving] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
   const [placed, setPlaced] = useState<Record<string, number>>({});
   const [marks, setMarks] = useState<Record<string, QuoteBox[]>>({});
   const [wide, setWide] = useState(
@@ -204,7 +237,7 @@ export function ReportThread({
     const observer = new ResizeObserver(measure);
     observer.observe(root);
     return () => observer.disconnect();
-  }, [notes, selected?.id, report.data, index, wide]);
+  }, [notes, selected?.id, report.data, index, wide, editingId]);
 
   const displayed: PerformanceReport<GroupReport> = selected
     ? {
@@ -235,7 +268,17 @@ export function ReportThread({
       toast.error("Este reporte ya tiene 30 notas");
       return;
     }
-    const next = [...notes, { id: crypto.randomUUID(), quote: composer.quote, comment }];
+    const next = [
+      ...notes,
+      {
+        id: crypto.randomUUID(),
+        quote: composer.quote,
+        comment,
+        authorName,
+        ...(authorPhotoUrl ? { authorPhotoUrl } : {}),
+        createdAt: new Date().toISOString(),
+      },
+    ];
     setComposer(null);
     setCommentText("");
     window.getSelection()?.removeAllRanges();
@@ -371,36 +414,105 @@ export function ReportThread({
             ref={marginRef}
             className={
               wide
-                ? "no-print relative z-10 w-60 shrink-0"
+                ? "no-print relative z-10 w-72 shrink-0"
                 : "no-print w-full shrink-0 space-y-3"
             }
             aria-label="Comentarios"
           >
             {notes.map((note) => {
               const active = hoveredId === note.id;
+              const editing = editingId === note.id;
+              const name = note.authorName || authorName;
+              const photo = note.authorPhotoUrl ?? (note.authorName ? null : authorPhotoUrl);
+              const when = commentWhen(note.createdAt);
               return (
                 <article
                   key={note.id}
-                  className={`rounded-lg border bg-card p-3 shadow-card ${
-                    active ? "border-violet-400" : "border-border"
-                  } ${wide ? "absolute left-0 w-60" : ""}`}
+                  className={`group relative rounded-2xl border border-border/70 bg-muted/40 p-3 ${
+                    active ? "border-violet-300" : ""
+                  } ${wide ? "absolute left-0 w-72" : ""}`}
                   style={wide ? { top: placed[note.id] ?? 0 } : undefined}
                   onMouseEnter={() => setHoveredId(note.id)}
                   onMouseLeave={() => setHoveredId((current) => (current === note.id ? null : current))}
                 >
-                  <p className="line-clamp-3 text-[11px] italic text-muted-foreground">
-                    “{note.quote}”
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{note.comment}</p>
-                  {canEdit && isLatest && (
-                    <button
-                      type="button"
-                      className="mt-2 inline-flex items-center text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => void persistNotes(notes.filter((item) => item.id !== note.id))}
+                  {canEdit && isLatest && !editing && (
+                    <div
+                      className={`absolute right-2 top-2 flex gap-0.5 ${
+                        active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                      }`}
                     >
-                      <X className="mr-1 h-3 w-3" />
-                      Quitar
-                    </button>
+                      <button
+                        type="button"
+                        aria-label="Editar comentario"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                        onClick={() => {
+                          setEditingId(note.id);
+                          setEditText(note.comment);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Eliminar comentario"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-destructive"
+                        onClick={() => {
+                          if (editingId === note.id) setEditingId(null);
+                          void persistNotes(notes.filter((item) => item.id !== note.id));
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2.5 pr-14">
+                    <Avatar name={name} src={photo} className="h-8 w-8 rounded-full text-[11px]" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground" title={name}>
+                        {name}
+                      </p>
+                      {when && <p className="text-xs text-muted-foreground">{when}</p>}
+                    </div>
+                  </div>
+                  {editing ? (
+                    <div className="mt-2">
+                      <Textarea
+                        autoFocus
+                        value={editText}
+                        onChange={(event) => setEditText(event.target.value)}
+                        maxLength={2000}
+                        className="min-h-16 bg-background"
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingId(null)}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={!editText.trim() || saving}
+                          onClick={() => {
+                            const comment = editText.trim();
+                            if (!comment) return;
+                            setEditingId(null);
+                            void persistNotes(
+                              notes.map((item) =>
+                                item.id === note.id ? { ...item, comment } : item,
+                              ),
+                            );
+                          }}
+                        >
+                          Guardar
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{note.comment}</p>
                   )}
                 </article>
               );
