@@ -82,6 +82,8 @@ export class EvaluatorsService {
         personalityId,
         evaluationEmphasis: guidelines.emphasis,
         evaluationNotes: guidelines.notes,
+        disabledKnowledgeNodeIds: this.idList(dto.disabledKnowledgeNodeIds),
+        disabledResourceIds: this.idList(dto.disabledResourceIds),
         workspaceId: group.workspaceId,
         groupId: dto.scope === 'GROUP' ? group.id : null,
         ownerId: userId,
@@ -177,6 +179,16 @@ export class EvaluatorsService {
             : {}),
           evaluationEmphasis: guidelines.emphasis,
           evaluationNotes: guidelines.notes,
+          ...(dto.disabledKnowledgeNodeIds !== undefined
+            ? {
+                disabledKnowledgeNodeIds: this.idList(
+                  dto.disabledKnowledgeNodeIds,
+                ),
+              }
+            : {}),
+          ...(dto.disabledResourceIds !== undefined
+            ? { disabledResourceIds: this.idList(dto.disabledResourceIds) }
+            : {}),
         },
         include,
       });
@@ -292,6 +304,10 @@ export class EvaluatorsService {
       );
     }
     return group.id;
+  }
+
+  private idList(ids: string[] | undefined) {
+    return [...new Set((ids ?? []).map((id) => id.trim()).filter(Boolean))];
   }
 
   private guidelines(

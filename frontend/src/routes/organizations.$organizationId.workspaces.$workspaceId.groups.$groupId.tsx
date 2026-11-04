@@ -466,6 +466,7 @@ function GroupPage() {
               groupId={groupId}
               initialReportId={search.reportId}
               canDelete={canManageRoles}
+              canManage={canManageRoles}
               onOpenEvaluators={() => setTab("evaluation")}
             />
           )}

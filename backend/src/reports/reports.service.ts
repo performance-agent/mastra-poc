@@ -18,6 +18,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { mastra } from '../mastra';
 import type { EvaluationGuidelines } from '../mastra/evaluation-guidelines';
@@ -38,8 +40,9 @@ import {
 } from './evaluator-run';
 
 @Injectable()
-export class ReportsService {
+export class ReportsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ReportsService.name);
+  private scheduleTimer?: ReturnType<typeof setInterval>;
   private readonly groupReportAgent = mastra.getAgent('groupReportAgent');
 
   constructor(
@@ -48,6 +51,18 @@ export class ReportsService {
     private readonly jobs: GenerationService,
     private readonly knowledge: KnowledgeService,
   ) {}
+
+  onModuleInit() {
+    void this.runDueSchedules();
+    this.scheduleTimer = setInterval(() => {
+      void this.runDueSchedules();
+    }, 30_000);
+    this.scheduleTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.scheduleTimer) clearInterval(this.scheduleTimer);
+  }
 
   createGroupReport(groupId: string, dto: CreateReportDto) {
     if (dto.type !== 'GROUP_REPORT') {
@@ -144,6 +159,95 @@ export class ReportsService {
     return this.jobs.cancelQueued(jobId, groupId);
   }
 
+  listEvaluatorSchedules(groupId: string) {
+    return this.prisma.evaluatorSchedule.findMany({
+      where: { groupId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async saveEvaluatorSchedule(
+    groupId: string,
+    evaluatorId: string,
+    input: { days: number[]; time: string; timeZone: string },
+  ) {
+    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    if (!group) throw new NotFoundException('Project not found');
+    await this.assertEvaluatorVisible(group, evaluatorId);
+    const days = [...new Set(input.days)].sort((left, right) => left - right);
+    if (days.length === 0 || days.some((day) => day < 0 || day > 6)) {
+      throw new BadRequestException('Choose at least one day');
+    }
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(input.time);
+    if (!match) throw new BadRequestException('Choose a valid time');
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: input.timeZone });
+    } catch {
+      throw new BadRequestException('Choose a valid time zone');
+    }
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    return this.prisma.evaluatorSchedule.upsert({
+      where: { evaluatorId_groupId: { evaluatorId, groupId } },
+      create: {
+        evaluatorId,
+        groupId,
+        days,
+        hour,
+        minute,
+        timeZone: input.timeZone,
+      },
+      update: { days, hour, minute, timeZone: input.timeZone },
+    });
+  }
+
+  async deleteEvaluatorSchedule(groupId: string, evaluatorId: string) {
+    const existing = await this.prisma.evaluatorSchedule.findUnique({
+      where: { evaluatorId_groupId: { evaluatorId, groupId } },
+    });
+    if (!existing) throw new NotFoundException('Schedule not found');
+    await this.prisma.evaluatorSchedule.delete({ where: { id: existing.id } });
+  }
+
+  private async runDueSchedules() {
+    const schedules = await this.prisma.evaluatorSchedule.findMany();
+    const now = new Date();
+    for (const schedule of schedules) {
+      const zoned = zonedClock(now, schedule.timeZone);
+      if (!zoned || !schedule.days.includes(zoned.weekday)) continue;
+      if (zoned.hour !== schedule.hour || zoned.minute !== schedule.minute) continue;
+      if (schedule.lastRunOn === zoned.date) continue;
+      const claimed = await this.prisma.evaluatorSchedule.updateMany({
+        where: {
+          id: schedule.id,
+          OR: [{ lastRunOn: null }, { lastRunOn: { not: zoned.date } }],
+        },
+        data: { lastRunOn: zoned.date },
+      });
+      if (!claimed.count) continue;
+      const active = await this.jobs.activeGroupReports(schedule.groupId);
+      if (active.some((job) => job.evaluatorId === schedule.evaluatorId)) continue;
+      try {
+        await this.createGroupReportAsync(schedule.groupId, {
+          type: 'GROUP_REPORT',
+          evaluatorIds: [schedule.evaluatorId],
+        });
+        this.logger.log(
+          `Scheduled report started for evaluator ${schedule.evaluatorId}`,
+        );
+      } catch (error) {
+        await this.prisma.evaluatorSchedule.update({
+          where: { id: schedule.id },
+          data: { lastRunOn: schedule.lastRunOn },
+        });
+        const message = error instanceof Error ? error.message : 'Schedule failed';
+        this.logger.warn(
+          `Scheduled report skipped for evaluator ${schedule.evaluatorId}: ${message}`,
+        );
+      }
+    }
+  }
+
   private async loadPriorReports(
     groupId: string,
     evaluatorIds: string[],
@@ -207,16 +311,17 @@ export class ReportsService {
     await progress?.('preparing');
     await progress?.('preparing', 'completed');
     await progress?.('collecting_evidence');
-    const prepared = await (options.prepared ??
+    const loaded = await (options.prepared ??
       this.prepareGroupReport(
         groupId,
         options.period,
         options.knowledgeSnapshot,
       ));
     const source = await this.loadEvaluatorSource(
-      prepared.group,
+      loaded.group,
       options.evaluatorId,
     );
+    const prepared = this.restrictPrepared(loaded, source.access);
     const { group, providerData, reportInput } = prepared;
     const knowledge = knowledgePackage(
       prepared.knowledgeSnapshot,
@@ -434,12 +539,7 @@ export class ReportsService {
           }
         : null;
 
-    const coverage = buildCoverage(providerData);
-    coverage.limitations.push(
-      period
-        ? 'Model input is stored evidence filtered to the requested period. Text and nested lists may be shortened to fit the input budget.'
-        : 'Model input is the stored history. Text and nested lists are shortened only when the package exceeds the input budget. Aggregate counts cover the full stored history.',
-    );
+    const coverage = appendInputLimitation(buildCoverage(providerData), period);
     const reportInput = {
       group: { id: group.id, name: group.name },
       reportMode: 'history',
@@ -474,7 +574,10 @@ export class ReportsService {
     });
     const source = await this.loadEvaluatorSource(group, evaluatorId);
     const snapshot = await this.knowledge.snapshot(groupId, knowledgeSelection);
-    const prepared = await this.prepareGroupReport(groupId, period, snapshot);
+    const prepared = this.restrictPrepared(
+      await this.prepareGroupReport(groupId, period, snapshot),
+      source.access,
+    );
     const knowledge = knowledgePackage(
       prepared.knowledgeSnapshot,
       await this.knowledge.snapshotText(prepared.knowledgeSnapshot),
@@ -613,6 +716,7 @@ export class ReportsService {
     snapshot: EvaluatorSnapshot | null;
     effort: 'LOW' | 'MEDIUM' | 'HIGH';
     voice: string | null;
+    access: { disabledKnowledgeNodeIds: string[]; disabledResourceIds: string[] };
   }> {
     if (!evaluatorId) {
       const guidelines =
@@ -622,7 +726,13 @@ export class ReportsService {
               notes: group.evaluationNotes ?? null,
             }
           : null;
-      return { guidelines, snapshot: null, effort: 'MEDIUM', voice: null };
+      return {
+        guidelines,
+        snapshot: null,
+        effort: 'MEDIUM',
+        voice: null,
+        access: { disabledKnowledgeNodeIds: [], disabledResourceIds: [] },
+      };
     }
     const evaluator = await this.assertEvaluatorVisible(group, evaluatorId);
     const guidelines =
@@ -654,6 +764,54 @@ export class ReportsService {
         questions: evaluator.questions.map((question) => question.text),
       },
       voice: evaluator.personality.instruction,
+      access: {
+        disabledKnowledgeNodeIds: evaluator.disabledKnowledgeNodeIds ?? [],
+        disabledResourceIds: evaluator.disabledResourceIds ?? [],
+      },
+    };
+  }
+
+  private restrictPrepared(
+    prepared: Awaited<ReturnType<ReportsService['prepareGroupReport']>>,
+    access: { disabledKnowledgeNodeIds: string[]; disabledResourceIds: string[] },
+  ) {
+    const denyKnowledge = new Set(access.disabledKnowledgeNodeIds);
+    const denyResources = new Set(access.disabledResourceIds);
+    if (denyKnowledge.size === 0 && denyResources.size === 0) return prepared;
+    const resources = prepared.providerData.resources.filter(
+      (resource) => !denyResources.has(resource.id),
+    );
+    const limitations = prepared.providerData.limitations.filter(
+      (item) => !denyResources.has(item.resourceId),
+    );
+    const providerData = { ...prepared.providerData, resources, limitations };
+    const coverage = appendInputLimitation(
+      buildCoverage(providerData),
+      prepared.reportInput.period,
+    );
+    const knowledgeSnapshot = {
+      ...prepared.knowledgeSnapshot,
+      sources: prepared.knowledgeSnapshot.sources.filter(
+        (source) => !denyKnowledge.has(source.id),
+      ),
+    };
+    const hasDataset = resources.some((resource) => resource.datasets.length > 0);
+    if (!hasDataset && knowledgeSnapshot.sources.length === 0) {
+      throw new BadRequestException(
+        'This evaluator has no enabled plugin resources or ready knowledge sources',
+      );
+    }
+    return {
+      ...prepared,
+      providerData,
+      knowledgeSnapshot,
+      coverage,
+      reportInput: {
+        ...prepared.reportInput,
+        resources,
+        limitations,
+        coverage,
+      },
     };
   }
 
@@ -1072,6 +1230,59 @@ function readNotes(value: unknown): ReportNote[] {
 }
 
 type ProviderData = Awaited<ReturnType<PluginRuntimeService['provide']>>;
+
+const WEEKDAYS: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+function zonedClock(date: Date, timeZone: string) {
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        weekday: 'short',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      })
+        .formatToParts(date)
+        .map((part) => [part.type, part.value]),
+    );
+    const weekday = WEEKDAYS[parts.weekday ?? ''];
+    let hour = Number(parts.hour);
+    if (hour === 24) hour = 0;
+    if (weekday === undefined || Number.isNaN(hour)) return null;
+    return {
+      weekday,
+      date: `${parts.year}-${parts.month}-${parts.day}`,
+      hour,
+      minute: Number(parts.minute),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function appendInputLimitation(
+  coverage: ReturnType<typeof buildCoverage>,
+  period?: { from: string; to: string } | null,
+) {
+  coverage.limitations.push(
+    period
+      ? 'Model input is stored evidence filtered to the requested period. Text and nested lists may be shortened to fit the input budget.'
+      : 'Model input is the stored history. Text and nested lists are shortened only when the package exceeds the input budget. Aggregate counts cover the full stored history.',
+  );
+  return coverage;
+}
 
 function buildCoverage(providerData: ProviderData) {
   const datasets = providerData.resources.flatMap(

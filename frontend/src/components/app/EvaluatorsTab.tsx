@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { LoadingState } from "@/components/app/LoadingState";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
+import { knowledgeApi, type KnowledgeNode } from "@/lib/knowledge";
 import {
   EVALUATOR_CHARACTERS,
   EVALUATOR_COLORS,
@@ -305,6 +307,8 @@ type Draft = {
   notes: string;
   rules: DraftRule[];
   questions: DraftQuestion[];
+  disabledKnowledgeNodeIds: string[];
+  disabledResourceIds: string[];
 };
 
 function draftFrom(evaluator: Evaluator): Draft {
@@ -333,6 +337,8 @@ function draftFrom(evaluator: Evaluator): Draft {
         text: question.text,
       })),
     ),
+    disabledKnowledgeNodeIds: evaluator.disabledKnowledgeNodeIds ?? [],
+    disabledResourceIds: evaluator.disabledResourceIds ?? [],
   };
 }
 
@@ -348,6 +354,8 @@ function emptyDraft(scope: EvaluatorScope, personalityId: string): Draft {
     notes: "",
     rules: withOpenRule([]),
     questions: withOpenQuestion([]),
+    disabledKnowledgeNodeIds: [],
+    disabledResourceIds: [],
   };
 }
 
@@ -464,6 +472,8 @@ export function EvaluatorsTab({
       questions: draft.questions
         .filter((question) => question.text.trim())
         .map((question) => ({ text: question.text.trim() })),
+      disabledKnowledgeNodeIds: draft.disabledKnowledgeNodeIds,
+      disabledResourceIds: draft.disabledResourceIds,
       ...(draft.scope === "GROUP" ? { groupId } : {}),
     };
     setSaving(true);
@@ -889,6 +899,14 @@ export function EvaluatorsTab({
               ))}
             </div>
 
+            <SourceAccess
+              groupId={groupId}
+              disabledKnowledgeNodeIds={draft.disabledKnowledgeNodeIds}
+              disabledResourceIds={draft.disabledResourceIds}
+              canEdit={canEdit}
+              onChange={(next) => setDraft({ ...draft, ...next })}
+            />
+
             <div className="grid gap-3">
               <div>
                 <Label>Character</Label>
@@ -1079,5 +1097,186 @@ export function EvaluatorsTab({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function toggleId(ids: string[], id: string, enabled: boolean) {
+  if (enabled) return ids.filter((item) => item !== id);
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+function knowledgeDetail(node: KnowledgeNode) {
+  const origin = node.origin === "GOOGLE_DRIVE" ? "Google Drive" : "Uploaded";
+  const place = node.inherited ? "Workspace" : "Project";
+  const state = node.status === "READY" ? null : node.status.toLowerCase();
+  return [origin, place, state].filter(Boolean).join(" · ");
+}
+
+function SourceAccess({
+  groupId,
+  disabledKnowledgeNodeIds,
+  disabledResourceIds,
+  canEdit,
+  onChange,
+}: {
+  groupId: string;
+  disabledKnowledgeNodeIds: string[];
+  disabledResourceIds: string[];
+  canEdit: boolean;
+  onChange: (next: {
+    disabledKnowledgeNodeIds?: string[];
+    disabledResourceIds?: string[];
+  }) => void;
+}) {
+  const group = useQuery({
+    queryKey: ["group", groupId],
+    queryFn: () => api.getGroup(groupId),
+  });
+  const resources = useQuery({
+    queryKey: ["group", groupId, "resources"],
+    queryFn: () => api.listGroupResources(groupId),
+  });
+  const library = useQuery({
+    queryKey: ["knowledge", group.data?.workspaceId, groupId],
+    queryFn: () => knowledgeApi.list({ workspaceId: group.data!.workspaceId!, groupId }),
+    enabled: Boolean(group.data?.workspaceId),
+  });
+  const [open, setOpen] = useState(false);
+  const documents = (library.data?.nodes ?? []).filter(
+    (node) => node.kind === "DOCUMENT" && !node.excluded,
+  );
+  const assigned = resources.data ?? [];
+  const visibleIds = new Set([...assigned.map((resource) => resource.id), ...documents.map((node) => node.id)]);
+  const turnedOff = [...disabledResourceIds, ...disabledKnowledgeNodeIds].filter((id) =>
+    visibleIds.has(id),
+  ).length;
+  const total = assigned.length + documents.length;
+  const loading =
+    group.isLoading || resources.isLoading || (Boolean(group.data?.workspaceId) && library.isLoading);
+  const failed = group.error ?? resources.error ?? library.error;
+  const summary = loading
+    ? "Loading sources…"
+    : failed
+      ? "Sources could not be loaded"
+      : total === 0
+        ? "No sources in this project"
+        : turnedOff === 0
+          ? `${total} sources, all on`
+          : `${total} sources, ${turnedOff} off`;
+
+  return (
+    <div className="grid gap-2">
+      <Label>Sources</Label>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
+        <p className="text-xs text-muted-foreground">{summary}</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+          Configure
+        </Button>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Sources</DialogTitle>
+            <DialogDescription>
+              This evaluator can read every assigned source until you turn one off. New sources stay
+              on.
+            </DialogDescription>
+          </DialogHeader>
+          {loading ? (
+            <LoadingState />
+          ) : failed ? (
+            <ErrorState
+              message={errorMessage(failed)}
+              onRetry={() => {
+                void group.refetch();
+                void resources.refetch();
+                void library.refetch();
+              }}
+            />
+          ) : (
+            <div className="grid max-h-[60vh] gap-4 overflow-y-auto pr-1">
+              <div className="grid gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Plugin resources</p>
+                {assigned.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No plugin resources assigned to this project.
+                  </p>
+                ) : (
+                  assigned.map((resource) => (
+                    <SourceRow
+                      key={resource.id}
+                      title={resource.name}
+                      detail={
+                        resource.pluginInstallation?.name ??
+                        resource.pluginInstallation?.pluginId ??
+                        "Plugin"
+                      }
+                      checked={!disabledResourceIds.includes(resource.id)}
+                      disabled={!canEdit}
+                      onCheckedChange={(enabled) =>
+                        onChange({
+                          disabledResourceIds: toggleId(disabledResourceIds, resource.id, enabled),
+                        })
+                      }
+                    />
+                  ))
+                )}
+              </div>
+              <div className="grid gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Knowledge</p>
+                {documents.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No knowledge documents in this project.
+                  </p>
+                ) : (
+                  documents.map((node) => (
+                    <SourceRow
+                      key={node.id}
+                      title={node.name}
+                      detail={knowledgeDetail(node)}
+                      checked={!disabledKnowledgeNodeIds.includes(node.id)}
+                      disabled={!canEdit}
+                      onCheckedChange={(enabled) =>
+                        onChange({
+                          disabledKnowledgeNodeIds: toggleId(
+                            disabledKnowledgeNodeIds,
+                            node.id,
+                            enabled,
+                          ),
+                        })
+                      }
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function SourceRow({
+  title,
+  detail,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  title: string;
+  detail: string;
+  checked: boolean;
+  disabled: boolean;
+  onCheckedChange: (enabled: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-lg border px-3 py-2">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{title}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{detail}</span>
+      </span>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </label>
   );
 }

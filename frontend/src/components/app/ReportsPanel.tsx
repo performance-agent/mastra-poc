@@ -6,7 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Share2, Trash2 } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -15,7 +15,6 @@ import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
 import { GenerationProgressPanel } from "@/components/app/GenerationProgress";
-import { KnowledgeSourcePicker } from "./KnowledgeSources";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { ReportThread } from "@/components/app/ReportThread";
@@ -36,6 +35,7 @@ import {
 import { api, errorMessage } from "@/lib/api";
 import type {
   Evaluator,
+  EvaluatorSchedule,
   GenerationJob,
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
@@ -60,11 +60,13 @@ export function ReportsPanel({
   initialReportId,
   onOpenEvaluators,
   canDelete = false,
+  canManage = false,
 }: {
   groupId: string;
   initialReportId?: string;
   onOpenEvaluators: () => void;
   canDelete?: boolean;
+  canManage?: boolean;
 }) {
   const qc = useQueryClient();
   const evaluatorsQ = useQuery({
@@ -95,7 +97,12 @@ export function ReportsPanel({
     setOpenedReportId(target.id);
   }, [initialReportId, reportsQ.data]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
+  const [scheduleEvaluatorId, setScheduleEvaluatorId] = useState<string | null>(null);
+  const schedulesQ = useQuery({
+    queryKey: ["group", groupId, "schedules"],
+    queryFn: () => api.listEvaluatorSchedules(groupId),
+  });
+  const schedules = schedulesQ.data ?? [];
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -224,10 +231,6 @@ export function ReportsPanel({
   };
 
   const generate = async () => {
-    if (knowledgeIds === null) {
-      toast.error("Wait for knowledge sources to load before generating.");
-      return;
-    }
     if (Boolean(periodFrom) !== Boolean(periodTo) || (periodFrom && periodFrom > periodTo)) {
       toast.error("Choose a valid report period with both dates.");
       return;
@@ -240,7 +243,6 @@ export function ReportsPanel({
     const startedAt = Date.now();
     try {
       const response = await api.startEvaluatorReports(groupId, picked, {
-        knowledgeSelection: { sourceIds: knowledgeIds },
         ...(periodFrom && periodTo ? { period: { from: periodFrom, to: periodTo } } : {}),
       });
       setRuns((current) => [
@@ -344,60 +346,73 @@ export function ReportsPanel({
                     ? !reportEvaluatorId(report)
                     : reportEvaluatorId(report) === entry.key,
                 ).length;
+                const schedule = schedules.find((item) => item.evaluatorId === entry.key);
                 return (
-                  <button
-                    key={entry.key}
-                    type="button"
-                    onClick={() => {
-                      setFocus(entry.key);
-                      setOpenedReportId(null);
-                    }}
-                    className={`flex w-full items-center gap-3 rounded-xl px-2 text-left transition-[padding] duration-300 ${
-                      selected
-                        ? "py-3 text-foreground"
-                        : "py-2 text-muted-foreground hover:text-foreground"
-                    }`}
-                    onMouseEnter={() => setHoveredKey(entry.key)}
-                    onMouseLeave={() =>
-                      setHoveredKey((current) => (current === entry.key ? null : current))
-                    }
-                  >
-                    {entry.evaluator ? (
-                      <EvaluatorMark
-                        name={entry.evaluator.name}
-                        avatar={entry.evaluator.avatar}
-                        state={
-                          generating ? "thinking" : hoveredKey === entry.key ? "hover" : "idle"
-                        }
-                        size={selected ? 48 : 36}
-                      />
-                    ) : (
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                        G
+                  <div key={entry.key} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFocus(entry.key);
+                        setOpenedReportId(null);
+                      }}
+                      className={`flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 text-left transition-[padding] duration-300 ${
+                        selected
+                          ? "py-3 text-foreground"
+                          : "py-2 text-muted-foreground hover:text-foreground"
+                      }`}
+                      onMouseEnter={() => setHoveredKey(entry.key)}
+                      onMouseLeave={() =>
+                        setHoveredKey((current) => (current === entry.key ? null : current))
+                      }
+                    >
+                      {entry.evaluator ? (
+                        <EvaluatorMark
+                          name={entry.evaluator.name}
+                          avatar={entry.evaluator.avatar}
+                          state={
+                            generating ? "thinking" : hoveredKey === entry.key ? "hover" : "idle"
+                          }
+                          size={selected ? 48 : 36}
+                        />
+                      ) : (
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                          G
+                        </span>
+                      )}
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {entry.label}
+                        </span>
+                        <span className="block text-[11px]">
+                          {status === "queued"
+                            ? "Queued"
+                            : status === "running"
+                              ? "Generating"
+                              : schedule
+                                ? `${count} reports · ${clockLabel(schedule)}`
+                                : `${count} reports`}
+                        </span>
                       </span>
+                    </button>
+                    {entry.evaluator && canManage && (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0"
+                        aria-label={`Schedule ${entry.label}`}
+                        onClick={() => setScheduleEvaluatorId(entry.evaluator!.id)}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     )}
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-foreground">
-                        {entry.label}
-                      </span>
-                      <span className="block text-[11px]">
-                        {status === "queued"
-                          ? "Queued"
-                          : status === "running"
-                            ? "Generating"
-                            : `${count} reports`}
-                      </span>
-                    </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
             <div className="mt-4 grid gap-2">
               <Button
-                onClick={() => {
-                  setKnowledgeIds(null);
-                  setPickerOpen(true);
-                }}
+                onClick={() => setPickerOpen(true)}
                 disabled={evaluators.length === 0}
               >
                 <FileText className="mr-1.5 h-4 w-4" /> Generate
@@ -549,12 +564,23 @@ export function ReportsPanel({
         </div>
       )}
 
+      <ScheduleDialog
+        key={scheduleEvaluatorId ?? "closed"}
+        groupId={groupId}
+        evaluator={evaluators.find((item) => item.id === scheduleEvaluatorId) ?? null}
+        schedule={schedules.find((item) => item.evaluatorId === scheduleEvaluatorId) ?? null}
+        open={scheduleEvaluatorId !== null}
+        onOpenChange={(open) => {
+          if (!open) setScheduleEvaluatorId(null);
+        }}
+      />
+
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Generate reports</DialogTitle>
             <DialogDescription>
-              Each selected evaluator writes its own report. They run one after another.
+              Each selected evaluator writes its own report with the sources enabled on that evaluator.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end">
@@ -623,11 +649,10 @@ export function ReportsPanel({
               />
             </Label>
           </div>
-          <KnowledgeSourcePicker key={groupId} groupId={groupId} onChange={setKnowledgeIds} />
           <DialogFooter>
             <Button
               onClick={generate}
-              disabled={submitting || picked.length === 0 || knowledgeIds === null}
+              disabled={submitting || picked.length === 0}
             >
               {submitting ? "Starting..." : "Generate"}
             </Button>
@@ -699,5 +724,146 @@ function ReportHistoryBar({
         </Button>
       )}
     </div>
+  );
+}
+
+const WEEK_DAYS = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+];
+
+function clockLabel(schedule: EvaluatorSchedule) {
+  return `${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;
+}
+
+function ScheduleDialog({
+  groupId,
+  evaluator,
+  schedule,
+  open,
+  onOpenChange,
+}: {
+  groupId: string;
+  evaluator: Evaluator | null;
+  schedule: EvaluatorSchedule | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const qc = useQueryClient();
+  const [days, setDays] = useState<number[]>(schedule?.days ?? []);
+  const [time, setTime] = useState(schedule ? clockLabel(schedule) : "09:00");
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const save = async () => {
+    if (!evaluator) return;
+    if (days.length === 0 || !time) {
+      toast.error("Choose at least one day and a time.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const [hour, minute] = time.split(":");
+      await api.saveEvaluatorSchedule(groupId, evaluator.id, {
+        days,
+        time: `${hour.padStart(2, "0")}:${minute}`,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      await qc.invalidateQueries({ queryKey: ["group", groupId, "schedules"] });
+      toast.success(schedule ? "Schedule updated" : "Schedule created");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!evaluator || !schedule) return;
+    setDeleting(true);
+    try {
+      await api.deleteEvaluatorSchedule(groupId, evaluator.id);
+      await qc.invalidateQueries({ queryKey: ["group", groupId, "schedules"] });
+      toast.success("Schedule deleted");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Schedule {evaluator?.name}</DialogTitle>
+          <DialogDescription>
+            Runs once on each selected day, at this time. Only one schedule per evaluator. The
+            server has to be on.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <Label>Days</Label>
+            <div className="flex flex-wrap gap-3">
+              {WEEK_DAYS.map((day) => {
+                const checked = days.includes(day.value);
+                return (
+                  <label key={day.value} className="flex items-center gap-1.5 text-sm">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(value) =>
+                        setDays((current) =>
+                          value === true
+                            ? [...current, day.value]
+                            : current.filter((item) => item !== day.value),
+                        )
+                      }
+                    />
+                    {day.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <Label className="grid gap-1.5">
+            Time
+            <Input
+              aria-label="Schedule time"
+              type="time"
+              value={time}
+              onChange={(event) => setTime(event.target.value)}
+            />
+          </Label>
+        </div>
+        <DialogFooter>
+          {schedule ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="sm:mr-auto hover:bg-red-600 hover:text-white"
+              disabled={deleting || saving}
+              onClick={() => void remove()}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || deleting || days.length === 0 || !time}
+          >
+            {saving ? "Saving..." : schedule ? "Save" : "Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

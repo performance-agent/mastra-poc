@@ -105,6 +105,20 @@ export class CreateEvaluatorDto {
   @ValidateNested({ each: true })
   @Type(() => EvaluatorQuestionDto)
   questions?: EvaluatorQuestionDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  disabledKnowledgeNodeIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  disabledResourceIds?: string[];
 }
 
 export class PersonalityDto {

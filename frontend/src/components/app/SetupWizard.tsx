@@ -12,7 +12,6 @@ import { SetupPlugins } from "./SetupPlugins";
 import { SetupEvaluator } from "./SetupEvaluator";
 import { SetupTeam, SetupReview } from "./SetupTeam";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { KnowledgeSourcePicker } from "./KnowledgeSources";
 import isotipo from "@/assets/brand/isotipo.svg";
 
 const LABELS = {
@@ -53,7 +52,6 @@ export function SetupPage({
   const [busy, setBusy] = useState(false);
   const [pluginBusy, setPluginBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const submitting = useRef(false);
   const step = SETUP_STEPS.includes(routeStep as SetupStep) ? (routeStep as SetupStep) : draft.step;
@@ -303,14 +301,11 @@ export function SetupPage({
       skipped.add(step);
     else skipped.delete(step);
     const next = SETUP_STEPS[Math.min(index + 1, 4)];
-    if (next === "review") setKnowledgeIds(null);
     change({ step: next, dismissed: false, skipped: [...skipped] });
     await flush();
     await go(next);
   };
   const launch = async () => {
-    if (knowledgeIds === null)
-      throw new Error("Wait for knowledge sources to load before starting.");
     if (!canManage || !group || !evaluator || !selectedResources.length)
       throw new Error("Choose an available team, plugin resource and evaluator before starting.");
     const assignedNow = await api.listGroupResources(draft.groupId);
@@ -322,10 +317,7 @@ export function SetupPage({
     await flush();
     const active = await api.listActiveGroupReports(draft.groupId);
     if (!active.some((job) => job.evaluatorId === evaluator.id))
-      await api.startEvaluatorReports(draft.groupId, [evaluator.id], {
-        period,
-        knowledgeSelection: { sourceIds: knowledgeIds },
-      });
+      await api.startEvaluatorReports(draft.groupId, [evaluator.id], { period });
     change({ completed: true, dismissed: true });
     await flush();
     window.location.assign(
@@ -578,14 +570,6 @@ export function SetupPage({
                           })
                         }
                       />
-                      {draft.groupId && (
-                        <KnowledgeSourcePicker
-                          key={draft.groupId}
-                          workspaceId={draft.workspaceId}
-                          groupId={draft.groupId}
-                          onChange={setKnowledgeIds}
-                        />
-                      )}
                     </div>
                   )}
                 </fieldset>
@@ -632,7 +616,6 @@ export function SetupPage({
                       !!taskError ||
                       !canManage ||
                       !evaluator ||
-                      knowledgeIds === null ||
                       !selectedResources.length
                     }
                     onClick={() => void run(launch)}

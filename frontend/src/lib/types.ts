@@ -442,6 +442,16 @@ export interface EvaluatorQuestion {
   position: number;
 }
 
+export interface EvaluatorSchedule {
+  id: string;
+  evaluatorId: string;
+  groupId: string;
+  days: number[];
+  hour: number;
+  minute: number;
+  timeZone: string;
+}
+
 export interface Evaluator {
   id: string;
   name: string;
@@ -457,6 +467,8 @@ export interface Evaluator {
   groupId: string | null;
   rules: EvaluatorRule[];
   questions: EvaluatorQuestion[];
+  disabledKnowledgeNodeIds: string[];
+  disabledResourceIds: string[];
 }
 
 export interface EvaluatorInput {
@@ -471,6 +483,8 @@ export interface EvaluatorInput {
   rules: Array<{ name: string; description?: string | null; valuation: number }>;
   questions?: Array<{ text: string }>;
   groupId?: string;
+  disabledKnowledgeNodeIds?: string[];
+  disabledResourceIds?: string[];
 }
 
 export type GroupReportStatus = "GOOD" | "WATCH" | "RISK" | "INSUFFICIENT_DATA";

@@ -23,6 +23,7 @@ import type {
   GroupReport,
   Evaluator,
   EvaluatorInput,
+  EvaluatorSchedule,
   Personality,
   Role,
   EvaluationRequest,
@@ -403,6 +404,19 @@ export const api = {
   acceptInvitation: (token: string) =>
     request<InvitationPreview>(`/invitations/${token}/accept`, { method: "POST" }),
 
+  listEvaluatorSchedules: (groupId: string) =>
+    request<EvaluatorSchedule[]>(`/groups/${groupId}/schedules`),
+  saveEvaluatorSchedule: (
+    groupId: string,
+    evaluatorId: string,
+    body: { days: number[]; time: string; timeZone: string },
+  ) =>
+    request<EvaluatorSchedule>(`/groups/${groupId}/schedules/${evaluatorId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteEvaluatorSchedule: (groupId: string, evaluatorId: string) =>
+    request<void>(`/groups/${groupId}/schedules/${evaluatorId}`, { method: "DELETE" }),
   listGroupResources: (id: string) => request<Resource[]>(`/groups/${id}/resources`),
   assignGroupResource: (groupId: string, resourceId: string) =>
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "PUT" }),
