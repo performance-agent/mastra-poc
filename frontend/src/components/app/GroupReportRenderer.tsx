@@ -404,18 +404,20 @@ function pdfFileName(title: string) {
 
 export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRename }: Props) {
   const data = report.data;
-  const overall = data.overallAssessment;
+  const outlined = Array.isArray(data.blocks) && data.blocks.length > 0;
   const evidenceForSection = (section: GroupReportEvidence["section"]) =>
-    data.evidence.filter((evidence) => evidence.section === section);
+    (data.evidence ?? []).filter((evidence) => evidence.section === section);
   const evidenceForPerson = (displayName: string) =>
-    data.evidence.filter(
+    (data.evidence ?? []).filter(
       (evidence) => evidence.section === "PEOPLE" && evidence.subject === displayName,
     );
-  const unassignedPeopleEvidence = data.evidence.filter(
-    (evidence) =>
-      evidence.section === "PEOPLE" &&
-      !data.people.some((person) => person.displayName === evidence.subject),
-  );
+  const unassignedPeopleEvidence = outlined
+    ? []
+    : (data.evidence ?? []).filter(
+        (evidence) =>
+          evidence.section === "PEOPLE" &&
+          !(data.people ?? []).some((person) => person.displayName === evidence.subject),
+      );
   const generatedAt = report.createdAt ? new Date(report.createdAt).toLocaleString("es-AR") : "";
   const savedTitle = report.title ?? "";
   const [name, setName] = useState(savedTitle);
@@ -466,6 +468,116 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
     window.addEventListener("afterprint", cleanup);
     window.print();
   }
+
+  if (outlined) {
+    const customTitles = new Set(
+      (data.blocks ?? [])
+        .filter((block) => block.kind === "CUSTOM")
+        .map((block) => String(block.title ?? "")),
+    );
+    return (
+      <div id="group-report" className="min-w-0 space-y-8 overflow-hidden">
+        {report.data.period && (
+          <p className="text-sm text-muted-foreground">
+            Evaluation period: {report.data.period.from} &ndash; {report.data.period.to}
+          </p>
+        )}
+        <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
+          <div className="flex min-w-0 items-center gap-1">
+            {onBack && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="no-print -ml-2 shrink-0"
+                aria-label="Back"
+                onClick={onBack}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
+            {onRename ? (
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onBlur={commitName}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                placeholder="Report name"
+                aria-label="Report name"
+                maxLength={120}
+                className="min-w-0 flex-1 border-transparent bg-transparent text-xl font-semibold shadow-none placeholder:font-normal hover:border-input"
+              />
+            ) : (
+              <h2 className="min-w-0 wrap-break-word text-xl font-semibold">
+                {savedTitle || "Report"}
+              </h2>
+            )}
+          </div>
+          {data.evaluator && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Evaluador usado{" "}
+              <span className="font-medium text-foreground">{data.evaluator.name}</span>
+            </p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="text-xs text-muted-foreground">Generado {generatedAt}</div>
+            {canDelete && onDelete && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="no-print hover:bg-red-600 hover:text-white"
+                onClick={onDelete}
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="no-print"
+              onClick={downloadPdf}
+            >
+              <Download className="mr-1 h-3.5 w-3.5" /> Download PDF
+            </Button>
+          </div>
+        </Card>
+        {data.coverage && (
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
+            <Metric label="Recursos" value={data.coverage.resourcesAnalyzed} />
+            <Metric label="Datasets" value={data.coverage.datasetsAnalyzed} />
+            <Metric label="Registros" value={data.coverage.recordsAnalyzed} />
+          </div>
+        )}
+        {(data.blocks ?? []).map((block, index) => (
+          <OutlinedBlock
+            key={String(block.id ?? index)}
+            block={block}
+            evidence={data.evidence ?? []}
+            customTitles={customTitles}
+          />
+        ))}
+        <ReportKnowledgeSources snapshot={data.knowledgeSources} />
+        {data.coverage && (
+          <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+            <h3 className="text-sm font-semibold">Cobertura</h3>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {data.coverage.firstActivityAt ?? "Inicio desconocido"} –{" "}
+              {data.coverage.lastActivityAt ?? "Fin desconocido"}
+            </p>
+            <div className="mt-4">
+              <ListBlock title="Limitaciones" items={data.coverage.limitations} />
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  const overall = data.overallAssessment;
 
   return (
     <div id="group-report" className="min-w-0 space-y-8 overflow-hidden">
@@ -879,4 +991,232 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
       </Card>
     </div>
   );
+}
+
+function OutlinedBlock({
+  block,
+  evidence,
+  customTitles,
+}: {
+  block: Record<string, unknown>;
+  evidence: GroupReportEvidence[];
+  customTitles: Set<string>;
+}) {
+  const kind = String(block.kind ?? "");
+  const forSection = (section: GroupReportEvidence["section"]) =>
+    evidence.filter((item) => item.section === section);
+
+  if (kind === "SUMMARY") {
+    return (
+      <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+        <h3 className="text-sm font-semibold">Resumen</h3>
+        <p className="mt-2 wrap-break-word text-sm text-muted-foreground">
+          {String(block.summary ?? "")}
+        </p>
+      </Card>
+    );
+  }
+
+  if (kind === "OVERALL") {
+    const assessment = block.overallAssessment as GroupReport["overallAssessment"];
+    return (
+      <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 max-w-3xl">
+            <h3 className="text-sm font-semibold">Evaluación general</h3>
+            <div className="mt-3">
+              <AssessmentBadges assessment={assessment} />
+            </div>
+          </div>
+          <div className="w-full shrink-0 rounded-xl border border-border bg-background p-4 text-center sm:w-auto sm:min-w-32">
+            <div className="text-3xl font-semibold">{assessment.score ?? "—"}</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">Evaluación general</div>
+          </div>
+        </div>
+        <div className="mt-4">
+          <AssessmentDetails assessment={assessment} />
+        </div>
+        <div className="mt-4">
+          <EvidenceList
+            items={forSection("OVERALL").filter(
+              (item) => !item.subject || !customTitles.has(item.subject),
+            )}
+          />
+        </div>
+      </Card>
+    );
+  }
+
+  if (kind === "PRODUCT") {
+    const product = block.productAssessment as GroupReport["productAssessment"];
+    return (
+      <section className="space-y-4">
+        <SectionHeading
+          title="Producto e ideación"
+          description="Problemas abordados, prioridades, alcance y evolución inferible desde tickets."
+        />
+        <AssessmentCard title="Evaluación del producto" assessment={product.assessment} />
+        <div className="grid min-w-0 gap-3 xl:grid-cols-3">
+          <DimensionCard title="Ideación" assessment={product.ideation} />
+          <DimensionCard title="Prioridades y alcance" assessment={product.prioritiesAndScope} />
+          <DimensionCard title="Flujo de tickets" assessment={product.ticketFlow} />
+        </div>
+        <ListBlock title="Vacíos observados" items={product.gaps} />
+        <EvidenceList items={forSection("PRODUCT")} />
+      </section>
+    );
+  }
+
+  if (kind === "PROJECT") {
+    const project = block.projectAssessment as GroupReport["projectAssessment"];
+    return (
+      <section className="space-y-4">
+        <SectionHeading
+          title="Ejecución del proyecto"
+          description="Continuidad, entrega, previsibilidad, riesgos y aprendizaje."
+        />
+        <AssessmentCard title="Evaluación del proyecto" assessment={project.assessment} />
+        <div className="grid min-w-0 gap-3 xl:grid-cols-3">
+          <DimensionCard title="Flujo de entrega" assessment={project.deliveryFlow} />
+          <DimensionCard title="Continuidad" assessment={project.continuity} />
+          <DimensionCard title="Previsibilidad" assessment={project.predictability} />
+        </div>
+        <ListBlock title="Riesgos" items={project.risks} />
+        <ListBlock title="Aprendizajes" items={project.lessons} />
+        <EvidenceList items={forSection("PROJECT")} />
+      </section>
+    );
+  }
+
+  if (kind === "ENGINEERING") {
+    const engineering = block.engineeringAssessment as GroupReport["engineeringAssessment"];
+    return (
+      <section className="space-y-4">
+        <SectionHeading
+          title="Ingeniería"
+          description="Trazabilidad, disciplina del cambio y señales de mantenimiento."
+        />
+        <AssessmentCard title="Evaluación de ingeniería" assessment={engineering.assessment} />
+        <div className="grid min-w-0 gap-3 xl:grid-cols-2">
+          <DimensionCard title="Trazabilidad" assessment={engineering.traceability} />
+          <DimensionCard title="Disciplina del cambio" assessment={engineering.changeDiscipline} />
+          <DimensionCard title="Revisabilidad" assessment={engineering.reviewability} />
+          <DimensionCard title="Mantenimiento" assessment={engineering.maintenanceSignals} />
+        </div>
+        {engineering.commitsToReview.length > 0 && (
+          <div className="grid min-w-0 gap-3">
+            {engineering.commitsToReview.map((commit, index) => (
+              <CommitCard key={`${commit.reference ?? commit.message}-${index}`} commit={commit} />
+            ))}
+          </div>
+        )}
+        <EvidenceList items={forSection("ENGINEERING")} />
+      </section>
+    );
+  }
+
+  if (kind === "PEOPLE") {
+    const people = block.people as GroupReport["people"];
+    return (
+      <section className="space-y-4">
+        <SectionHeading title="Personas" description="Contribución observada por persona." />
+        {people.map((person) => (
+          <Card key={person.displayName} className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+            <h3 className="text-sm font-semibold">{person.displayName}</h3>
+            <p className="mt-2 wrap-break-word text-sm text-muted-foreground">
+              {person.contributionSummary}
+            </p>
+            <div className="mt-4">
+              <AssessmentDetails assessment={person.assessment} />
+            </div>
+            <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+              <ListBlock title="Áreas de mejora" items={person.improvementAreas} />
+              <ListBlock title="Sugerencias" items={person.suggestions} />
+            </div>
+            <div className="mt-4">
+              <EvidenceList
+                items={evidence.filter(
+                  (item) => item.section === "PEOPLE" && item.subject === person.displayName,
+                )}
+                title="Evidencia y trabajo relevante"
+              />
+            </div>
+          </Card>
+        ))}
+      </section>
+    );
+  }
+
+  if (kind === "RECOMMENDATIONS") {
+    const recommendations = block.recommendations as GroupReport["recommendations"];
+    return (
+      <section className="space-y-3">
+        <SectionHeading
+          title="Recomendaciones"
+          description="Acciones priorizadas a partir de la evaluación."
+        />
+        <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+          {recommendations.map((recommendation, index) => (
+            <Card
+              key={`${recommendation.title}-${index}`}
+              className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card"
+            >
+              <Badge className={priorityClasses(recommendation.priority)}>
+                Prioridad {priorityLabel(recommendation.priority)}
+              </Badge>
+              <h4 className="mt-3 wrap-break-words text-sm font-semibold">{recommendation.title}</h4>
+              <p className="mt-1 wrap-break-word text-sm text-muted-foreground">
+                {recommendation.description}
+              </p>
+              <p className="mt-2 wrap-break-word text-xs font-medium">{recommendation.action}</p>
+            </Card>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (kind === "QUESTIONS") {
+    const answers = (block.questionAnswers ?? []) as NonNullable<GroupReport["questionAnswers"]>;
+    if (!answers.length) return null;
+    return (
+      <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card sm:p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Preguntas
+        </p>
+        <div className="mt-3 space-y-4">
+          {answers.map((item) => (
+            <div key={item.question}>
+              <p className="text-sm font-medium">{item.question}</p>
+              <p className="mt-1 wrap-break-word text-sm text-muted-foreground">{item.answer}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  if (kind === "CUSTOM") {
+    const title = String(block.title ?? "Sección");
+    return (
+      <Card className="min-w-0 overflow-hidden rounded-xl p-4 shadow-card">
+        <h3 className="wrap-break-word text-sm font-semibold">{title}</h3>
+        <p className="mt-2 wrap-break-word text-sm text-muted-foreground">
+          {String(block.summary ?? "")}
+        </p>
+        <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-2">
+          <ListBlock title="Señales positivas" items={(block.positiveSignals as string[]) ?? []} />
+          <ListBlock title="Preocupaciones" items={(block.concerns as string[]) ?? []} />
+        </div>
+        <div className="mt-4">
+          <ListBlock title="Limitaciones" items={(block.limitations as string[]) ?? []} />
+        </div>
+        <div className="mt-4">
+          <EvidenceList items={evidence.filter((item) => item.subject === title)} />
+        </div>
+      </Card>
+    );
+  }
+
+  return null;
 }

@@ -10,6 +10,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
@@ -29,6 +30,17 @@ import {
 const evaluatorScopes: EvaluatorScopeName[] = [...EVALUATOR_SCOPES];
 const evaluatorEfforts: EvaluatorEffortLevel[] = [...EVALUATOR_EFFORTS];
 const MAX_QUESTIONS = 6;
+const REPORT_BLOCK_KINDS = [
+  'SUMMARY',
+  'OVERALL',
+  'PRODUCT',
+  'PROJECT',
+  'ENGINEERING',
+  'PEOPLE',
+  'RECOMMENDATIONS',
+  'QUESTIONS',
+  'CUSTOM',
+] as const;
 
 export class EvaluatorRuleDto {
   @IsString()
@@ -51,6 +63,25 @@ export class EvaluatorQuestionDto {
   @Matches(/\S/, { message: 'text must contain non-whitespace text' })
   @MaxLength(500)
   text!: string;
+}
+
+export class ReportBlockDto {
+  @IsString()
+  @MaxLength(40)
+  id!: string;
+
+  @IsEnum(REPORT_BLOCK_KINDS)
+  kind!: (typeof REPORT_BLOCK_KINDS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  prompt?: string;
 }
 
 export class CreateEvaluatorDto {
@@ -119,6 +150,14 @@ export class CreateEvaluatorDto {
   @IsString({ each: true })
   @MaxLength(80, { each: true })
   disabledResourceIds?: string[];
+
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsArray()
+  @ArrayMaxSize(12)
+  @ValidateNested({ each: true })
+  @Type(() => ReportBlockDto)
+  reportBlocks?: ReportBlockDto[] | null;
 }
 
 export class PersonalityDto {

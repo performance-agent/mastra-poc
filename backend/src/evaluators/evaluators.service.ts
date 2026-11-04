@@ -10,7 +10,9 @@ import {
 } from '../../generated/prisma/enums';
 import { AccessControlService } from '../access-control/access-control.service';
 import { validateEvaluationGuidelines } from '../mastra/evaluation-guidelines';
+import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { requireReportBlocks } from '../reports/report-blocks';
 import { AVATAR_COUNT } from './default-evaluators';
 import {
   CreateEvaluatorDto,
@@ -84,6 +86,7 @@ export class EvaluatorsService {
         evaluationNotes: guidelines.notes,
         disabledKnowledgeNodeIds: this.idList(dto.disabledKnowledgeNodeIds),
         disabledResourceIds: this.idList(dto.disabledResourceIds),
+        reportBlocks: this.reportBlocks(dto.reportBlocks),
         workspaceId: group.workspaceId,
         groupId: dto.scope === 'GROUP' ? group.id : null,
         ownerId: userId,
@@ -188,6 +191,9 @@ export class EvaluatorsService {
             : {}),
           ...(dto.disabledResourceIds !== undefined
             ? { disabledResourceIds: this.idList(dto.disabledResourceIds) }
+            : {}),
+          ...(dto.reportBlocks !== undefined
+            ? { reportBlocks: this.reportBlocks(dto.reportBlocks) }
             : {}),
         },
         include,
@@ -304,6 +310,11 @@ export class EvaluatorsService {
       );
     }
     return group.id;
+  }
+
+  private reportBlocks(value: unknown) {
+    const blocks = requireReportBlocks(value);
+    return blocks ?? Prisma.DbNull;
   }
 
   private idList(ids: string[] | undefined) {

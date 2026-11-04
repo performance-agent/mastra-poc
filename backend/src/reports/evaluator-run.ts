@@ -61,7 +61,7 @@ export function buildEvaluatorReportPrompt(
     voice: string | null;
     effort: EvaluatorEffortLevel;
   },
-  options: { effortInstruction?: string; priorContext?: string } = {},
+  options: { effortInstruction?: string; priorContext?: string; structure?: string } = {},
 ) {
   const effort =
     options.effortInstruction ??
@@ -69,7 +69,14 @@ export function buildEvaluatorReportPrompt(
       inputBytes: FULL_INPUT_BYTES,
       outputTokens: 0,
     }).instruction;
-  return `${buildEvaluationGuidelinesPrompt(source.guidelines)}${buildEvaluatorGovernancePrompt(source.snapshot?.rules ?? [])}${buildEvaluatorVoicePrompt(source.voice)}${buildEvaluatorQuestionsPrompt(source.snapshot?.questions ?? [])}${effort ? `${effort}\n\n` : ''}${options.priorContext ?? ''}${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
+  const structure = options.structure?.trim();
+  const questions = structure
+    ? ''
+    : buildEvaluatorQuestionsPrompt(source.snapshot?.questions ?? []);
+  const ending = structure
+    ? `${structure}\n\n`
+    : `${GROUP_REPORT_GENERATION_PROMPT}\n\n`;
+  return `${buildEvaluationGuidelinesPrompt(source.guidelines)}${buildEvaluatorGovernancePrompt(source.snapshot?.rules ?? [])}${buildEvaluatorVoicePrompt(source.voice)}${questions}${effort ? `${effort}\n\n` : ''}${options.priorContext ?? ''}${ending}`;
 }
 
 export function reportEffortPreset(

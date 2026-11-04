@@ -442,6 +442,24 @@ export interface EvaluatorQuestion {
   position: number;
 }
 
+export type ReportBlockKind =
+  | "SUMMARY"
+  | "OVERALL"
+  | "PRODUCT"
+  | "PROJECT"
+  | "ENGINEERING"
+  | "PEOPLE"
+  | "RECOMMENDATIONS"
+  | "QUESTIONS"
+  | "CUSTOM";
+
+export interface ReportBlockConfig {
+  id: string;
+  kind: ReportBlockKind;
+  title?: string;
+  prompt?: string;
+}
+
 export interface EvaluatorSchedule {
   id: string;
   evaluatorId: string;
@@ -469,6 +487,7 @@ export interface Evaluator {
   questions: EvaluatorQuestion[];
   disabledKnowledgeNodeIds: string[];
   disabledResourceIds: string[];
+  reportBlocks?: ReportBlockConfig[] | null;
 }
 
 export interface EvaluatorInput {
@@ -485,6 +504,7 @@ export interface EvaluatorInput {
   groupId?: string;
   disabledKnowledgeNodeIds?: string[];
   disabledResourceIds?: string[];
+  reportBlocks?: ReportBlockConfig[] | null;
 }
 
 export type GroupReportStatus = "GOOD" | "WATCH" | "RISK" | "INSUFFICIENT_DATA";
@@ -517,6 +537,7 @@ export interface GroupReportDimensionAssessment {
 }
 
 export interface GroupReport {
+  blocks?: Array<Record<string, unknown>>;
   knowledgeSources?: import("./knowledge").KnowledgeReportSnapshot;
   period?: { from: string; to: string };
   summary: string;

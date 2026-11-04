@@ -30,6 +30,14 @@ import {
 import { resolveModelFromEnvironment } from '../mastra/model-configuration';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  isOutlinedReport,
+  outlinedReport,
+  readReportBlocks,
+  reportBlocksSchema,
+  reportStructurePrompt,
+  type ReportBlockConfig,
+} from './report-blocks';
 import { CreateReportDto } from './dto/create-report.dto';
 import {
   buildEvaluatorReportPrompt,
@@ -323,10 +331,13 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     );
     const prepared = this.restrictPrepared(loaded, source.access);
     const { group, providerData, reportInput } = prepared;
+    const structure = source.blocks
+      ? reportStructurePrompt(source.blocks, source.snapshot?.questions ?? [])
+      : undefined;
     const knowledge = knowledgePackage(
       prepared.knowledgeSnapshot,
       await this.knowledge.snapshotText(prepared.knowledgeSnapshot),
-      buildEvaluatorReportPrompt(source) +
+      buildEvaluatorReportPrompt(source, { structure }) +
         '\n' +
         group.name +
         '\n' +
@@ -382,12 +393,16 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     for (const model of groupReportModels()) {
       const budget = modelBudget(model);
       const effort = reportEffortPreset(source.effort, budget);
+      const contentSchema = source.blocks
+        ? reportBlocksSchema(source.blocks)
+        : groupReportContentSchema;
       const priorPrefix = options.revision
         ? revisionPrompt(options.priorReport, options.revision.notes)
         : priorReportPrompt(options.priorReport);
       const prefix = buildEvaluatorReportPrompt(source, {
         effortInstruction: effort.instruction,
         priorContext: priorPrefix,
+        structure,
       });
       const reserve = Buffer.byteLength(`${REPORT_COMPACT_INSTRUCTION}\n\n`);
       packed = packEvidence(reportInput, effort.sample, {
@@ -424,11 +439,19 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
                     maxOutputTokens: outputTokens,
                     maxRetries: 0,
                   },
-                  structuredOutput: { schema: groupReportContentSchema },
+                  structuredOutput: {
+                    schema: contentSchema as typeof groupReportContentSchema,
+                  },
                 },
               );
               tokenUsage = readTokenUsage(response);
-              const content = groupReportContentSchema.parse(response.object);
+              const parsed = contentSchema.parse(response.object);
+              const content = source.blocks
+                ? outlinedReport(
+                    parsed as { blocks: Record<string, unknown> | unknown[] },
+                    source.blocks,
+                  )
+                : parsed;
               validateKnowledgeReferences(content, knowledge);
               return content;
             },
@@ -448,7 +471,10 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
           this.logger.warn(
             'Group report output was cut off. Retrying a shorter report.',
           );
-          promptText = `${REPORT_COMPACT_INSTRUCTION}\n\n${boundedPrompt}`;
+          const compact = source.blocks
+            ? 'La respuesta anterior se cortó. Reescribí solo los bloques pedidos, más cortos. Una frase por texto y como máximo dos ítems por lista.'
+            : REPORT_COMPACT_INSTRUCTION;
+          promptText = `${compact}\n\n${boundedPrompt}`;
         }
       }
       if (generatedReport) break;
@@ -717,6 +743,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     effort: 'LOW' | 'MEDIUM' | 'HIGH';
     voice: string | null;
     access: { disabledKnowledgeNodeIds: string[]; disabledResourceIds: string[] };
+    blocks: ReportBlockConfig[] | null;
   }> {
     if (!evaluatorId) {
       const guidelines =
@@ -732,6 +759,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         effort: 'MEDIUM',
         voice: null,
         access: { disabledKnowledgeNodeIds: [], disabledResourceIds: [] },
+        blocks: null,
       };
     }
     const evaluator = await this.assertEvaluatorVisible(group, evaluatorId);
@@ -768,6 +796,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         disabledKnowledgeNodeIds: evaluator.disabledKnowledgeNodeIds ?? [],
         disabledResourceIds: evaluator.disabledResourceIds ?? [],
       },
+      blocks: readReportBlocks(evaluator.reportBlocks),
     };
   }
 
@@ -845,14 +874,23 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     period?: { from: string; to: string },
     knowledge?: KnowledgeReportSnapshot,
   ) {
-    const generatedReport = groupReportContentSchema.parse(content);
+    const generatedReport = isOutlinedReport(content)
+      ? content
+      : groupReportContentSchema.parse(content);
     validateKnowledgeReferences(generatedReport, knowledge);
-    const reportData = groupReportSchema.parse({
-      ...generatedReport,
-      coverage,
-      evaluationGuidelines: evaluationGuidelines ?? null,
-      evaluator,
-    });
+    const reportData = isOutlinedReport(content)
+      ? {
+          ...generatedReport,
+          coverage,
+          evaluationGuidelines: evaluationGuidelines ?? null,
+          evaluator,
+        }
+      : groupReportSchema.parse({
+          ...generatedReport,
+          coverage,
+          evaluationGuidelines: evaluationGuidelines ?? null,
+          evaluator,
+        });
     const payload = {
       ...JSON.parse(JSON.stringify(reportData)),
       ...(knowledge ? { knowledgeSources: knowledge } : {}),

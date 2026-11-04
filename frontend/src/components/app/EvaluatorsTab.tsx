@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -36,6 +36,8 @@ import type {
   EvaluatorEffort,
   EvaluatorInput,
   EvaluatorScope,
+  ReportBlockConfig,
+  ReportBlockKind,
 } from "@/lib/types";
 
 const MAX_BEHAVIOR_RULES = 4;
@@ -309,6 +311,7 @@ type Draft = {
   questions: DraftQuestion[];
   disabledKnowledgeNodeIds: string[];
   disabledResourceIds: string[];
+  reportBlocks: ReportBlockConfig[] | null;
 };
 
 function draftFrom(evaluator: Evaluator): Draft {
@@ -339,6 +342,7 @@ function draftFrom(evaluator: Evaluator): Draft {
     ),
     disabledKnowledgeNodeIds: evaluator.disabledKnowledgeNodeIds ?? [],
     disabledResourceIds: evaluator.disabledResourceIds ?? [],
+    reportBlocks: evaluator.reportBlocks ?? null,
   };
 }
 
@@ -356,6 +360,7 @@ function emptyDraft(scope: EvaluatorScope, personalityId: string): Draft {
     questions: withOpenQuestion([]),
     disabledKnowledgeNodeIds: [],
     disabledResourceIds: [],
+    reportBlocks: null,
   };
 }
 
@@ -474,6 +479,8 @@ export function EvaluatorsTab({
         .map((question) => ({ text: question.text.trim() })),
       disabledKnowledgeNodeIds: draft.disabledKnowledgeNodeIds,
       disabledResourceIds: draft.disabledResourceIds,
+      reportBlocks:
+        draft.reportBlocks && draft.reportBlocks.length > 0 ? draft.reportBlocks : null,
       ...(draft.scope === "GROUP" ? { groupId } : {}),
     };
     setSaving(true);
@@ -899,6 +906,12 @@ export function EvaluatorsTab({
               ))}
             </div>
 
+            <ReportStructure
+              blocks={draft.reportBlocks}
+              canEdit={canEdit}
+              onChange={(reportBlocks) => setDraft({ ...draft, reportBlocks })}
+            />
+
             <SourceAccess
               groupId={groupId}
               disabledKnowledgeNodeIds={draft.disabledKnowledgeNodeIds}
@@ -1278,5 +1291,221 @@ function SourceRow({
       </span>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
     </label>
+  );
+}
+
+const BLOCK_OPTIONS: { kind: ReportBlockKind; label: string }[] = [
+  { kind: "SUMMARY", label: "Summary" },
+  { kind: "OVERALL", label: "Overall assessment" },
+  { kind: "PRODUCT", label: "Product" },
+  { kind: "PROJECT", label: "Project" },
+  { kind: "ENGINEERING", label: "Engineering" },
+  { kind: "PEOPLE", label: "People" },
+  { kind: "RECOMMENDATIONS", label: "Recommendations" },
+  { kind: "QUESTIONS", label: "Questions" },
+  { kind: "CUSTOM", label: "Custom section" },
+];
+
+function standardBlocks(): ReportBlockConfig[] {
+  return BLOCK_OPTIONS.filter((option) => option.kind !== "CUSTOM").map((option) => ({
+    id: crypto.randomUUID(),
+    kind: option.kind,
+  }));
+}
+
+function moveBlock(blocks: ReportBlockConfig[], from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= blocks.length || to >= blocks.length) return blocks;
+  const copy = blocks.slice();
+  const [item] = copy.splice(from, 1);
+  copy.splice(to, 0, item);
+  return copy;
+}
+
+function ReportStructure({
+  blocks,
+  canEdit,
+  onChange,
+}: {
+  blocks: ReportBlockConfig[] | null;
+  canEdit: boolean;
+  onChange: (blocks: ReportBlockConfig[] | null) => void;
+}) {
+  const custom = blocks !== null;
+  const [adding, setAdding] = useState<ReportBlockKind>("SUMMARY");
+  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const used = new Set((blocks ?? []).map((block) => block.kind));
+
+  const add = () => {
+    const current = blocks ?? [];
+    if (current.length >= 12) return;
+    if (adding === "CUSTOM") {
+      if (!title.trim() || !prompt.trim()) return;
+      onChange([
+        ...current,
+        { id: crypto.randomUUID(), kind: "CUSTOM", title: title.trim(), prompt: prompt.trim() },
+      ]);
+      setTitle("");
+      setPrompt("");
+      return;
+    }
+    if (used.has(adding)) return;
+    onChange([...current, { id: crypto.randomUUID(), kind: adding }]);
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>Report structure</Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Off uses the standard report. On lets this evaluator choose its own blocks. Drag a section to reorder it.
+          </p>
+        </div>
+        <Switch
+          checked={custom}
+          disabled={!canEdit}
+          onCheckedChange={(on) => onChange(on ? standardBlocks() : null)}
+          aria-label="Custom report structure"
+        />
+      </div>
+      {blocks && (
+        <div className="grid gap-2">
+          {blocks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Add at least one block, or turn this off.</p>
+          ) : (
+            blocks.map((block, index) => (
+              <div
+                key={block.id}
+                onDragOver={(event) => {
+                  if (!canEdit) return;
+                  event.preventDefault();
+                  setOverIndex(index);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const from = Number(event.dataTransfer.getData("text/plain"));
+                  if (!Number.isNaN(from)) onChange(moveBlock(blocks, from, index));
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${
+                  dragIndex === index ? "opacity-50" : ""
+                } ${overIndex === index && dragIndex !== index ? "border-foreground" : ""}`}
+              >
+                {canEdit && (
+                  <span
+                    draggable
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Drag to reorder"
+                    className="mt-0.5 cursor-grab text-muted-foreground active:cursor-grabbing"
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", String(index));
+                      setDragIndex(index);
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null);
+                      setOverIndex(null);
+                    }}
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">
+                    {BLOCK_OPTIONS.find((option) => option.kind === block.kind)?.label}
+                    {block.kind === "CUSTOM" ? `: ${block.title}` : ""}
+                  </span>
+                  {block.prompt ? (
+                    <span className="mt-1 block text-[11px] text-muted-foreground">{block.prompt}</span>
+                  ) : null}
+                </span>
+                {canEdit && (
+                  <span className="flex shrink-0 items-center">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="Move block up"
+                      disabled={index === 0}
+                      onClick={() => onChange(moveBlock(blocks, index, index - 1))}
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="Move block down"
+                      disabled={index === blocks.length - 1}
+                      onClick={() => onChange(moveBlock(blocks, index, index + 1))}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="Remove block"
+                      onClick={() => onChange(blocks.filter((item) => item.id !== block.id))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+          {canEdit && blocks.length < 12 && (
+            <div className="grid gap-2 rounded-lg border border-dashed p-3">
+              <select
+                aria-label="Block to add"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={adding}
+                onChange={(event) => setAdding(event.target.value as ReportBlockKind)}
+              >
+                {BLOCK_OPTIONS.map((option) => (
+                  <option
+                    key={option.kind}
+                    value={option.kind}
+                    disabled={option.kind !== "CUSTOM" && used.has(option.kind)}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {adding === "CUSTOM" && (
+                <>
+                  <Input
+                    aria-label="Custom block title"
+                    placeholder="Section title"
+                    value={title}
+                    maxLength={80}
+                    onChange={(event) => setTitle(event.target.value)}
+                  />
+                  <Textarea
+                    aria-label="What this section should look at"
+                    placeholder="What should this section look at?"
+                    value={prompt}
+                    maxLength={500}
+                    onChange={(event) => setPrompt(event.target.value)}
+                  />
+                </>
+              )}
+              <Button type="button" size="sm" variant="outline" onClick={add}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add block
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

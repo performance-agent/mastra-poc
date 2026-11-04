@@ -28,6 +28,7 @@ model Evaluator {
 
   disabledKnowledgeNodeIds String[] @default([])
   disabledResourceIds      String[] @default([])
+  reportBlocks             Json?
 
   schedules EvaluatorSchedule[]
 
