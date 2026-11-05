@@ -51,6 +51,7 @@ import {
 export class ReportsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ReportsService.name);
   private scheduleTimer?: ReturnType<typeof setInterval>;
+  private checkingSchedules = false;
   private readonly groupReportAgent = mastra.getAgent('groupReportAgent');
 
   constructor(
@@ -61,9 +62,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    void this.runDueSchedules();
+    void this.checkSchedules();
     this.scheduleTimer = setInterval(() => {
-      void this.runDueSchedules();
+      void this.checkSchedules();
     }, 30_000);
     this.scheduleTimer.unref?.();
   }
@@ -179,7 +180,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     evaluatorId: string,
     input: { days: number[]; time: string; timeZone: string },
   ) {
-    const group = await this.prisma.group.findUnique({ where: { id: groupId } });
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+    });
     if (!group) throw new NotFoundException('Project not found');
     await this.assertEvaluatorVisible(group, evaluatorId);
     const days = [...new Set(input.days)].sort((left, right) => left - right);
@@ -217,13 +220,35 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.evaluatorSchedule.delete({ where: { id: existing.id } });
   }
 
+  private async checkSchedules() {
+    if (this.checkingSchedules) return;
+    this.checkingSchedules = true;
+    try {
+      await this.runDueSchedules();
+    } catch (error: unknown) {
+      const code =
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        typeof error.code === 'string'
+          ? ` (${error.code})`
+          : '';
+      this.logger.warn(
+        `Report scheduler check failed${code}; will check again on the next pass.`,
+      );
+    } finally {
+      this.checkingSchedules = false;
+    }
+  }
+
   private async runDueSchedules() {
     const schedules = await this.prisma.evaluatorSchedule.findMany();
     const now = new Date();
     for (const schedule of schedules) {
       const zoned = zonedClock(now, schedule.timeZone);
       if (!zoned || !schedule.days.includes(zoned.weekday)) continue;
-      if (zoned.hour !== schedule.hour || zoned.minute !== schedule.minute) continue;
+      if (zoned.hour !== schedule.hour || zoned.minute !== schedule.minute)
+        continue;
       if (schedule.lastRunOn === zoned.date) continue;
       const claimed = await this.prisma.evaluatorSchedule.updateMany({
         where: {
@@ -234,7 +259,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       });
       if (!claimed.count) continue;
       const active = await this.jobs.activeGroupReports(schedule.groupId);
-      if (active.some((job) => job.evaluatorId === schedule.evaluatorId)) continue;
+      if (active.some((job) => job.evaluatorId === schedule.evaluatorId))
+        continue;
       try {
         await this.createGroupReportAsync(schedule.groupId, {
           type: 'GROUP_REPORT',
@@ -248,7 +274,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
           where: { id: schedule.id },
           data: { lastRunOn: schedule.lastRunOn },
         });
-        const message = error instanceof Error ? error.message : 'Schedule failed';
+        const message =
+          error instanceof Error ? error.message : 'Schedule failed';
         this.logger.warn(
           `Scheduled report skipped for evaluator ${schedule.evaluatorId}: ${message}`,
         );
@@ -742,7 +769,10 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     snapshot: EvaluatorSnapshot | null;
     effort: 'LOW' | 'MEDIUM' | 'HIGH';
     voice: string | null;
-    access: { disabledKnowledgeNodeIds: string[]; disabledResourceIds: string[] };
+    access: {
+      disabledKnowledgeNodeIds: string[];
+      disabledResourceIds: string[];
+    };
     blocks: ReportBlockConfig[] | null;
   }> {
     if (!evaluatorId) {
@@ -802,7 +832,10 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
 
   private restrictPrepared(
     prepared: Awaited<ReturnType<ReportsService['prepareGroupReport']>>,
-    access: { disabledKnowledgeNodeIds: string[]; disabledResourceIds: string[] },
+    access: {
+      disabledKnowledgeNodeIds: string[];
+      disabledResourceIds: string[];
+    },
   ) {
     const denyKnowledge = new Set(access.disabledKnowledgeNodeIds);
     const denyResources = new Set(access.disabledResourceIds);
@@ -824,7 +857,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         (source) => !denyKnowledge.has(source.id),
       ),
     };
-    const hasDataset = resources.some((resource) => resource.datasets.length > 0);
+    const hasDataset = resources.some(
+      (resource) => resource.datasets.length > 0,
+    );
     if (!hasDataset && knowledgeSnapshot.sources.length === 0) {
       throw new BadRequestException(
         'This evaluator has no enabled plugin resources or ready knowledge sources',
