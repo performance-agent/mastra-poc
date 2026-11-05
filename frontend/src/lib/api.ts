@@ -1,4 +1,6 @@
-import type { GradingSettings } from "./types";
+import { normalizeSetup } from "./experience";
+import type { Appearance, Preferences, Setup } from "./experience";
+import type { GradingSettings, GenerationJob } from "./types";
 import type {
   Organization,
   Workspace,
@@ -9,12 +11,20 @@ import type {
   InvitationPreview,
   Resource,
   PluginCatalogItem,
+  WorkspacePeople,
+  McpConnection,
   PluginInstallation,
   DataType,
   PerformanceReport,
+  ReportNote,
+  ReportRevision,
   GroupGithubActivityReport,
   GroupGithubHistoryReport,
   GroupReport,
+  Evaluator,
+  EvaluatorInput,
+  EvaluatorSchedule,
+  Personality,
   Role,
   EvaluationRequest,
   EvaluationReport,
@@ -25,7 +35,7 @@ import type {
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export class ApiError extends Error {
   statusCode: number;
@@ -37,13 +47,13 @@ export class ApiError extends Error {
   }
 }
 
-async function getAccessToken(): Promise<string | undefined> {
+export async function getAccessToken(): Promise<string | undefined> {
   const auth = getFirebaseAuth();
   await auth.authStateReady();
   return auth.currentUser?.getIdToken();
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     const token = await getAccessToken();
@@ -95,12 +105,87 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  createTeamSpace: (
+    org: string,
+    body: { workspaceName: string; groupName: string; description?: string },
+  ) =>
+    request<{ workspace: Workspace; group: Group }>(`/organizations/${org}/team-space`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  savePersonalization: (body: {
+    profile?: { name: string; photoUrl: string | null };
+    personal?: Partial<Pick<Preferences, "theme" | "motion">>;
+    organizationId?: string;
+    home?: Partial<Pick<Preferences, "blocks" | "favorites">>;
+    organization?: { appearance: Omit<Appearance, "canEdit">; photoUrl: string };
+  }) =>
+    request<{ saved: boolean }>("/users/me/personalization", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  me: () => request<User>("/users/me"),
+  saveProfile: (body: { name: string; photoUrl?: string | null }) =>
+    request<User>("/users/me", { method: "PATCH", body: JSON.stringify(body) }),
+  preferences: (org?: string) =>
+    request<Preferences>(org ? `/organizations/${org}/me/preferences` : "/users/me/preferences"),
+  savePreferences: (body: Preferences, org?: string) =>
+    request<Preferences>(org ? `/organizations/${org}/me/preferences` : "/users/me/preferences", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  appearance: (org: string) => request<Appearance>(`/organizations/${org}/appearance`),
+  saveAppearance: (org: string, body: Appearance) =>
+    request<Appearance>(`/organizations/${org}/appearance`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        version: body.version,
+        color: body.color,
+        cover: body.cover,
+        blocks: body.blocks,
+      }),
+    }),
+  setup: (org: string) => request<Setup>(`/organizations/${org}/me/setup`).then(normalizeSetup),
+  saveSetup: (org: string, body: Setup) =>
+    request<Setup>(`/organizations/${org}/me/setup`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getIndividualInsightsJob: (workspaceId: string, jobId: string) =>
-    request<{
-      status: "queued" | "running" | "succeeded" | "failed";
-      result: EvaluationReport["individualInsights"] | null;
-      error?: string;
-    }>(`/workspaces/${workspaceId}/evaluations/jobs/${jobId}`),
+    request<GenerationJob<EvaluationReport["individualInsights"]>>(
+      `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
+    ),
+  getEvaluationJob: async (workspaceId: string, jobId: string, signal?: AbortSignal) => {
+    const job = await request<GenerationJob<EvaluationReport | { evaluationId: string }>>(
+      `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
+      { signal },
+    );
+    // Full-view jobs store graph state, while the workbench renders saved reports.
+    if (job.result && !("assessments" in job.result)) {
+      const saved = await request<SavedEvaluation>(
+        `/workspaces/${workspaceId}/evaluations/${job.result.evaluationId}`,
+        { signal },
+      );
+      return {
+        ...job,
+        result: { ...saved.data.report, evaluationId: saved.id, createdAt: saved.createdAt },
+      };
+    }
+    return { ...job, result: job.result };
+  },
+  getLatestEvaluationJob: (workspaceId: string, groupId: string, signal?: AbortSignal) =>
+    request<GenerationJob<EvaluationReport> | null>(
+      `/workspaces/${workspaceId}/evaluations/jobs/latest?${new URLSearchParams({ groupId })}`,
+      { signal },
+    ),
+  startEvaluationWorkspace: (workspaceId: string, body: EvaluationRequest) =>
+    request<{ jobId: string; status: string }>(
+      `/workspaces/${workspaceId}/evaluations?view=report`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
   getGradingSettings: (id: string) =>
     request<GradingSettings>(`/workspaces/${id}/evaluations/grading-settings`),
   saveGradingSettings: (id: string, settings: GradingSettings) =>
@@ -203,6 +288,11 @@ export const api = {
 
   // Plugins and installations
   listPlugins: () => request<PluginCatalogItem[]>("/plugins"),
+  getMcpConnection: () => request<McpConnection>("/mcp/connection"),
+  getWorkspacePeople: (workspaceId: string, evaluatorId?: string) =>
+    request<WorkspacePeople>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/people${evaluatorId ? `?evaluatorId=${encodeURIComponent(evaluatorId)}` : ""}`,
+    ),
   listOrgPluginInstallations: (id: string) =>
     request<PluginInstallation[]>(`/organizations/${id}/plugin-installations`),
   syncPluginInstallation: (id: string) =>
@@ -314,6 +404,19 @@ export const api = {
   acceptInvitation: (token: string) =>
     request<InvitationPreview>(`/invitations/${token}/accept`, { method: "POST" }),
 
+  listEvaluatorSchedules: (groupId: string) =>
+    request<EvaluatorSchedule[]>(`/groups/${groupId}/schedules`),
+  saveEvaluatorSchedule: (
+    groupId: string,
+    evaluatorId: string,
+    body: { days: number[]; time: string; timeZone: string },
+  ) =>
+    request<EvaluatorSchedule>(`/groups/${groupId}/schedules/${evaluatorId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteEvaluatorSchedule: (groupId: string, evaluatorId: string) =>
+    request<void>(`/groups/${groupId}/schedules/${evaluatorId}`, { method: "DELETE" }),
   listGroupResources: (id: string) => request<Resource[]>(`/groups/${id}/resources`),
   assignGroupResource: (groupId: string, resourceId: string) =>
     request<unknown>(`/groups/${groupId}/resources/${resourceId}`, { method: "PUT" }),
@@ -325,6 +428,98 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
       `/groups/${groupId}/generation-jobs`,
     ),
+  startEvaluatorReports: (
+    groupId: string,
+    evaluatorIds: string[],
+    options?: {
+      contextByEvaluator?: Record<string, string>;
+      period?: { from: string; to: string };
+      knowledgeSelection?: { sourceIds: string[]; folderIds?: string[] };
+    },
+  ) =>
+    request<{ jobs: Array<{ jobId: string; evaluatorId: string; status: string }> }>(
+      `/groups/${groupId}/reports`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          type: "GROUP_REPORT",
+          evaluatorIds,
+          ...(options?.contextByEvaluator && Object.keys(options.contextByEvaluator).length > 0
+            ? { contextByEvaluator: options.contextByEvaluator }
+            : {}),
+          ...(options?.period ? { period: options.period } : {}),
+          ...(options?.knowledgeSelection
+            ? { knowledgeSelection: options.knowledgeSelection }
+            : {}),
+        }),
+      },
+    ),
+  getGroupGenerationJob: (groupId: string, jobId: string, signal?: AbortSignal) =>
+    request<GenerationJob<unknown>>(`/groups/${groupId}/generation-jobs/${jobId}`, { signal }),
+  listActiveGroupReports: (groupId: string) =>
+    request<Array<{ jobId: string; evaluatorId: string; status: "queued" | "running" }>>(
+      `/groups/${groupId}/generation-jobs`,
+    ),
+  cancelQueuedGroupReport: (groupId: string, jobId: string) =>
+    request<{ status: "failed" }>(`/groups/${groupId}/generation-jobs/${jobId}/cancel`, {
+      method: "POST",
+    }),
+  listPersonalities: (groupId: string) =>
+    request<Personality[]>(`/groups/${groupId}/personalities`),
+  createPersonality: (groupId: string, body: { name: string; instruction: string }) =>
+    request<Personality>(`/groups/${groupId}/personalities`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updatePersonality: (id: string, body: { name: string; instruction: string }) =>
+    request<Personality>(`/personalities/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deletePersonality: (id: string) => request<void>(`/personalities/${id}`, { method: "DELETE" }),
+  listEvaluators: (groupId: string) => request<Evaluator[]>(`/groups/${groupId}/evaluators`),
+  listWorkspaceEvaluators: (workspaceId: string) =>
+    request<Evaluator[]>(`/workspaces/${workspaceId}/evaluators`),
+  createWorkspaceEvaluator: (workspaceId: string, body: EvaluatorInput) =>
+    request<Evaluator>(`/workspaces/${workspaceId}/evaluators`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listWorkspacePersonalities: (workspaceId: string) =>
+    request<Personality[]>(`/workspaces/${workspaceId}/personalities`),
+  createWorkspacePersonality: (workspaceId: string, body: { name: string; instruction: string }) =>
+    request<Personality>(`/workspaces/${workspaceId}/personalities`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  createEvaluator: (groupId: string, body: EvaluatorInput) =>
+    request<Evaluator>(`/groups/${groupId}/evaluators`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateEvaluator: (id: string, body: Partial<EvaluatorInput>) =>
+    request<Evaluator>(`/evaluators/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteEvaluator: (id: string) => request<void>(`/evaluators/${id}`, { method: "DELETE" }),
+  deleteReport: (id: string) => request<void>(`/reports/${id}`, { method: "DELETE" }),
+  updateReport: (id: string, body: { title: string | null }) =>
+    request<PerformanceReport>(`/reports/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  listReportRevisions: (id: string) => request<ReportRevision[]>(`/reports/${id}/revisions`),
+  saveReportNotes: (id: string, notes: ReportNote[]) =>
+    request<{ id: string; position: number; notes: ReportNote[] }>(`/reports/${id}/notes`, {
+      method: "PUT",
+      body: JSON.stringify({ notes }),
+    }),
+  reviseReport: (id: string, notes: ReportNote[]) =>
+    request<{ jobId: string; status: string }>(`/reports/${id}/revisions`, {
+      method: "POST",
+      body: JSON.stringify({ notes }),
+    }),
   listGroupReports: (groupId: string) =>
     request<
       Array<PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>>

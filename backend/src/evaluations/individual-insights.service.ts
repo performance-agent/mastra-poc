@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { evidenceSummary } from './evidence-summary';
 import type { MemberRuleAssessment } from '@pa/agent';
+import type { ReportProgress } from '../generation/progress';
 
 type Evidence = {
   id: string;
@@ -77,6 +78,19 @@ export class IndividualInsightsService {
   async generate(
     input: SynthesisInput,
     evaluationId: string,
+    progress?: ReportProgress,
+  ): Promise<IndividualInsights> {
+    await progress?.('preparing');
+    const result = await this.generateRequest(input, evaluationId, progress);
+    await progress?.('finalizing');
+    await progress?.('finalizing', 'completed');
+    return result;
+  }
+
+  private async generateRequest(
+    input: SynthesisInput,
+    evaluationId: string,
+    progress?: ReportProgress,
   ): Promise<IndividualInsights> {
     const {
       serializePromptData,
@@ -145,6 +159,7 @@ export class IndividualInsightsService {
         status: person.evidence.length ? null : 'insufficient_evidence',
       })),
     });
+    await progress?.('preparing', 'completed');
     if (!people.some((p) => p.evidence.length))
       return fallback('insufficient_evidence');
     const aliases = new Map<
@@ -249,9 +264,11 @@ export class IndividualInsightsService {
                 'team-synthesis',
                 messages,
                 async (signal) => {
+                  await progress?.('generating');
                   const response = await model
                     .withStructuredOutput(teamOutput, { includeRaw: true })
                     .invoke(messages, { signal });
+                  await progress?.('validating');
                   const raw = response.raw as {
                     response_metadata?: Record<string, unknown>;
                   };
@@ -329,6 +346,8 @@ export class IndividualInsightsService {
           }
         },
       );
+      await progress?.('generating', 'completed');
+      await progress?.('validating', 'completed');
       return {
         schemaVersion: 2,
         generationStatus: 'succeeded',

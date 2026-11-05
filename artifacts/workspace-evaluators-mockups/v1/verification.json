@@ -1,0 +1,22 @@
+{
+  "deliverable": "5 static PNG mockups",
+  "method": "Visual inspection of each final PNG",
+  "checks": {
+    "scopeLabelsWithIcons": true,
+    "workspaceAndProjectOriginVisible": true,
+    "duplicateAdaNamesDistinguishable": true,
+    "workspaceAutomaticallyAvailableInAllProjects": true,
+    "inheritedDetailReadOnly": true,
+    "noDragHandlesOnReadOnlyDetail": true,
+    "workspaceAdminPermissionExplained": true,
+    "creationDoesNotRunEvaluation": true,
+    "setupGroupsAndSelectionShowScope": true,
+    "fullFramesWithoutCroppedContent": true,
+    "englishCopy": true,
+    "sampleDataMarked": true
+  },
+  "limitations": [
+    "Static design proposals; controls are not interactive.",
+    "No application code, API or schema changes."
+  ]
+}

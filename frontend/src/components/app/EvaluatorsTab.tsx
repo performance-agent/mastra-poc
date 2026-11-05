@@ -1,0 +1,1761 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  GripVertical,
+  LockKeyhole,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+
+import { EvaluatorMark } from "@/components/app/EvaluatorMark";
+import { EvaluatorScopeBadge } from "@/components/app/EvaluatorScopeBadge";
+import { ConfirmDialog } from "@/components/app/ConfirmDialog";
+import { EmptyState } from "@/components/app/EmptyState";
+import { ErrorState } from "@/components/app/ErrorState";
+import { LoadingState } from "@/components/app/LoadingState";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { api, errorMessage } from "@/lib/api";
+import { evaluatorConfigurationHref, invalidateEvaluatorQueries } from "@/lib/evaluators";
+import { knowledgeApi, type KnowledgeNode } from "@/lib/knowledge";
+import {
+  EVALUATOR_CHARACTERS,
+  EVALUATOR_COLORS,
+  avatarParts,
+  packAvatar,
+} from "@/lib/evaluator-avatars";
+import { EVALUATION_EMPHASIS_VALUES, type EvaluationEmphasis } from "@/lib/evaluation-guidelines";
+import type {
+  Evaluator,
+  EvaluatorEffort,
+  EvaluatorInput,
+  EvaluatorScope,
+  ReportBlockConfig,
+  ReportBlockKind,
+} from "@/lib/types";
+
+const MAX_BEHAVIOR_RULES = 4;
+const MAX_PERSONALITIES = 3;
+const MAX_QUESTIONS = 6;
+
+const EFFORTS: Array<{ value: EvaluatorEffort; label: string; hint: string }> = [
+  {
+    value: "LOW",
+    label: "Minimum",
+    hint: "A short report. It reads the same stored history as the other levels.",
+  },
+  { value: "MEDIUM", label: "Medium", hint: "More context, from the same stored history." },
+  { value: "HIGH", label: "Maximum", hint: "A fuller explanation of the same stored history." },
+];
+
+const EFFORT_LOOK = [
+  { fill: "bg-[color-mix(in_srgb,var(--brand)_68%,white)]", sparkles: 5, duration: 3.4 },
+  { fill: "bg-[var(--brand)]", sparkles: 9, duration: 2.1 },
+  {
+    fill: "bg-[linear-gradient(90deg,var(--brand),color-mix(in_srgb,var(--brand)_62%,#24164f))]",
+    sparkles: 22,
+    duration: 0.7,
+  },
+] as const;
+
+function EffortSparkles({ count, duration }: { count: number; duration: number }) {
+  if (count === 0) return null;
+  return (
+    <>
+      <style>{`
+        @keyframes effort-dot {
+          0% { transform: translateX(0); opacity: 0; }
+          14% { opacity: 1; }
+          86% { opacity: 0.8; }
+          100% { transform: translateX(var(--effort-travel, 48px)); opacity: 0; }
+        }
+      `}</style>
+      {Array.from({ length: count }, (_, i) => {
+        const top = 18 + ((i * 47) % 64);
+        const size = i % 4 === 0 ? 3.5 : 2;
+        const travel = 88 + ((i * 29) % 72);
+        return (
+          <span
+            key={i}
+            aria-hidden
+            className="absolute rounded-full bg-white/90"
+            style={{
+              left: `${(i * 17) % 78}%`,
+              top: `${top}%`,
+              width: size,
+              height: size,
+              animation: `effort-dot ${duration + (i % 4) * 0.35}s linear ${(i % 7) * 0.22}s infinite`,
+              ["--effort-travel" as string]: `${travel}px`,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function effortFromRatio(ratio: number): EvaluatorEffort {
+  const index = Math.round(Math.min(1, Math.max(0, ratio)) * (EFFORTS.length - 1));
+  return EFFORTS[index]?.value ?? "MEDIUM";
+}
+
+function ratioFromClientX(clientX: number, rect: DOMRect) {
+  const pad = 20;
+  const usable = Math.max(1, rect.width - pad * 2);
+  return Math.min(1, Math.max(0, (clientX - rect.left - pad) / usable));
+}
+
+function EffortSlider({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: EvaluatorEffort;
+  disabled: boolean;
+  onChange: (value: EvaluatorEffort) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const pointerRef = useRef<number | null>(null);
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const index = Math.max(
+    0,
+    EFFORTS.findIndex((effort) => effort.value === value),
+  );
+  const ratio = dragRatio ?? index / 2;
+  const liveEffort = dragRatio === null ? value : effortFromRatio(dragRatio);
+  const liveIndex = Math.max(
+    0,
+    EFFORTS.findIndex((effort) => effort.value === liveEffort),
+  );
+  const look = EFFORT_LOOK[liveIndex] ?? EFFORT_LOOK[0];
+  const hint = EFFORTS[liveIndex]?.hint;
+  const thumbLeft = `calc(1.25rem + (100% - 2.5rem) * ${ratio})`;
+  const fillWidth = `calc(2.5rem + (100% - 2.5rem) * ${ratio})`;
+  const dragging = pointerRef.current !== null;
+
+  useEffect(() => {
+    if (pointerRef.current !== null || dragRatio === null) return;
+    if (Math.abs(dragRatio - index / 2) < 0.001) setDragRatio(null);
+  }, [dragRatio, index]);
+
+  const applyPointer = (clientX: number, commit: boolean) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const nextRatio = ratioFromClientX(clientX, rect);
+    const snapped = Math.round(nextRatio * (EFFORTS.length - 1)) / (EFFORTS.length - 1);
+    setDragRatio(commit ? snapped : nextRatio);
+    const effort = effortFromRatio(commit ? snapped : nextRatio);
+    if (effort !== value) onChange(effort);
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div>
+        <Label id="evaluator-effort-label">Effort</Label>
+        <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      </div>
+      <div className={`px-1 ${disabled ? "opacity-60" : ""}`}>
+        <div
+          ref={trackRef}
+          role="slider"
+          tabIndex={disabled ? -1 : 0}
+          aria-labelledby="evaluator-effort-label"
+          aria-valuemin={0}
+          aria-valuemax={2}
+          aria-valuenow={index}
+          aria-valuetext={EFFORTS[index]?.label}
+          className={`relative h-12 touch-none select-none outline-none ${
+            disabled ? "cursor-not-allowed" : dragging ? "cursor-grabbing" : "cursor-grab"
+          }`}
+          onPointerDown={(event) => {
+            if (disabled) return;
+            pointerRef.current = event.pointerId;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            applyPointer(event.clientX, false);
+          }}
+          onPointerMove={(event) => {
+            if (pointerRef.current !== event.pointerId) return;
+            applyPointer(event.clientX, false);
+          }}
+          onPointerUp={(event) => {
+            if (pointerRef.current !== event.pointerId) return;
+            pointerRef.current = null;
+            applyPointer(event.clientX, true);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+          }}
+          onPointerCancel={(event) => {
+            pointerRef.current = null;
+            setDragRatio(null);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (disabled) return;
+            if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+              event.preventDefault();
+              onChange(EFFORTS[Math.min(2, index + 1)]?.value ?? value);
+            }
+            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+              event.preventDefault();
+              onChange(EFFORTS[Math.max(0, index - 1)]?.value ?? value);
+            }
+          }}
+        >
+          <div className="absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--brand)_16%,var(--muted))]" />
+          <div
+            aria-hidden
+            className={`absolute left-0 top-1/2 h-8 -translate-y-1/2 overflow-hidden rounded-full ${look.fill} ${
+              dragging ? "" : "transition-[width,box-shadow] duration-300 ease-out"
+            }`}
+            style={{
+              width: fillWidth,
+              boxShadow:
+                liveIndex === 0
+                  ? undefined
+                  : `0 0 ${liveIndex === 2 ? 24 : 18}px color-mix(in srgb, var(--brand) ${liveIndex === 2 ? 50 : 40}%, transparent)`,
+            }}
+          >
+            <EffortSparkles count={look.sparkles} duration={look.duration} />
+          </div>
+          {EFFORTS.map((effort, stop) =>
+            stop / (EFFORTS.length - 1) <= ratio ? null : (
+              <span
+                key={effort.value}
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 z-20 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--brand)_55%,white)]"
+                style={{
+                  left: stop === 0 ? "1.25rem" : stop === 1 ? "50%" : "calc(100% - 1.25rem)",
+                }}
+              />
+            ),
+          )}
+          <span
+            aria-hidden
+            className={`pointer-events-none absolute top-1/2 z-10 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[color-mix(in_srgb,var(--brand)_35%,transparent)] bg-white shadow-lg ${
+              dragging ? "" : "transition-[left] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            }`}
+            style={{ left: thumbLeft }}
+          />
+        </div>
+        <div className="relative mt-1 h-4 text-xs">
+          {EFFORTS.map((effort, stop) => (
+            <span
+              key={effort.value}
+              className={`absolute top-0 whitespace-nowrap transition-colors duration-300 ${
+                stop === 0
+                  ? "left-0"
+                  : stop === EFFORTS.length - 1
+                    ? "right-0"
+                    : "left-1/2 -translate-x-1/2"
+              } ${
+                effort.value === liveEffort
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {effort.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type DraftRule = { key: string; name: string; description: string; valuation: number };
+type DraftQuestion = { key: string; text: string };
+
+function blankRule(): DraftRule {
+  return { key: crypto.randomUUID(), name: "", description: "", valuation: 5 };
+}
+
+function blankQuestion(): DraftQuestion {
+  return { key: crypto.randomUUID(), text: "" };
+}
+
+function isBlankRule(rule: DraftRule) {
+  return !rule.name.trim() && !rule.description.trim();
+}
+
+function isBlankQuestion(question: DraftQuestion) {
+  return !question.text.trim();
+}
+
+function withOpenRule(rules: DraftRule[]): DraftRule[] {
+  return rules.length > 0 ? rules : [blankRule()];
+}
+
+function withOpenQuestion(questions: DraftQuestion[]): DraftQuestion[] {
+  return questions.length > 0 ? questions : [blankQuestion()];
+}
+
+type Draft = {
+  name: string;
+  description: string;
+  scope: EvaluatorScope;
+  effort: EvaluatorEffort;
+  avatar: number;
+  personalityId: string;
+  emphasis: EvaluationEmphasis[];
+  notes: string;
+  rules: DraftRule[];
+  questions: DraftQuestion[];
+  disabledKnowledgeNodeIds: string[];
+  disabledResourceIds: string[];
+  reportBlocks: ReportBlockConfig[] | null;
+};
+
+function draftFrom(evaluator: Evaluator): Draft {
+  return {
+    name: evaluator.name,
+    description: evaluator.description ?? "",
+    scope: evaluator.scope,
+    effort: evaluator.effort,
+    avatar: evaluator.avatar,
+    personalityId: evaluator.personalityId,
+    emphasis: evaluator.evaluationEmphasis.filter((value): value is EvaluationEmphasis =>
+      EVALUATION_EMPHASIS_VALUES.includes(value as EvaluationEmphasis),
+    ),
+    notes: evaluator.evaluationNotes ?? "",
+    rules: withOpenRule(
+      evaluator.rules.map((rule) => ({
+        key: rule.id,
+        name: rule.name,
+        description: rule.description ?? "",
+        valuation: rule.valuation,
+      })),
+    ),
+    questions: withOpenQuestion(
+      (evaluator.questions ?? []).map((question) => ({
+        key: question.id,
+        text: question.text,
+      })),
+    ),
+    disabledKnowledgeNodeIds: evaluator.disabledKnowledgeNodeIds ?? [],
+    disabledResourceIds: evaluator.disabledResourceIds ?? [],
+    reportBlocks: evaluator.reportBlocks ?? null,
+  };
+}
+
+function emptyDraft(scope: EvaluatorScope, personalityId: string): Draft {
+  return {
+    name: "",
+    description: "",
+    scope,
+    effort: "MEDIUM",
+    avatar: packAvatar(0, 1),
+    personalityId,
+    emphasis: [],
+    notes: "",
+    rules: withOpenRule([]),
+    questions: withOpenQuestion([]),
+    disabledKnowledgeNodeIds: [],
+    disabledResourceIds: [],
+    reportBlocks: null,
+  };
+}
+
+export function EvaluatorsTab({
+  organizationId,
+  workspaceId,
+  workspaceName,
+  groupName,
+  groupId,
+  canManageGroup = false,
+  canManageWorkspace,
+  evaluatorId,
+  onSelect,
+}: {
+  organizationId: string;
+  workspaceId: string;
+  workspaceName: string;
+  groupName?: string;
+  groupId?: string;
+  canManageGroup?: boolean;
+  canManageWorkspace: boolean;
+  evaluatorId?: string;
+  onSelect: (id: string | undefined) => void;
+}) {
+  const qc = useQueryClient();
+  const workspaceContext = !groupId;
+  const canCreate = workspaceContext ? canManageWorkspace : canManageGroup;
+  const contextName = workspaceContext ? workspaceName : (groupName ?? "Project");
+  const newLabel = workspaceContext ? "New workspace evaluator" : "New project evaluator";
+  const evaluatorsQ = useQuery({
+    queryKey: workspaceContext
+      ? ["workspace", workspaceId, "evaluators"]
+      : ["group", groupId, "evaluators"],
+    queryFn: () =>
+      groupId ? api.listEvaluators(groupId) : api.listWorkspaceEvaluators(workspaceId),
+  });
+  const personalitiesQ = useQuery({
+    queryKey: workspaceContext
+      ? ["workspace", workspaceId, "personalities"]
+      : ["group", groupId, "personalities"],
+    queryFn: () =>
+      groupId ? api.listPersonalities(groupId) : api.listWorkspacePersonalities(workspaceId),
+  });
+  const evaluators = evaluatorsQ.data ?? [];
+  const personalities = personalitiesQ.data ?? [];
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [characterHover, setCharacterHover] = useState<number | null>(null);
+  const [personalityDraft, setPersonalityDraft] = useState<{
+    id?: string;
+    name: string;
+    instruction: string;
+  } | null>(null);
+  const [deletePersonalityId, setDeletePersonalityId] = useState<string | null>(null);
+  const instructionRef = useRef<HTMLTextAreaElement>(null);
+  const loadedDraft = useRef<{ id: string; serialized: string } | null>(null);
+
+  useEffect(() => {
+    if (creating || !evaluatorsQ.data) return;
+    const selected = evaluatorsQ.data.find((item) => item.id === evaluatorId);
+    const nextDraft = selected ? draftFrom(selected) : null;
+    const previous = loadedDraft.current;
+    setDraft((current) =>
+      selected &&
+      previous?.id === selected.id &&
+      current &&
+      JSON.stringify(current) !== previous.serialized
+        ? current
+        : nextDraft,
+    );
+    loadedDraft.current = selected
+      ? { id: selected.id, serialized: JSON.stringify(nextDraft) }
+      : null;
+    if (!evaluatorId && evaluatorsQ.data[0]) onSelect(evaluatorsQ.data[0].id);
+  }, [creating, evaluatorId, evaluatorsQ.data, onSelect]);
+
+  const fitInstruction = (element: HTMLTextAreaElement | null) => {
+    if (!element || element.clientWidth === 0) return false;
+    element.style.height = "0px";
+    element.style.height = `${element.scrollHeight}px`;
+    return true;
+  };
+
+  useEffect(() => {
+    if (!personalityDraft) return;
+    let frame = 0;
+    let attempts = 0;
+    const tick = () => {
+      if (fitInstruction(instructionRef.current) || attempts > 12) return;
+      attempts += 1;
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [personalityDraft]);
+
+  const selected = evaluators.find((evaluator) => evaluator.id === evaluatorId) ?? null;
+  const inherited = !workspaceContext && draft?.scope === "WORKSPACE";
+  const canEdit = !inherited && (workspaceContext ? canManageWorkspace : canManageGroup);
+  const missingSelection = Boolean(evaluatorId && !selected);
+
+  useEffect(() => {
+    if (!draft) return;
+    const rules = withOpenRule(draft.rules);
+    const questions = withOpenQuestion(draft.questions);
+    if (rules === draft.rules && questions === draft.questions) return;
+    setDraft({ ...draft, rules, questions });
+  }, [draft]);
+
+  const open = (evaluator: Evaluator) => {
+    setCreating(false);
+    onSelect(evaluator.id);
+    setDraft(draftFrom(evaluator));
+  };
+
+  const startCreate = () => {
+    const fallback = personalities.find((item) => item.name === "Direct") ?? personalities[0];
+    if (!fallback) {
+      toast.error("No personalities are available");
+      return;
+    }
+    setCreating(true);
+    onSelect(undefined);
+    setDraft(emptyDraft(workspaceContext ? "WORKSPACE" : "GROUP", fallback.id));
+  };
+
+  const persist = async () => {
+    if (!draft || !canEdit) return;
+    const body: EvaluatorInput = {
+      name: draft.name.trim(),
+      description: draft.description.trim() || null,
+      scope: draft.scope,
+      effort: draft.effort,
+      avatar: draft.avatar,
+      personalityId: draft.personalityId,
+      evaluationEmphasis: draft.emphasis,
+      evaluationNotes: draft.notes.trim() || null,
+      rules: draft.rules
+        .filter((rule) => rule.name.trim())
+        .map((rule) => ({
+          name: rule.name.trim(),
+          description: rule.description.trim() || null,
+          valuation: rule.valuation,
+        })),
+      questions: draft.questions
+        .filter((question) => question.text.trim())
+        .map((question) => ({ text: question.text.trim() })),
+      disabledKnowledgeNodeIds: draft.disabledKnowledgeNodeIds,
+      disabledResourceIds: draft.disabledResourceIds,
+      reportBlocks: draft.reportBlocks && draft.reportBlocks.length > 0 ? draft.reportBlocks : null,
+      ...(draft.scope === "GROUP" ? { groupId } : {}),
+    };
+    setSaving(true);
+    try {
+      const saved = creating
+        ? groupId
+          ? await api.createEvaluator(groupId, body)
+          : await api.createWorkspaceEvaluator(workspaceId, body)
+        : await api.updateEvaluator(evaluatorId!, body);
+      toast.success(creating ? "Evaluator created" : "Evaluator saved");
+      await invalidateEvaluatorQueries(qc);
+      setCreating(false);
+      onSelect(saved.id);
+      setDraft(draftFrom(saved));
+    } catch (error) {
+      toast.error(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const requestSave = () => {
+    if (!draft?.name.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    if (draft.scope === "WORKSPACE" && !creating) {
+      setConfirmOpen(true);
+      return;
+    }
+    void persist();
+  };
+
+  const savePersonality = async () => {
+    if (!personalityDraft?.name.trim() || !personalityDraft.instruction.trim()) {
+      toast.error("Name and instruction are required");
+      return;
+    }
+    const body = {
+      name: personalityDraft.name.trim(),
+      instruction: personalityDraft.instruction.trim(),
+    };
+    try {
+      const saved = personalityDraft.id
+        ? await api.updatePersonality(personalityDraft.id, body)
+        : await api.createWorkspacePersonality(workspaceId, body);
+      toast.success(personalityDraft.id ? "Personality saved" : "Personality created");
+      await invalidateEvaluatorQueries(qc);
+      setDraft((current) =>
+        current && !personalityDraft.id ? { ...current, personalityId: saved.id } : current,
+      );
+      setPersonalityDraft(null);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  const removePersonality = async () => {
+    if (!deletePersonalityId) return;
+    try {
+      await api.deletePersonality(deletePersonalityId);
+      toast.success("Personality deleted");
+      await invalidateEvaluatorQueries(qc);
+      const remaining = personalities.filter((item) => item.id !== deletePersonalityId);
+      setDraft((current) =>
+        current?.personalityId === deletePersonalityId
+          ? { ...current, personalityId: remaining[0]?.id ?? current.personalityId }
+          : current,
+      );
+      setDeletePersonalityId(null);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  };
+
+  if (evaluatorsQ.isLoading) return <LoadingState />;
+  if (evaluatorsQ.error) {
+    return (
+      <ErrorState message={errorMessage(evaluatorsQ.error)} onRetry={() => evaluatorsQ.refetch()} />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Evaluators</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {workspaceContext
+              ? "Shared evaluators, available in every project in this workspace."
+              : "Use a project evaluator or one shared by your workspace."}
+          </p>
+        </div>
+        {canCreate && (
+          <Button onClick={startCreate}>
+            <Plus className="mr-1.5 size-4" />
+            {newLabel}
+          </Button>
+        )}
+      </div>
+      {missingSelection && !creating && (
+        <p role="status" className="rounded-lg border p-3 text-sm">
+          This evaluator is no longer available in this context. Select another evaluator.
+        </p>
+      )}
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
+        <Card className="h-fit rounded-xl p-3 shadow-card">
+          {evaluators.length === 0 ? (
+            <EmptyState
+              title="No evaluators yet"
+              description={`Create one to decide how ${contextName} should be read.`}
+              actionLabel={canCreate ? newLabel : undefined}
+              onAction={canCreate ? startCreate : undefined}
+            />
+          ) : (
+            <div className="space-y-5">
+              {(workspaceContext
+                ? (["WORKSPACE"] as const)
+                : (["GROUP", "WORKSPACE"] as const)
+              ).map((scope) => {
+                const items = evaluators.filter((item) => item.scope === scope);
+                return (
+                  <section
+                    key={scope}
+                    aria-label={
+                      scope === "GROUP"
+                        ? "Project evaluators"
+                        : workspaceContext
+                          ? "Workspace evaluators"
+                          : "From workspace"
+                    }
+                    className="space-y-2"
+                  >
+                    <div className="border-b pb-2">
+                      <h3 className="text-sm font-semibold">
+                        {scope === "GROUP"
+                          ? "Project evaluators"
+                          : workspaceContext
+                            ? "Workspace evaluators"
+                            : "From workspace"}{" "}
+                        <span className="ml-1 text-muted-foreground">{items.length}</span>
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {scope === "GROUP" ? groupName : workspaceName}
+                      </p>
+                    </div>
+                    {!items.length && (
+                      <p className="py-2 text-xs text-muted-foreground">
+                        No evaluators at this level yet.
+                      </p>
+                    )}
+                    {items.map((evaluator) => {
+                      const selected = !creating && evaluatorId === evaluator.id;
+                      return (
+                        <button
+                          key={evaluator.id}
+                          type="button"
+                          onClick={() => open(evaluator)}
+                          className={`flex w-full items-center gap-3 rounded-xl px-2 text-left transition-[padding] duration-300 ${
+                            selected
+                              ? "bg-[var(--brand-soft)] py-3 text-foreground"
+                              : "py-2 text-muted-foreground hover:text-foreground"
+                          }`}
+                          onMouseEnter={() => setHoveredId(evaluator.id)}
+                          onMouseLeave={() =>
+                            setHoveredId((current) => (current === evaluator.id ? null : current))
+                          }
+                        >
+                          <EvaluatorMark
+                            name={evaluator.name}
+                            avatar={evaluator.avatar}
+                            state={hoveredId === evaluator.id ? "hover" : "idle"}
+                            size={selected ? 52 : 40}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
+                              {evaluator.name}
+                              <EvaluatorScopeBadge scope={evaluator.scope} />
+                            </span>
+                            <span className="block text-[11px]">
+                              {evaluator.scope === "WORKSPACE" ? "Workspace" : "Project"} ·{" "}
+                              {evaluator.effort.toLowerCase()}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </section>
+                );
+              })}
+              <p className="border-t pt-3 text-xs text-muted-foreground">
+                Workspace evaluators are available in all projects automatically.
+              </p>
+            </div>
+          )}
+        </Card>
+
+        {draft && !canEdit && selected ? (
+          <Card className="space-y-5 rounded-xl p-4 shadow-card sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <EvaluatorMark name={selected.name} avatar={selected.avatar} size={48} />
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-semibold">{selected.name}</h2>
+                    <EvaluatorScopeBadge scope={selected.scope} />
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {selected.scope === "WORKSPACE" ? workspaceName : groupName}
+                  </p>
+                </div>
+              </div>
+              {inherited && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={evaluatorConfigurationHref(organizationId, selected)}>
+                    Manage in workspace <ExternalLink className="ml-1 size-3.5" />
+                  </Link>
+                </Button>
+              )}
+            </div>
+            <div className="rounded-lg border bg-[var(--brand-soft)] p-3 text-sm">
+              {inherited ? (
+                <>
+                  <p className="font-medium">Shared from {workspaceName}</p>
+                  <p className="mt-1">
+                    Available in all projects. Changes are managed in the workspace.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  {workspaceContext
+                    ? "Available in all projects."
+                    : `Only available in ${contextName}.`}
+                </p>
+              )}
+              {!canManageWorkspace && selected.scope === "WORKSPACE" && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs">
+                  <LockKeyhole className="size-3.5" />
+                  Workspace admin permissions required to edit.
+                </p>
+              )}
+            </div>
+            <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
+              <dt className="font-medium">Description</dt>
+              <dd>{selected.description || "No description"}</dd>
+              <dt className="font-medium">Personality</dt>
+              <dd>{selected.personality?.name}</dd>
+              <dt className="font-medium">Effort</dt>
+              <dd className="capitalize">{selected.effort.toLowerCase()}</dd>
+            </dl>
+            <section className="space-y-2">
+              <h3 className="font-medium">Behavior rules</h3>
+              {selected.rules.length ? (
+                selected.rules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium">{rule.name}</p>
+                      {rule.description && (
+                        <p className="mt-1 text-muted-foreground">{rule.description}</p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      Importance {rule.valuation}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No behavior rules.</p>
+              )}
+            </section>
+            <section className="space-y-2">
+              <h3 className="font-medium">Questions</h3>
+              {selected.questions.map((question) => (
+                <p key={question.id} className="rounded-lg border p-3 text-sm">
+                  {question.text}
+                </p>
+              ))}
+              {!selected.questions.length && (
+                <p className="text-sm text-muted-foreground">No questions.</p>
+              )}
+            </section>
+            {selected.evaluationEmphasis.length > 0 && (
+              <p className="text-sm">Focus: {selected.evaluationEmphasis.join(", ")}</p>
+            )}
+            {selected.evaluationNotes && (
+              <p className="whitespace-pre-wrap text-sm">{selected.evaluationNotes}</p>
+            )}
+            <section className="space-y-2">
+              <h3 className="font-medium">Report structure</h3>
+              <p className="text-sm text-muted-foreground">
+                {selected.reportBlocks?.map((block) => block.title || block.kind).join(" · ") ||
+                  "Default report structure"}
+              </p>
+            </section>
+            <SourceAccess
+              workspaceId={workspaceId}
+              groupId={groupId}
+              disabledKnowledgeNodeIds={selected.disabledKnowledgeNodeIds}
+              disabledResourceIds={selected.disabledResourceIds}
+              canEdit={false}
+              onChange={() => {}}
+            />
+          </Card>
+        ) : draft ? (
+          <Card className="rounded-xl p-4 shadow-card sm:p-5">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-semibold">
+                    {creating ? newLabel : draft.name || "Evaluator"}
+                  </h2>
+                  <EvaluatorScopeBadge scope={draft.scope} />
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {draft.scope === "WORKSPACE" ? workspaceName : groupName}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  How it speaks, how it judges, and what the report has to answer.
+                </p>
+              </div>
+              {canEdit && (
+                <div className="flex shrink-0 items-center gap-1">
+                  {creating && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setCreating(false);
+                        setDraft(null);
+                        onSelect(evaluators[0]?.id);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={requestSave}
+                    disabled={saving}
+                    className="hover:bg-primary"
+                  >
+                    {saving ? "Saving..." : creating ? "Create" : "Save"}
+                  </Button>
+                  {!creating && selected && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="hover:bg-red-600 hover:text-white"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-5 rounded-lg border bg-[var(--brand-soft)] px-3 py-3 text-sm">
+              {workspaceContext ? (
+                creating ? (
+                  <p>
+                    Available in all projects. Create it once and use it across this workspace.
+                    Creating an evaluator does not run an evaluation.
+                  </p>
+                ) : (
+                  <p>Changes apply to all projects in {workspaceName}.</p>
+                )
+              ) : (
+                <p>Only available in {contextName}.</p>
+              )}
+            </div>
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="evaluator-name">Name</Label>
+                <Input
+                  id="evaluator-name"
+                  value={draft.name}
+                  disabled={!canEdit}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="evaluator-description">Description</Label>
+                <Textarea
+                  id="evaluator-description"
+                  value={draft.description}
+                  disabled={!canEdit}
+                  onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                />
+              </div>
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <Label>Personality</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      How this evaluator speaks. Up to three. At least one stays.
+                    </p>
+                  </div>
+                  {canManageWorkspace && !inherited && personalities.length < MAX_PERSONALITIES && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPersonalityDraft({ name: "", instruction: "" })}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> New
+                    </Button>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {personalities.map((item) => {
+                    const selected = draft.personalityId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        role="button"
+                        tabIndex={canEdit ? 0 : -1}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          if (!canEdit) return;
+                          setDraft({ ...draft, personalityId: item.id });
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (!canEdit || (event.key !== "Enter" && event.key !== " ")) return;
+                          event.preventDefault();
+                          setDraft({ ...draft, personalityId: item.id });
+                        }}
+                        className={`cursor-pointer rounded-xl border px-3 py-3 text-left ${
+                          selected
+                            ? "border-foreground bg-background shadow-card"
+                            : "border-border text-muted-foreground"
+                        } ${canEdit ? "" : "cursor-default"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="block min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                            {item.name}
+                          </span>
+                          {canManageWorkspace && !inherited && (
+                            <div className="flex shrink-0">
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                aria-label={`Edit ${item.name}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPersonalityDraft({
+                                    id: item.id,
+                                    name: item.name,
+                                    instruction: item.instruction,
+                                  });
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                aria-label={`Delete ${item.name}`}
+                                disabled={personalities.length <= 1}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDeletePersonalityId(item.id);
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <span className="mt-1 line-clamp-3 block text-xs">{item.instruction}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between">
+                  <Label>Behavior</Label>
+                  {canEdit && draft.rules.length < MAX_BEHAVIOR_RULES && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setDraft({ ...draft, rules: [...draft.rules, blankRule()] })}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  How it should judge what it sees. A short order, not a question to answer. Up to
+                  four. Importance is attention, not a score.
+                </p>
+                {draft.rules.map((rule, index) => (
+                  <div key={rule.key} className="grid gap-2 rounded-lg border border-border p-3">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
+                      <Input
+                        aria-label="Rule name"
+                        placeholder="Rule name"
+                        value={rule.name}
+                        disabled={!canEdit}
+                        onChange={(event) => {
+                          const rules = draft.rules.slice();
+                          rules[index] = { ...rule, name: event.target.value };
+                          setDraft({ ...draft, rules });
+                        }}
+                      />
+                      <Input
+                        aria-label="Importance"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={rule.valuation}
+                        disabled={!canEdit}
+                        onChange={(event) => {
+                          const rules = draft.rules.slice();
+                          rules[index] = {
+                            ...rule,
+                            valuation: Math.min(10, Math.max(1, Number(event.target.value) || 1)),
+                          };
+                          setDraft({ ...draft, rules });
+                        }}
+                      />
+                    </div>
+                    <Textarea
+                      aria-label="Rule description"
+                      placeholder="When you see this, judge it this way."
+                      value={rule.description}
+                      disabled={!canEdit}
+                      onChange={(event) => {
+                        const rules = draft.rules.slice();
+                        rules[index] = { ...rule, description: event.target.value };
+                        setDraft({ ...draft, rules });
+                      }}
+                    />
+                    {canEdit && !(draft.rules.length === 1 && isBlankRule(rule)) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="justify-self-start"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            rules: withOpenRule(
+                              draft.rules.filter((item) => item.key !== rule.key),
+                            ),
+                          })
+                        }
+                      >
+                        Remove rule
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between">
+                  <Label>Questions</Label>
+                  {canEdit && draft.questions.length < MAX_QUESTIONS && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          questions: [...draft.questions, blankQuestion()],
+                        })
+                      }
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  What the report has to answer. One short question each. These do not change the
+                  voice.
+                </p>
+                {draft.questions.map((question, index) => (
+                  <div key={question.key} className="flex items-start gap-2">
+                    <Input
+                      aria-label="Question"
+                      placeholder="What should this report answer?"
+                      value={question.text}
+                      disabled={!canEdit}
+                      onChange={(event) => {
+                        const questions = draft.questions.slice();
+                        questions[index] = { ...question, text: event.target.value };
+                        setDraft({ ...draft, questions });
+                      }}
+                    />
+                    {canEdit && !(draft.questions.length === 1 && isBlankQuestion(question)) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            questions: withOpenQuestion(
+                              draft.questions.filter((item) => item.key !== question.key),
+                            ),
+                          })
+                        }
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <ReportStructure
+                blocks={draft.reportBlocks}
+                canEdit={canEdit}
+                onChange={(reportBlocks) => setDraft({ ...draft, reportBlocks })}
+              />
+
+              <SourceAccess
+                workspaceId={workspaceId}
+                groupId={groupId}
+                disabledKnowledgeNodeIds={draft.disabledKnowledgeNodeIds}
+                disabledResourceIds={draft.disabledResourceIds}
+                canEdit={canEdit}
+                onChange={(next) => setDraft({ ...draft, ...next })}
+              />
+
+              <div className="grid gap-3">
+                <div>
+                  <Label>Character</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Pick a shape, then a color. Each evaluator keeps its own.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-6 overflow-visible py-4">
+                  {EVALUATOR_CHARACTERS.map((character, index) => {
+                    const selected = avatarParts(draft.avatar).character === index;
+                    return (
+                      <button
+                        key={character.variant}
+                        type="button"
+                        disabled={!canEdit}
+                        aria-label={character.label}
+                        aria-pressed={selected}
+                        className={`origin-center rounded-2xl transition-transform duration-300 ease-out ${
+                          selected
+                            ? "z-10 scale-[1.65] drop-shadow-[0_14px_16px_rgba(0,0,0,0.16)]"
+                            : "scale-100"
+                        }`}
+                        onMouseEnter={() => setCharacterHover(index)}
+                        onMouseLeave={() =>
+                          setCharacterHover((current) => (current === index ? null : current))
+                        }
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            avatar: packAvatar(index, avatarParts(draft.avatar).color),
+                          })
+                        }
+                      >
+                        <EvaluatorMark
+                          name={character.label}
+                          avatar={packAvatar(index, 0)}
+                          color={
+                            selected
+                              ? EVALUATOR_COLORS[avatarParts(draft.avatar).color].color
+                              : null
+                          }
+                          state={characterHover === index ? "hover" : "idle"}
+                          size={72}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-3 py-1">
+                  {EVALUATOR_COLORS.map((swatch, index) => {
+                    const selected = avatarParts(draft.avatar).color === index;
+                    return (
+                      <button
+                        key={swatch.label}
+                        type="button"
+                        disabled={!canEdit}
+                        aria-label={swatch.label}
+                        aria-pressed={selected}
+                        className={`h-6 w-6 origin-center rounded-full transition-transform duration-300 ease-out ${
+                          selected
+                            ? "z-10 scale-150 shadow-[0_6px_12px_rgba(0,0,0,0.2)]"
+                            : "scale-100"
+                        }`}
+                        style={{ backgroundColor: swatch.color }}
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            avatar: packAvatar(avatarParts(draft.avatar).character, index),
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <EffortSlider
+                value={draft.effort}
+                disabled={!canEdit}
+                onChange={(effort) => setDraft({ ...draft, effort })}
+              />
+            </div>
+          </Card>
+        ) : (
+          <Card className="rounded-xl p-8 text-center shadow-card">
+            <p className="text-sm text-muted-foreground">
+              Select an evaluator to see its configuration.
+            </p>
+          </Card>
+        )}
+
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title="This evaluator is shared"
+          description="Saving a workspace evaluator changes how it reads every project in this workspace."
+          confirmLabel="Save anyway"
+          onConfirm={() => {
+            setConfirmOpen(false);
+            void persist();
+          }}
+        />
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Delete ${selected?.name ?? "this evaluator"}?`}
+          description="Existing reports stay, labeled as general once the evaluator is gone."
+          destructive
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            if (!selected) return;
+            try {
+              await api.deleteEvaluator(selected.id);
+              toast.success("Evaluator deleted");
+              await invalidateEvaluatorQueries(qc);
+              onSelect(undefined);
+              setDraft(null);
+              setCreating(false);
+            } catch (error) {
+              toast.error(errorMessage(error));
+            }
+          }}
+        />
+        <ConfirmDialog
+          open={deletePersonalityId !== null}
+          onOpenChange={(open) => {
+            if (!open) setDeletePersonalityId(null);
+          }}
+          title="Delete this personality?"
+          description="Evaluators using it switch to another personality. The last one cannot be deleted."
+          destructive
+          confirmLabel="Delete"
+          onConfirm={() => void removePersonality()}
+        />
+        <Dialog
+          open={personalityDraft !== null}
+          onOpenChange={(open) => {
+            if (!open) setPersonalityDraft(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {personalityDraft?.id ? "Edit personality" : "New personality"}
+              </DialogTitle>
+              <DialogDescription>
+                This changes emphasis and tone. Claims still have to follow the evidence.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="personality-name">Name</Label>
+                <Input
+                  id="personality-name"
+                  value={personalityDraft?.name ?? ""}
+                  maxLength={40}
+                  onChange={(event) =>
+                    setPersonalityDraft((current) =>
+                      current ? { ...current, name: event.target.value } : current,
+                    )
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="personality-instruction">Instruction</Label>
+                <Textarea
+                  id="personality-instruction"
+                  ref={instructionRef}
+                  value={personalityDraft?.instruction ?? ""}
+                  maxLength={800}
+                  rows={1}
+                  className="min-h-0 resize-y overflow-hidden [field-sizing:content]"
+                  onChange={(event) => {
+                    fitInstruction(event.currentTarget);
+                    setPersonalityDraft((current) =>
+                      current ? { ...current, instruction: event.target.value } : current,
+                    );
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPersonalityDraft(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void savePersonality()}>
+                {personalityDraft?.id ? "Save" : "Create"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}
+
+function toggleId(ids: string[], id: string, enabled: boolean) {
+  if (enabled) return ids.filter((item) => item !== id);
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+function knowledgeDetail(node: KnowledgeNode) {
+  const origin = node.origin === "GOOGLE_DRIVE" ? "Google Drive" : "Uploaded";
+  const place = node.inherited ? "Workspace" : "Project";
+  const state = node.status === "READY" ? null : node.status.toLowerCase();
+  return [origin, place, state].filter(Boolean).join(" · ");
+}
+
+function SourceAccess({
+  workspaceId,
+  groupId,
+  disabledKnowledgeNodeIds,
+  disabledResourceIds,
+  canEdit,
+  onChange,
+}: {
+  workspaceId: string;
+  groupId?: string;
+  disabledKnowledgeNodeIds: string[];
+  disabledResourceIds: string[];
+  canEdit: boolean;
+  onChange: (next: { disabledKnowledgeNodeIds?: string[]; disabledResourceIds?: string[] }) => void;
+}) {
+  const resources = useQuery({
+    queryKey: groupId ? ["group", groupId, "resources"] : ["workspace", workspaceId, "resources"],
+    queryFn: () =>
+      groupId ? api.listGroupResources(groupId) : api.listWorkspaceResources(workspaceId),
+  });
+  const library = useQuery({
+    queryKey: ["knowledge", workspaceId, groupId],
+    queryFn: () => knowledgeApi.list({ workspaceId, groupId }),
+  });
+  const [open, setOpen] = useState(false);
+  const documents = (library.data?.nodes ?? []).filter(
+    (node) => node.kind === "DOCUMENT" && !node.excluded,
+  );
+  const assigned = resources.data ?? [];
+  const visibleIds = new Set([
+    ...assigned.map((resource) => resource.id),
+    ...documents.map((node) => node.id),
+  ]);
+  const turnedOff = [...disabledResourceIds, ...disabledKnowledgeNodeIds].filter((id) =>
+    visibleIds.has(id),
+  ).length;
+  const total = assigned.length + documents.length;
+  const loading = resources.isLoading || library.isLoading;
+  const failed = resources.error ?? library.error;
+  const summary = loading
+    ? "Loading sources…"
+    : failed
+      ? "Sources could not be loaded"
+      : total === 0
+        ? `No sources in this ${groupId ? "project" : "workspace"}`
+        : turnedOff === 0
+          ? `${total} sources, all on`
+          : `${total} sources, ${turnedOff} off`;
+
+  return (
+    <div className="grid gap-2">
+      <Label>Sources</Label>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
+        <p className="text-xs text-muted-foreground">{summary}</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
+          {canEdit ? "Configure" : "View sources"}
+        </Button>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Sources</DialogTitle>
+            <DialogDescription>
+              This evaluator can read every assigned source until you turn one off. New sources stay
+              on.
+            </DialogDescription>
+          </DialogHeader>
+          {loading ? (
+            <LoadingState />
+          ) : failed ? (
+            <ErrorState
+              message={errorMessage(failed)}
+              onRetry={() => {
+                void resources.refetch();
+                void library.refetch();
+              }}
+            />
+          ) : (
+            <div className="grid max-h-[60vh] gap-4 overflow-y-auto pr-1">
+              <div className="grid gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Plugin resources</p>
+                {assigned.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No plugin resources assigned to this {groupId ? "project" : "workspace"}.
+                  </p>
+                ) : (
+                  assigned.map((resource) => (
+                    <SourceRow
+                      key={resource.id}
+                      title={resource.name}
+                      detail={
+                        resource.pluginInstallation?.name ??
+                        resource.pluginInstallation?.pluginId ??
+                        "Plugin"
+                      }
+                      checked={!disabledResourceIds.includes(resource.id)}
+                      disabled={!canEdit}
+                      onCheckedChange={(enabled) =>
+                        onChange({
+                          disabledResourceIds: toggleId(disabledResourceIds, resource.id, enabled),
+                        })
+                      }
+                    />
+                  ))
+                )}
+              </div>
+              <div className="grid gap-2">
+                <p className="text-xs font-medium text-muted-foreground">Knowledge</p>
+                {documents.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No knowledge documents in this {groupId ? "project" : "workspace"}.
+                  </p>
+                ) : (
+                  documents.map((node) => (
+                    <SourceRow
+                      key={node.id}
+                      title={node.name}
+                      detail={knowledgeDetail(node)}
+                      checked={!disabledKnowledgeNodeIds.includes(node.id)}
+                      disabled={!canEdit}
+                      onCheckedChange={(enabled) =>
+                        onChange({
+                          disabledKnowledgeNodeIds: toggleId(
+                            disabledKnowledgeNodeIds,
+                            node.id,
+                            enabled,
+                          ),
+                        })
+                      }
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function SourceRow({
+  title,
+  detail,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  title: string;
+  detail: string;
+  checked: boolean;
+  disabled: boolean;
+  onCheckedChange: (enabled: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-lg border px-3 py-2">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{title}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{detail}</span>
+      </span>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </label>
+  );
+}
+
+const BLOCK_OPTIONS: { kind: ReportBlockKind; label: string }[] = [
+  { kind: "SUMMARY", label: "Summary" },
+  { kind: "OVERALL", label: "Overall assessment" },
+  { kind: "PRODUCT", label: "Product" },
+  { kind: "PROJECT", label: "Project" },
+  { kind: "ENGINEERING", label: "Engineering" },
+  { kind: "PEOPLE", label: "People" },
+  { kind: "RECOMMENDATIONS", label: "Recommendations" },
+  { kind: "QUESTIONS", label: "Questions" },
+  { kind: "CUSTOM", label: "Custom section" },
+];
+
+function standardBlocks(): ReportBlockConfig[] {
+  return BLOCK_OPTIONS.filter((option) => option.kind !== "CUSTOM").map((option) => ({
+    id: crypto.randomUUID(),
+    kind: option.kind,
+  }));
+}
+
+function moveBlock(blocks: ReportBlockConfig[], from: number, to: number) {
+  if (from === to || from < 0 || to < 0 || from >= blocks.length || to >= blocks.length)
+    return blocks;
+  const copy = blocks.slice();
+  const [item] = copy.splice(from, 1);
+  copy.splice(to, 0, item);
+  return copy;
+}
+
+function ReportStructure({
+  blocks,
+  canEdit,
+  onChange,
+}: {
+  blocks: ReportBlockConfig[] | null;
+  canEdit: boolean;
+  onChange: (blocks: ReportBlockConfig[] | null) => void;
+}) {
+  const custom = blocks !== null;
+  const [adding, setAdding] = useState<ReportBlockKind>("SUMMARY");
+  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const used = new Set((blocks ?? []).map((block) => block.kind));
+
+  const add = () => {
+    const current = blocks ?? [];
+    if (current.length >= 12) return;
+    if (adding === "CUSTOM") {
+      if (!title.trim() || !prompt.trim()) return;
+      onChange([
+        ...current,
+        { id: crypto.randomUUID(), kind: "CUSTOM", title: title.trim(), prompt: prompt.trim() },
+      ]);
+      setTitle("");
+      setPrompt("");
+      return;
+    }
+    if (used.has(adding)) return;
+    onChange([...current, { id: crypto.randomUUID(), kind: adding }]);
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>Report structure</Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Off uses the standard report. On lets this evaluator choose its own blocks. Drag a
+            section to reorder it.
+          </p>
+        </div>
+        <Switch
+          checked={custom}
+          disabled={!canEdit}
+          onCheckedChange={(on) => onChange(on ? standardBlocks() : null)}
+          aria-label="Custom report structure"
+        />
+      </div>
+      {blocks && (
+        <div className="grid gap-2">
+          {blocks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Add at least one block, or turn this off.
+            </p>
+          ) : (
+            blocks.map((block, index) => (
+              <div
+                key={block.id}
+                onDragOver={(event) => {
+                  if (!canEdit) return;
+                  event.preventDefault();
+                  setOverIndex(index);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const from = Number(event.dataTransfer.getData("text/plain"));
+                  if (!Number.isNaN(from)) onChange(moveBlock(blocks, from, index));
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${
+                  dragIndex === index ? "opacity-50" : ""
+                } ${overIndex === index && dragIndex !== index ? "border-foreground" : ""}`}
+              >
+                {canEdit && (
+                  <span
+                    draggable
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Drag to reorder"
+                    className="mt-0.5 cursor-grab text-muted-foreground active:cursor-grabbing"
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", String(index));
+                      setDragIndex(index);
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null);
+                      setOverIndex(null);
+                    }}
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">
+                    {BLOCK_OPTIONS.find((option) => option.kind === block.kind)?.label}
+                    {block.kind === "CUSTOM" ? `: ${block.title}` : ""}
+                  </span>
+                  {block.prompt ? (
+                    <span className="mt-1 block text-[11px] text-muted-foreground">
+                      {block.prompt}
+                    </span>
+                  ) : null}
+                </span>
+                {canEdit && (
+                  <span className="flex shrink-0 items-center">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="Move block up"
+                      disabled={index === 0}
+                      onClick={() => onChange(moveBlock(blocks, index, index - 1))}
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="Move block down"
+                      disabled={index === blocks.length - 1}
+                      onClick={() => onChange(moveBlock(blocks, index, index + 1))}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      aria-label="Remove block"
+                      onClick={() => onChange(blocks.filter((item) => item.id !== block.id))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+          {canEdit && blocks.length < 12 && (
+            <div className="grid gap-2 rounded-lg border border-dashed p-3">
+              <select
+                aria-label="Block to add"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                value={adding}
+                onChange={(event) => setAdding(event.target.value as ReportBlockKind)}
+              >
+                {BLOCK_OPTIONS.map((option) => (
+                  <option
+                    key={option.kind}
+                    value={option.kind}
+                    disabled={option.kind !== "CUSTOM" && used.has(option.kind)}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {adding === "CUSTOM" && (
+                <>
+                  <Input
+                    aria-label="Custom block title"
+                    placeholder="Section title"
+                    value={title}
+                    maxLength={80}
+                    onChange={(event) => setTitle(event.target.value)}
+                  />
+                  <Textarea
+                    aria-label="What this section should look at"
+                    placeholder="What should this section look at?"
+                    value={prompt}
+                    maxLength={500}
+                    onChange={(event) => setPrompt(event.target.value)}
+                  />
+                </>
+              )}
+              <Button type="button" size="sm" variant="outline" onClick={add}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add block
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

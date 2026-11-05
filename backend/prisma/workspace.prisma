@@ -1,4 +1,6 @@
 model Workspace {
+  knowledgeNodes KnowledgeNode[]
+  knowledgeConnections KnowledgeConnection[]
   generationJobs GenerationJob[]
   taskAnalyses TaskAnalysis[]
   gradingSettings Json?
@@ -19,6 +21,8 @@ model Workspace {
   performanceReports  PerformanceReport[]
   invitations         Invitation[]
   rulePackages        RulePackage[]
+  evaluators          Evaluator[]
+  voices              EvaluatorVoice[]
 
   @@index([organizationId])
 }

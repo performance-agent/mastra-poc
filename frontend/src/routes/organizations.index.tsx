@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Plus, Building2 } from "lucide-react";
@@ -38,6 +38,7 @@ function fmtDate(s?: string) {
 
 function OrganizationsIndex() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Organization | null>(null);
@@ -63,11 +64,12 @@ function OrganizationsIndex() {
     <AppShell>
       <div className="space-y-6">
         <Breadcrumbs items={[{ label: "Organizations" }]} />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="experience-directory flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Organizations</h1>
+            <p className="experience-eyebrow mb-2">Your teams. Their own identity.</p>
+            <h1 className="text-3xl font-semibold tracking-tight">Find your space</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Choose an organization to enter, or create a new one.
+              Every team has a place to turn its work into understanding.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -79,7 +81,7 @@ function OrganizationsIndex() {
               />
             </div>
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> New
+              <Plus className="mr-1.5 h-4 w-4" /> Create organization
             </Button>
           </div>
         </div>
@@ -92,7 +94,7 @@ function OrganizationsIndex() {
           <EmptyState
             icon={<Building2 className="h-4 w-4" />}
             title="Create your first organization"
-            description="Organizations group workspaces, members, resources, and plugins."
+            description="Organizations organize workspaces, members, resources, and plugins."
             actionLabel="New organization"
             onAction={() => setCreateOpen(true)}
           />
@@ -118,27 +120,35 @@ function OrganizationsIndex() {
       </div>
 
       <EntityFormDialog
+        scope="organization"
         open={createOpen}
         onOpenChange={setCreateOpen}
         title="New organization"
         submitLabel="Create"
         onSubmit={async (v) => {
           try {
-            await api.createOrganization(v);
+            const created = await api.createOrganization(v);
             toast.success("Organization created");
-            refresh();
+            await refresh();
+            await navigate({
+              to: "/organizations/$organizationId",
+              params: { organizationId: created.id },
+            });
           } catch (e) {
             toast.error(errorMessage(e));
+            throw e;
           }
         }}
       />
       <EntityFormDialog
+        scope="organization"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         title="Edit organization"
         initial={
           editing
             ? {
+                id: editing.id,
                 name: editing.name,
                 description: editing.description ?? undefined,
                 photoUrl: editing.photoUrl ?? undefined,
@@ -153,6 +163,7 @@ function OrganizationsIndex() {
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
+            throw e;
           }
         }}
       />
@@ -172,6 +183,7 @@ function OrganizationsIndex() {
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
+            throw e;
           }
         }}
       />

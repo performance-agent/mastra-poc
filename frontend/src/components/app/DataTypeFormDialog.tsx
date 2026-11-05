@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { z } from "zod";
 
@@ -199,16 +199,26 @@ export function DataTypeFormDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [fields, setFields] = useState<FieldDraft[]>([newField()]);
+  const initialized = useRef(false);
+  const [baseline, setBaseline] = useState("");
   const [schemaEditable, setSchemaEditable] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initialized.current = false;
+      return;
+    }
+    if (initialized.current) return;
+    initialized.current = true;
     const parsedFields = initial ? jsonSchemaToFields(initial.schema) : [newField()];
     setName(initial?.name ?? "");
     setDescription(initial?.description ?? "");
     setFields(parsedFields ?? []);
+    setBaseline(
+      JSON.stringify([initial?.name ?? "", initial?.description ?? "", parsedFields ?? []]),
+    );
     setSchemaEditable(!initial || parsedFields !== null);
     setError(null);
   }, [initial, open]);
@@ -224,6 +234,7 @@ export function DataTypeFormDialog({
     <FormModal
       open={open}
       onOpenChange={onOpenChange}
+      dirty={!!baseline && JSON.stringify([name, description, fields]) !== baseline}
       title={initial ? "Edit data type" : "New data type"}
       description="Define the data shape available to performance agents."
       submitLabel={initial ? "Save" : "Create"}

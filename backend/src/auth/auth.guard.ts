@@ -60,16 +60,12 @@ export class AuthGuard implements CanActivate {
 
       const name = decodedToken.name?.trim() || email.split('@')[0] || 'User';
 
-      let user = await this.usersService.findOneByFirebaseUid(decodedToken.uid);
-
-      if (!user) {
-        user = await this.usersService.create({
-          name,
-          email,
-          firebaseUid: decodedToken.uid,
-          photoUrl: decodedToken.picture,
-        });
-      }
+      const user = await this.usersService.findOrCreateForLogin({
+        name,
+        email,
+        firebaseUid: decodedToken.uid,
+        photoUrl: decodedToken.picture,
+      });
 
       request['user'] = { ...decodedToken, id: user.id };
     } catch (error) {

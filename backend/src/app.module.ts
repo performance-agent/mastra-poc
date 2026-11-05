@@ -1,4 +1,6 @@
 import { GenerationModule } from './generation/generation.module';
+import { KnowledgeModule } from './knowledge/knowledge.module';
+import { ExperienceModule } from './experience/experience.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -21,11 +23,14 @@ import { DataTypesModule } from './data-types/data-types.module';
 import { PluginsModule } from './plugins/plugins.module';
 import { PluginInstallationsModule } from './plugin-installations/plugin-installations.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
+import { EvaluatorsModule } from './evaluators/evaluators.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { PerformanceMcpModule } from './mcp/performance-mcp.module';
 
 @Module({
   imports: [
+    KnowledgeModule,
+    ExperienceModule,
     GenerationModule,
     ConfigModule.forRoot(),
     OrganizationsModule,
@@ -43,6 +48,7 @@ import { PerformanceMcpModule } from './mcp/performance-mcp.module';
     PluginsModule,
     PluginInstallationsModule,
     EvaluationsModule,
+    EvaluatorsModule,
     InvitationsModule,
     PerformanceMcpModule,
   ],

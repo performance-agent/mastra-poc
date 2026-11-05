@@ -8,11 +8,8 @@ import { MCPServer } from '@mastra/mcp';
 import { z } from 'zod';
 import { MembershipRole } from '../../generated/prisma/enums';
 import { AccessControlService } from '../access-control/access-control.service';
-import {
-  GROUP_REPORT_GENERATION_PROMPT,
-  GROUP_REPORT_INSTRUCTIONS,
-} from '../mastra/group-report-instructions';
-import { buildEvaluationGuidelinesPrompt } from '../mastra/evaluation-guidelines';
+import { GROUP_REPORT_INSTRUCTIONS } from '../mastra/group-report-instructions';
+import { EvaluatorsService } from '../evaluators/evaluators.service';
 import { groupReportContentSchema } from '../mastra/schemas/group-report.schema';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
@@ -21,6 +18,13 @@ const readSecurity = [{ type: 'oauth2', scopes: ['reports:read'] }];
 const writeSecurity = [
   { type: 'oauth2', scopes: ['reports:read', 'reports:write'] },
 ];
+const periodSchema = z.object({ from: z.string(), to: z.string() }).optional();
+const knowledgeSelectionSchema = z
+  .object({
+    sourceIds: z.array(z.string()).max(200).optional(),
+    folderIds: z.array(z.string()).max(200).optional(),
+  })
+  .optional();
 
 const groupSchema = z.object({
   id: z.string(),
@@ -38,16 +42,17 @@ export class PerformanceMcpService {
     private readonly prisma: PrismaService,
     private readonly accessControl: AccessControlService,
     private readonly reports: ReportsService,
+    private readonly evaluators: EvaluatorsService,
   ) {
     const listGroups = createTool({
       id: 'list_groups',
       description:
-        'Lista los grupos de Performance Platform que el usuario autenticado puede consultar.',
+        'Lista los proyectos de Performance Platform que el usuario autenticado puede consultar.',
       inputSchema: z.object({}),
       outputSchema: z.object({ groups: z.array(groupSchema) }),
       mcp: {
         annotations: {
-          title: 'List accessible groups',
+          title: 'List accessible projects',
           readOnlyHint: true,
           destructiveHint: false,
           openWorldHint: false,
@@ -92,19 +97,29 @@ export class PerformanceMcpService {
       },
     });
 
-    const getGroupReportContext = createTool({
-      id: 'get_group_report_context',
+    const listEvaluators = createTool({
+      id: 'list_evaluators',
       description:
-        'Obtiene las instrucciones, el schema y todo el historial disponible de los recursos asignados a un grupo accesible.',
-      inputSchema: z.object({
-        groupId: z.string().describe('ID obtenido desde list_groups.'),
+        'Lista los evaluadores disponibles para un proyecto accesible. Pide al usuario que elija uno antes de analizar.',
+      inputSchema: z.object({ groupId: z.string().min(1) }),
+      outputSchema: z.object({
+        evaluators: z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            description: z.string().nullable(),
+            scope: z.enum(['WORKSPACE', 'GROUP']),
+            effort: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+            personality: z.string(),
+          }),
+        ),
       }),
       mcp: {
         annotations: {
-          title: 'Get group report context',
+          title: 'List project evaluators',
           readOnlyHint: true,
           destructiveHint: false,
-          openWorldHint: true,
+          openWorldHint: false,
         },
         _meta: { securitySchemes: readSecurity },
       },
@@ -115,21 +130,111 @@ export class PerformanceMcpService {
           MembershipRole.ADMIN,
           MembershipRole.VIEWER,
         ]);
-        const prepared = await this.reports.prepareGroupReport(groupId);
+        const rows = await this.evaluators.listForGroup(groupId);
+        return {
+          evaluators: rows.map((e) => ({
+            id: e.id,
+            name: e.name,
+            description: e.description,
+            scope: e.scope,
+            effort: e.effort,
+            personality: e.personality.name,
+          })),
+        };
+      },
+    });
 
-        const guidelinesPrefix = buildEvaluationGuidelinesPrompt(
-          prepared.evaluationGuidelines,
+    const listKnowledgeSources = createTool({
+      id: 'list_knowledge_sources',
+      description:
+        'Lista documentos y carpetas disponibles para el reporte. Por defecto se seleccionan todos los documentos listos; el usuario puede deseleccionar fuentes.',
+      inputSchema: z.object({ groupId: z.string() }),
+      outputSchema: z.object({
+        canManage: z.boolean(),
+        nodes: z.array(z.unknown()),
+      }),
+      mcp: {
+        annotations: {
+          title: 'List knowledge sources',
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: readSecurity },
+      },
+      execute: async ({ groupId }, context) => {
+        const identity = mcpIdentity(context, 'reports:read');
+        await this.requireGroupRole(groupId, identity.userId, [
+          MembershipRole.OWNER,
+          MembershipRole.ADMIN,
+          MembershipRole.VIEWER,
+        ]);
+        return this.reports.listKnowledgeSources(groupId, identity.userId);
+      },
+    });
+    const getGroupReportContext = createTool({
+      id: 'get_group_report_context',
+      description:
+        'Obtiene las instrucciones, el schema y todo el historial disponible de los recursos asignados a un proyecto accesible.',
+      inputSchema: z.object({
+        groupId: z.string().describe('ID obtenido desde list_groups.'),
+        evaluatorId: z
+          .string()
+          .min(1)
+          .describe('ID elegido desde list_evaluators.'),
+        period: periodSchema,
+        knowledgeSelection: knowledgeSelectionSchema,
+      }),
+      outputSchema: z.object({
+        groupId: z.string(),
+        evaluatorId: z.string(),
+        knowledgeContextId: z.string(),
+        evaluator: z.unknown(),
+        period: z.object({ from: z.string(), to: z.string() }).nullable(),
+        instructions: z.string(),
+        generationPrompt: z.string(),
+        schema: z.record(z.string(), z.unknown()),
+        input: z.unknown(),
+        nextStep: z.string(),
+      }),
+      mcp: {
+        annotations: {
+          title: 'Get group report context',
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: true,
+        },
+        _meta: { securitySchemes: readSecurity },
+      },
+      execute: async (
+        { groupId, evaluatorId, period, knowledgeSelection },
+        context,
+      ) => {
+        const identity = mcpIdentity(context, 'reports:read');
+        await this.requireGroupRole(groupId, identity.userId, [
+          MembershipRole.OWNER,
+          MembershipRole.ADMIN,
+          MembershipRole.VIEWER,
+        ]);
+        const external = await this.reports.prepareExternalGroupReport(
+          groupId,
+          evaluatorId,
+          period,
+          knowledgeSelection,
+          identity.userId,
         );
         return {
           groupId,
+          evaluatorId,
+          knowledgeContextId: external.knowledgeContextId ?? '',
+          evaluator: external.source.snapshot,
+          period: external.period ?? null,
           instructions: GROUP_REPORT_INSTRUCTIONS,
-          generationPrompt: guidelinesPrefix
-            ? `${guidelinesPrefix}${GROUP_REPORT_GENERATION_PROMPT}`
-            : GROUP_REPORT_GENERATION_PROMPT,
+          generationPrompt: external.generationPrompt,
           schema: z.toJSONSchema(groupReportContentSchema),
-          input: prepared.reportInput,
+          input: external.prepared.reportInput,
           nextStep:
-            'Genera únicamente el objeto report que cumple el schema y envíalo junto con groupId a create_group_report.',
+            'Genera únicamente el objeto report que cumple el schema y envíalo con el mismo groupId, evaluatorId, period y knowledgeContextId a create_group_report. No cambies de evaluador ni de fuentes.',
         };
       },
     });
@@ -137,14 +242,26 @@ export class PerformanceMcpService {
     const createGroupReport = createTool({
       id: 'create_group_report',
       description:
-        'Valida y guarda un Group Report generado con get_group_report_context. Sólo OWNER y ADMIN pueden usarla.',
+        'Valida y guarda un Project Report generado con get_group_report_context. Sólo OWNER y ADMIN pueden usarla.',
       inputSchema: z.object({
         groupId: z.string().describe('ID obtenido desde list_groups.'),
+        evaluatorId: z
+          .string()
+          .min(1)
+          .describe('Mismo evaluador usado para obtener el contexto.'),
+        period: periodSchema,
+        knowledgeContextId: z
+          .string()
+          .min(1)
+          .describe(
+            'Contexto devuelto por get_group_report_context. Conserva las versiones exactas de las fuentes.',
+          ),
         report: groupReportContentSchema,
       }),
       outputSchema: z.object({
         id: z.string(),
         groupId: z.string(),
+        evaluatorId: z.string(),
         type: z.literal('GROUP_REPORT'),
         createdAt: z.string(),
       }),
@@ -158,7 +275,10 @@ export class PerformanceMcpService {
         },
         _meta: { securitySchemes: writeSecurity },
       },
-      execute: async ({ groupId, report }, context) => {
+      execute: async (
+        { groupId, evaluatorId, period, knowledgeContextId, report },
+        context,
+      ) => {
         const identity = mcpIdentity(context, 'reports:write');
         await this.requireGroupRole(groupId, identity.userId, [
           MembershipRole.OWNER,
@@ -167,10 +287,12 @@ export class PerformanceMcpService {
         const created = await this.reports.createGroupReportFromContent(
           groupId,
           report,
+          { evaluatorId, period, knowledgeContextId, userId: identity.userId },
         );
         return {
           id: created.id,
           groupId,
+          evaluatorId,
           type: 'GROUP_REPORT' as const,
           createdAt: created.createdAt.toISOString(),
         };
@@ -180,13 +302,15 @@ export class PerformanceMcpService {
     this.server = new MCPServer({
       id: 'performance-platform',
       name: 'Performance Platform',
-      version: '1.0.0',
+      version: '3.0.0',
       description:
-        'Genera y persiste evaluaciones Group Report con los datos conectados a Performance Platform.',
+        'Genera y persiste evaluaciones Project Report con los datos conectados a Performance Platform.',
       instructions:
-        'Primero llama list_groups. Luego usa get_group_report_context para obtener instrucciones, schema e historial. Genera un reporte neutral en español, sin inventar evidencia, y envíalo a create_group_report. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
+        'Primero llama list_groups y list_evaluators para el proyecto elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo proyecto, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
       tools: {
+        list_knowledge_sources: listKnowledgeSources,
         list_groups: listGroups,
+        list_evaluators: listEvaluators,
         get_group_report_context: getGroupReportContext,
         create_group_report: createGroupReport,
       },
@@ -205,7 +329,7 @@ export class PerformanceMcpService {
       roles,
     });
     if (!allowed) {
-      throw new ForbiddenException('You cannot access this group');
+      throw new ForbiddenException('You cannot access this project');
     }
   }
 }

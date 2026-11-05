@@ -14,6 +14,8 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
+    "test:knowledge": "jest --runInBand knowledge reports/reports.service.spec.ts mcp/performance-mcp.service.spec.ts evaluations/evaluation-flow.provider.spec.ts",
+    "test:knowledge:integration": "node test/knowledge.integration.cjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
@@ -21,7 +23,6 @@
     "docker:up": "docker compose up -d && npx prisma migrate dev"
   },
   "dependencies": {
-    "@pa/agent": "file:../agent",
     "@mastra/core": "^1.31.0",
     "@mastra/duckdb": "^1.2.0",
     "@mastra/libsql": "^1.9.1",
@@ -37,6 +38,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.4.2",
     "@octokit/auth-app": "^8.2.0",
+    "@pa/agent": "file:../agent",
     "@pa/core": "file:../core/packages/core",
     "@pa/plugin-github": "file:../core/packages/plugin-github",
     "@pa/plugin-jira": "file:../core/packages/plugin-jira",
@@ -48,11 +50,15 @@
     "class-validator": "^0.15.1",
     "dotenv": "^17.4.2",
     "firebase-admin": "^13.9.0",
+    "google-auth-library": "^11.3.2",
+    "mammoth": "^1.13.0",
     "mastra": "^1.7.3",
     "octokit": "^5.0.5",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.5",
     "zod": "^4.4.2"
   },
   "devDependencies": {

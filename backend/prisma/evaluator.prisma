@@ -1,0 +1,124 @@
+model Evaluator {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  scope  EvaluatorScope
+  effort EvaluatorEffort @default(MEDIUM)
+  avatar Int             @default(0)
+
+  personalityId String
+  personality   EvaluatorVoice @relation(fields: [personalityId], references: [id], onDelete: Cascade)
+
+  evaluationEmphasis GroupEvaluationEmphasis[] @default([])
+  evaluationNotes    String?
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  groupId String?
+  group   Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  ownerId String?
+  owner   User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  rules              EvaluatorRule[]
+  questions          EvaluatorQuestion[]
+  performanceReports PerformanceReport[]
+
+  disabledKnowledgeNodeIds String[] @default([])
+  disabledResourceIds      String[] @default([])
+  reportBlocks             Json?
+
+  schedules EvaluatorSchedule[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([scope])
+  @@index([workspaceId])
+  @@index([groupId])
+  @@index([ownerId])
+  @@index([personalityId])
+}
+
+model EvaluatorVoice {
+  id          String @id @default(cuid())
+  name        String
+  instruction String
+  position    Int
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  evaluators Evaluator[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([workspaceId, position])
+  @@index([workspaceId])
+}
+
+model EvaluatorRule {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  valuation   Int
+  position    Int
+
+  evaluatorId String
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([evaluatorId, position])
+  @@index([evaluatorId])
+}
+
+model EvaluatorQuestion {
+  id       String @id @default(cuid())
+  text     String
+  position Int
+
+  evaluatorId String
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([evaluatorId, position])
+  @@index([evaluatorId])
+}
+
+model EvaluatorSchedule {
+  id          String @id @default(cuid())
+  evaluatorId String
+  groupId     String
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+  group       Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  days     Int[]
+  hour     Int
+  minute   Int
+  timeZone String
+  lastRunOn String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([evaluatorId, groupId])
+  @@index([groupId])
+}
+
+enum EvaluatorScope {
+  WORKSPACE
+  GROUP
+}
+
+enum EvaluatorEffort {
+  LOW
+  MEDIUM
+  HIGH
+}

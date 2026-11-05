@@ -1,5 +1,176 @@
 # mastra-poc
 
+## Knowledge base
+
+Resources now separates **Knowledge base** from **Plugin resources** in workspaces
+and projects. Create folders, upload documents, or connect Google Drive from the
+Knowledge base. Workspace sources are inherited by projects; a project can exclude
+an inherited file or folder without deleting the shared source. Owners/admins
+manage their scope; viewers can read. Google Drive connections belong to the
+knowledge base and do not create plugin installations.
+
+The UI calls groups **Projects** throughout; existing `/groups` routes, `groupId`
+fields, database models and MCP tool names remain compatible. Workspace tabs are
+Overview, Projects, Members, Resources, People. Project tabs are Overview, Members,
+Resources, Evaluators, Reports, Rules. Entity image permissions use an explicit
+scope, independent of the wording of a form title.
+
+Google Drive connections are personal administration credentials. Only the user
+who authorized a connection, while retaining OWNER/ADMIN access in its original
+scope, can browse Drive, select sources, change destinations, request sync,
+reconnect or disconnect. Other administrators cannot use that connection. They
+receive only its platform owner name, status, selected-item count and last sync;
+Google account identifiers, email and selection configuration are returned only
+to the connection owner. Credentials are never returned. Deploy frontend and
+backend together because non-owner connection responses omit private fields.
+
+Published documents are shared with readers of the workspace/project: they can
+preview and download imported copies, and select them for reports under existing
+report permissions. Owners/admins manage uploaded files/platform folders and
+document usage; only the Drive connection owner changes its selected sources.
+Selecting a Drive folder shares new imported descendants as well. Sharing in the
+platform does not change the original file's Google permissions. There is no
+"Only me" source mode in this version. Losing contribution permissions pauses
+future automatic sync, preserving already-published copies and saved reports.
+These permission changes use the existing connection `ownerId` and require no
+additional database migration. Connection/file query caches are keyed by the
+signed-in Firebase user.
+
+Report generation selects all ready, non-excluded documents initially. Uncheck
+files, folders or all sources to change a particular report; an empty selection
+generates using plugins only. Documents can provide context, evidence or both.
+Reports save exact versions and the supplied excerpts, including coverage; later
+edits, synchronization or deletion do not rewrite previous report sources. Large
+documents supply relevance-selected excerpts, not necessarily their complete text.
+The same selection is available in evaluator setup, project reports and rule
+evaluations. Existing reports without knowledge sources remain readable.
+
+### Installation and Google Drive configuration
+
+From `backend`, install dependencies, generate Prisma, apply the additive migration
+and build:
+
+```sh
+npm install
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+```
+
+Migration `20261103000000_knowledge_base` adds folders, document versions,
+exclusions, Drive connections and frozen MCP contexts. Configure the existing
+PostgreSQL connection, Firebase Admin credentials, `FIREBASE_STORAGE_BUCKET`
+(a private bucket accessible to the backend service account), and
+`SECRETS_ENCRYPTION_KEY` (the existing base64 32-byte encryption key). Keep the
+encryption key stable so saved Drive credentials remain readable.
+
+To enable Drive later:
+
+1. In Google Cloud, enable **Google Drive API** and configure the OAuth consent
+   screen. For a development application in Testing, add your account as a test user.
+2. Create an OAuth client of type **Web application**. Register this exact authorized
+   redirect URI: `PUBLIC_API_URL` followed by `/api/knowledge/drive/callback`.
+   For example, `http://localhost:3000/api/knowledge/drive/callback` when
+   `PUBLIC_API_URL=http://localhost:3000` (the variable does not include `/api`).
+3. Set `GOOGLE_DRIVE_CLIENT_ID` and `GOOGLE_DRIVE_CLIENT_SECRET` in `backend/.env`.
+   Set `FRONTEND_URL` to the actual frontend origin and include that origin in
+   `CORS_ORIGIN` if configured. Restart the backend.
+4. Open **Resources → Knowledge base → Connections → Connect Google Drive**.
+   Authorize the account, choose files/folders, their destination and use.
+   Connecting a folder includes its subfolders and new files on subsequent syncs.
+
+OAuth uses `openid`, `email` and `https://www.googleapis.com/auth/drive.readonly`
+with offline access. The backend encrypts refresh tokens; the browser never receives
+them. Production use of this restricted Drive scope may require Google's OAuth
+verification. In Testing, Google normally expires these refresh tokens after seven
+days; use Reconnect when needed. See Google's
+[web-server OAuth instructions](https://developers.google.com/identity/protocols/oauth2/web-server),
+[Drive scope requirements](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
+and [token expiration rules](https://developers.google.com/identity/protocols/oauth2).
+
+Uploads support PDF, DOCX and UTF-8 TXT, Markdown and CSV, up to 20 MB per file.
+Scanned PDFs need extractable text; OCR is not included. Google Docs and Slides
+export as text; Sheets export as PDF. Processing checks the persistent queue every
+five seconds. Drive checks for due connections every 30 seconds and synchronizes
+approximately every five minutes, with manual sync and retries. A connection scan
+is bounded to 5,000 items and 64 folder levels; a report accepts 200 documents.
+Lost access disables affected sources for new reports while preserving saved
+report snapshots. Disconnect before deleting a platform folder containing linked
+Drive sources.
+
+MCP server version 3 exposes `list_knowledge_sources`. Call
+`get_group_report_context` with an optional `knowledgeSelection` and pass its
+`knowledgeContextId` unchanged to `create_group_report`. Contexts expire after one
+hour and bind the user, project, evaluator, period, versions and supplied excerpts.
+Refresh existing clients' tool lists after upgrading.
+
+### Verification
+
+Run `npm run test:knowledge` from `backend` for the focused unit suite. With the
+configured PostgreSQL and private bucket, `npm run test:knowledge:integration`
+performs real upload, extraction, download, permissions, exclusions and immutable
+snapshot checks. Add `-- --report` to also generate a real report with the configured
+model; this makes a provider request. The integration test creates isolated data
+and removes its database records and uploaded objects afterward.
+The normal integration run also verifies Drive ownership with real database
+memberships and writes `permissions-integration.json`; it does not authorize a
+Google account or call Google Drive. With `--report`, the receipt is instead
+written to `integration.json` and includes the actual model generation.
+
+From `frontend`, run `npm run build` and, with Vite running,
+`npm run test:knowledge`. These browser scenarios use simulated API/auth responses
+and cover folders, upload retry, project exclusions, default/partial selections,
+Drive selection, saved references, viewer permissions and mobile layouts. Their
+screenshots are labeled as simulated and stored in
+`artifacts/knowledge-base/implementation/ui/`.
+
+Verified locally on 2026-11-03: migration applied; real PostgreSQL/private Firebase
+Storage round trip and PDF/DOCX extraction passed; a knowledge-only report was
+generated and persisted with the configured Gemini model and exact source version.
+The real Drive OAuth round trip remains pending the credentials to be configured
+by the administrator. Drive API behavior is covered with simulated provider
+responses. The full backend suite retains pre-existing ESM-loading and obsolete
+mock/expectation failures; the focused knowledge/report/MCP suite is separate.
+
+## Evaluation progress
+
+Apply `20261031000000_generation_progress` through the normal Prisma migration
+deployment workflow before starting the updated backend. It adds a nullable JSON
+progress field to generation jobs; existing jobs remain readable.
+
+Evaluation status responses now include `progress` with the current stage,
+completed stage identifiers, total steps, and update time. The authenticated
+`GET /workspaces/:workspaceId/evaluations/jobs/latest?groupId=...` endpoint
+recovers the latest evaluation for that workspace and group. The frontend polls
+every two seconds, resumes tracking after reload/navigation, and keeps the saved
+report available while individual synthesis runs. Counts represent completed
+steps, not elapsed-time percentages. Interrupted jobs retain the existing
+expiration behavior and are not replayed after a backend restart.
+
+Run `npm run test:progress` in `frontend` with the local Vite server running
+(default `http://127.0.0.1:5173`; override `PROGRESS_TEST_BASE_URL`). The browser
+checks use installed Chrome by default (`PLAYWRIGHT_CHANNEL` can override it).
+They cover polling, reload, group navigation, reconnection, terminal errors and
+individual synthesis. Screenshots are written to
+`artifacts/evaluation-progress/ui-tests/` and visibly labeled as simulated API
+responses, not live evaluations.
+
+Verification on 2026-10-31: 78 agent tests, 14 targeted backend tests and four
+browser scenarios passed; frontend/backend compilation and frontend type/lint
+checks passed. The full backend suite also exposes existing ESM-loading and
+outdated dependency-mock failures.
+
+After the local database was restarted, migration
+`20261031000000_generation_progress` was applied successfully. A live evaluation
+of Atenzia (`lab3-atenti`) on 2026-10-31 completed all 10 evaluation steps and all
+four individual-synthesis steps. Both jobs succeeded; the saved report is
+`23379be3-d83f-45c8-8c55-6b69c7c3aedb`. The report is constrained by the available
+evidence and the UI correctly displays “Completed with limitations.” Reloading
+during rule interpretation recovered the same job; exactly one evaluation was
+submitted and no browser runtime errors were observed. Actual screenshots and
+the observed state transitions are in `artifacts/evaluation-progress/live/`;
+these are separate from the simulated browser-test screenshots.
+
 ## Evidence, generation jobs and grading
 
 Build `core` and `agent` before building the backend. The additive migration
@@ -116,3 +287,170 @@ Comando holístico para sincronizar el repo frontend-poc
 git remote add frontend-poc https://github.com/performance-agent/perf-canvas-ui.git
 git subtree add --prefix=frontend frontendpoc main --squash
 ```
+
+## Platformance appearance, personal home and images
+
+The application opens the last accessible organization at `/organizations/:id`
+(or the only organization). `/organizations` is the directory when no valid
+selection exists. Old `/?org=...` links redirect to the canonical organization
+route. Home and organization management share one view without a top selector. The palette button
+opens **Personalize**, with separate profile, personal-home and organization
+controls and one atomic Save changes action across all tabs. Image crops are
+uploaded by that same action; failed saves retain the draft. Closing edited
+forms prompts before discarding; browser reloads use the native warning. Owners/admins manage shared branding and default home blocks. Each
+user can override their home layout, restore organization defaults, select a
+theme, reduce decorative movement, and manage shortcuts. Evaluator characters,
+animations and configuration have not been changed.
+
+The optional **Setup guide** is a focused full-screen flow at
+`/organizations/:id/setup/:step`: welcome, team, plugins, evaluator, and review.
+New empty organizations open the welcome once; existing teams and invited users
+keep their current entry flow. **Getting started** resumes saved progress.
+Plugins connect inline (GitHub authorization returns to the same setup step),
+resources refresh automatically, and evaluator customization creates a team copy.
+Advanced settings and invitations expand in place. Invitations are sent only by
+**Continue & invite**; plugin credentials are never stored in setup drafts.
+
+Non-sensitive drafts save after 600 ms or blur, and navigation waits for saves.
+Failed writes retain edits, and leaving with unsaved changes or plugin credentials
+requires confirmation. Version 1 progress upgrades on read to named version 2 steps
+inside the existing JSON setting; no new database migration is required.
+
+Plugins and evaluators can be postponed. **Finish setup only** never generates a
+report. **Start evaluation** checks for active evaluator jobs and sends a validated
+period (last 30 days by default). Report evidence is filtered to both period
+boundaries, rolling participation snapshots are excluded for bounded periods,
+and the saved report includes its requested dates. Existing calls without a
+period retain their all-history behavior. The existing Reports screen tracks
+progress. Step transitions honor reduced motion and current evaluator animations.
+
+### Deployment prerequisites
+
+1. Apply `backend/prisma/migrations/20261101000000_personalization` using the normal
+   `npx prisma migrate deploy` workflow from `backend`, before starting the new
+   backend. The migration adds nullable organization appearance, private user
+   settings and media metadata. Existing entities use defaults.
+2. Configure `FIREBASE_STORAGE_BUCKET` in the backend with an existing Firebase
+   Storage bucket. The Firebase project must use Blaze. The backend's existing
+   Application Default Credentials need object read/write/delete access.
+3. Deploy `frontend/storage.rules` to that bucket with the project's normal
+   Firebase deployment workflow. It denies direct client reads and writes:
+   authenticated requests are authorized by the backend against PostgreSQL
+   memberships. Keep the bucket private; no public download tokens are created.
+4. Build/redeploy backend and frontend together. Sharp is now a backend
+   dependency; install production dependencies for the deployment's OS.
+   This change does not provision a bucket or alter project billing.
+
+Images use `media:<assetId>` references in existing photo fields, with private
+authenticated retrieval and browser object URLs. Old external photo URLs remain
+readable; no external images are downloaded or migrated automatically. Static
+profile avatars use `avatar:iris|fern|sun|rose`. Profile updates are owned by the
+authenticated user and do not overwrite their Firebase login identity.
+
+Uploads accept static JPEG, PNG and WebP up to 5 MB and 40 megapixels.
+The server decodes and re-encodes WebP (512 px photos, 1600 x 500 covers), strips
+metadata, and checks permissions before storage access. Failed uploads leave the
+saved image unchanged. Unreferenced uploaded/replaced files older than 24 hours
+are collected hourly while the backend runs; failed cleanup retries on later
+passes. Attached files cannot be deleted through the media endpoint.
+
+### Interfaces
+
+- `PATCH /users/me/personalization`: atomic profile, personal preferences, home
+  and organization branding changes; unchanged fields are omitted.
+- `POST /organizations/:id/team-space`: atomic workspace, first group and default
+  evaluator creation; accepts workspaceName, groupName and optional description.
+- `GET/PATCH /users/me`: the app's own profile.
+- `GET/PATCH /users/me/preferences`: private theme/motion preferences.
+- `GET/PATCH /organizations/:id/appearance`: shared branding and default blocks.
+- `GET/PATCH /organizations/:id/me/preferences`: personal layout, favorites and
+  recent locations within an organization.
+- `GET/PATCH /organizations/:id/me/setup`: resumable setup choices.
+- `POST /media`: multipart `file`, `scope`, `targetId`, `purpose`; returns
+  an asset ID and opaque photo reference. `GET/DELETE /media/:id` read/delete
+  authorized objects. Authentication uses the existing Firebase bearer token.
+
+Settings are versioned and validated. The old untouched default layout is
+upgraded on read; custom layouts are retained. Setup now includes seen, completed
+and skipped steps, with defaults for older records; no additional migration is
+needed for this revision. Home blocks are a fixed catalog
+(setup, welcome, favorites, recent, evaluations); hiding them never changes
+access permissions. Recent evaluations are explicitly limited to recently
+visited groups, rather than presenting an organization-wide aggregate.
+
+### Verification and thesis evidence
+
+- Backend: `npm test -- --runInBand experience/experience.spec.ts access-control/access-control.service.spec.ts access-control/membership.guard.spec.ts`.
+- Frontend: `npm run test:personalization` with Vite at `http://127.0.0.1:5173`
+  (override `PROGRESS_TEST_BASE_URL`). Uses installed Chrome.
+- Existing progress regression checks: `npm run test:progress`.
+- Screenshots in `artifacts/personalization/revision-simulated/` are visibly labeled as
+  simulated data. They cover desktop/mobile, dark theme, branding, member views,
+  resumed setup, and failed/successful image upload UI.
+- PostgreSQL migration application and real Firebase bucket round trips require
+  the deployment prerequisites above; simulated browser tests and unit tests
+  do not establish that infrastructure has been deployed.
+
+The prior progress screenshots remain under
+`artifacts/evaluation-progress/ui-tests/`. The new regression captures are in
+`artifacts/personalization/regression/`, so the earlier thesis evidence is
+preserved. Compare these only as simulated UI regression captures, not as
+measurements of evaluation quality or time saved.
+
+The progress test accepts `PROGRESS_TEST_EVIDENCE_DIR` to keep revision captures
+separate from prior thesis evidence. Browser tests use simulated APIs; they do
+not verify production Firebase or PostgreSQL deployment.
+
+Both frontend browser suites accept `UI_TEST_SCREENSHOTS=0` to run assertions
+without creating screenshot directories or modifying existing image evidence.
+
+### Workspace people and evaluator-aware MCP
+
+The workspace **People** tab shows the latest saved `GROUP_REPORT` from the
+selected evaluator for each accessible group. It reuses individual conclusions,
+metrics and evidence; opening the page never starts an evaluation. Periods stay
+visible per group, and a missing report never falls back to a different evaluator.
+Group-scoped evaluators are labeled with their group. The person drawer links to
+the exact source report, including its evaluator. Older reports remain readable
+with explicit missing-data states and do not require a content migration.
+
+`GET /api/workspaces/:id/people?evaluatorId=...` returns the available evaluators
+and the per-group summaries. Omitting the evaluator selects the first available
+one, listing workspace evaluators before group evaluators. Both the workspace
+context check and the individual group access filter apply.
+
+The plugin catalog and the setup wizard include **MCP connection** alongside
+GitHub and Jira. MCP connects an assistant rather than importing resources.
+Setup keeps the selected plugin and client in its existing saved draft, and
+connecting MCP is optional. Instructions cover ChatGPT, Claude, Cursor, VS Code
+and a local-agent example using Claude Code, with links to each official guide.
+Configuration snippets contain the deployment's server URL, never tokens.
+
+`GET /api/mcp/connection` returns that URL and the current account's clients with
+unexpired, non-revoked authorizations. These are account authorizations, not a
+live connection check or an organization-level installation. Copying a snippet
+does not change the authorization status. OAuth uses the existing
+`PUBLIC_API_URL` and `FRONTEND_URL` configuration.
+
+MCP server version 2 adds `list_evaluators(groupId)` and requires `evaluatorId`
+for both `get_group_report_context` and `create_group_report`. Both tools accept
+the same optional `{ from, to }` period. The external assistant generates the
+report; the platform validates and saves it with an evaluator snapshot. The
+web and MCP share the evaluator prompt builder, including governance rules,
+questions, voice, guidelines and effort. Existing MCP clients should refresh
+their tool catalog and use this flow:
+
+1. Call `list_groups` and choose a group.
+2. Call `list_evaluators` and ask the user to choose an evaluator.
+3. Get the report context with the selected IDs and optional period.
+4. Generate the report using the returned instructions and schema.
+5. Save with the same IDs and period. VIEWER can read; OWNER and ADMIN can save.
+
+Verification: run `npm run test:people-mcp` from `frontend` with Vite running at
+`http://127.0.0.1:5173`. The tests use simulated APIs and include responsive
+layout, filtering, report links, copyable client configurations and resumed
+setup. Their labeled screenshots are under
+`artifacts/people-mcp/implementation/`, separate from the approved PNG mockups.
+Backend coverage includes group permissions, evaluator selection and snapshots,
+periods, report compatibility, OAuth status and the catalog entry. No new
+database migration or external provider authorization is performed by these tests.

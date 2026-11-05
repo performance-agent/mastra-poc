@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { GenerationProgressPanel } from "./GenerationProgress";
 import type { EvaluationReport } from "@/lib/types";
 import { displayInsight, gradeLabel } from "@/lib/individual-insights";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,8 @@ export function IndividualInsights({
     queryFn: () => api.getIndividualInsightsJob(workspaceId, report.individualInsightsJobId!),
     enabled: !!report.individualInsightsJobId && !report.individualInsights,
     refetchInterval: (query) =>
-      query.state.status === "error" ||
+      (query.state.error instanceof ApiError &&
+        [401, 403, 404].includes(query.state.error.statusCode)) ||
       ["succeeded", "failed"].includes(query.state.data?.status ?? "")
         ? false
         : 2000,
@@ -95,15 +97,35 @@ export function IndividualInsights({
     <section aria-label="Individual insights" className="space-y-4">
       <h4 className="font-semibold">Individual insights</h4>
       {report.individualInsightsJobId && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {individualStatus}
-          {individualStatus === "Unavailable"
-            ? ". The saved evaluation and grades remain available."
-            : ""}
-        </p>
-      )}
-      {job.data?.status === "failed" && job.data.error && (
-        <p className="text-sm text-muted-foreground">{job.data.error}</p>
+        <GenerationProgressPanel
+          job={
+            job.data ??
+            (report.individualInsights
+              ? {
+                  id: report.individualInsightsJobId,
+                  status: "succeeded",
+                  progress: null,
+                  result: report.individualInsights,
+                  error: null,
+                }
+              : undefined)
+          }
+          synthesis
+          reconnecting={
+            job.isError &&
+            !(job.error instanceof ApiError && [401, 403, 404].includes(job.error.statusCode))
+          }
+          trackingError={
+            job.error instanceof ApiError && [401, 403, 404].includes(job.error.statusCode)
+              ? job.error.message
+              : undefined
+          }
+          limited={
+            !!holistic &&
+            (holistic.generationStatus !== "succeeded" ||
+              holistic.people.some((person) => person.generationStatus !== "succeeded"))
+          }
+        />
       )}
       {holistic?.generationStatus === "unavailable" && (
         <p className="text-sm text-muted-foreground">{holistic.limitations.at(-1)}</p>

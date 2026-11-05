@@ -1,5 +1,20 @@
 export type Role = "OWNER" | "ADMIN" | "VIEWER";
 
+export type GenerationProgress = {
+  stage: string;
+  completed: string[];
+  total: number;
+  updatedAt: string;
+};
+
+export type GenerationJob<T> = {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  progress: GenerationProgress | null;
+  result: T | null;
+  error: string | null;
+};
+
 export interface Organization {
   id: string;
   name: string;
@@ -104,6 +119,8 @@ export interface PluginCatalogItem {
   description?: string;
   setupUrl?: string;
   installable: boolean;
+  category?: "data-source" | "assistant";
+  configurationKind?: "redirect" | "credentials" | "mcp";
   configurationFields: Array<{
     key: string;
     label: string;
@@ -115,6 +132,46 @@ export interface PluginCatalogItem {
   }>;
   resourceTypes: Array<{ key: string; name: string; description?: string }>;
   dataTypes: Array<{ key: string; schema: Record<string, unknown> }>;
+}
+
+export interface WorkspacePerson {
+  displayName: string;
+  assessment: GroupReportAssessment;
+  contributionSummary: string;
+  metrics: Array<{ label: string; value: string }>;
+  consistency: { summary: string; limitations: string[] } | null;
+  improvementAreas: string[];
+  suggestions: string[];
+  evidence: GroupReportEvidence[];
+}
+
+export interface WorkspacePeople {
+  evaluators: Array<{
+    id: string;
+    name: string;
+    avatar: number;
+    scope: "WORKSPACE" | "GROUP";
+    groupId: string | null;
+  }>;
+  evaluatorId: string | null;
+  groups: Array<{
+    id: string;
+    name: string;
+    available: boolean;
+    report: null | {
+      id: string;
+      createdAt: string;
+      updatedAt: string;
+      period: { from: string; to: string } | null;
+      evaluator: { id: string; name: string; avatar: number } | null;
+      people: WorkspacePerson[];
+    };
+  }>;
+}
+
+export interface McpConnection {
+  serverUrl: string;
+  clients: Array<{ id: string; name: string }>;
 }
 
 export interface PluginInstallation {
@@ -146,6 +203,7 @@ export interface DataType {
 export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface EvaluationRequest {
+  knowledgeSelection?: { sourceIds: string[]; folderIds?: string[] };
   gradingOverrides?: GradingSettings;
   rules: Array<{ name: string; description?: string; valuation: number }>;
   period?: { from: string; to: string };
@@ -187,6 +245,7 @@ export interface RulePackageInput {
 }
 
 export interface EvaluationReport {
+  knowledgeSources?: import("./knowledge").KnowledgeReportSnapshot;
   individualInsightsJobId?: string;
   individualInsightsJobStatus?: "queued" | "running" | "succeeded" | "failed";
   individualInsights?: {
@@ -335,10 +394,117 @@ export interface PerformanceReport<TData = unknown> {
   organizationId?: string | null;
   workspaceId?: string | null;
   groupId?: string | null;
+  evaluatorId?: string | null;
   type: PerformanceReportType;
+  title?: string | null;
   data: TData;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ReportNote {
+  id: string;
+  quote: string;
+  comment: string;
+  authorName?: string;
+  authorPhotoUrl?: string | null;
+  createdAt?: string;
+}
+
+export interface ReportRevision<TData = unknown> {
+  id: string;
+  position: number;
+  createdAt: string;
+  notes: ReportNote[];
+  data: TData;
+}
+
+export type EvaluatorScope = "WORKSPACE" | "GROUP";
+export type EvaluatorEffort = "LOW" | "MEDIUM" | "HIGH";
+export interface Personality {
+  id: string;
+  name: string;
+  instruction: string;
+  position: number;
+}
+
+export interface EvaluatorRule {
+  id: string;
+  name: string;
+  description: string | null;
+  valuation: number;
+  position: number;
+}
+
+export interface EvaluatorQuestion {
+  id: string;
+  text: string;
+  position: number;
+}
+
+export type ReportBlockKind =
+  | "SUMMARY"
+  | "OVERALL"
+  | "PRODUCT"
+  | "PROJECT"
+  | "ENGINEERING"
+  | "PEOPLE"
+  | "RECOMMENDATIONS"
+  | "QUESTIONS"
+  | "CUSTOM";
+
+export interface ReportBlockConfig {
+  id: string;
+  kind: ReportBlockKind;
+  title?: string;
+  prompt?: string;
+}
+
+export interface EvaluatorSchedule {
+  id: string;
+  evaluatorId: string;
+  groupId: string;
+  days: number[];
+  hour: number;
+  minute: number;
+  timeZone: string;
+}
+
+export interface Evaluator {
+  id: string;
+  name: string;
+  description: string | null;
+  scope: EvaluatorScope;
+  effort: EvaluatorEffort;
+  avatar: number;
+  personalityId: string;
+  personality: Personality;
+  evaluationEmphasis: string[];
+  evaluationNotes: string | null;
+  workspaceId: string;
+  groupId: string | null;
+  rules: EvaluatorRule[];
+  questions: EvaluatorQuestion[];
+  disabledKnowledgeNodeIds: string[];
+  disabledResourceIds: string[];
+  reportBlocks?: ReportBlockConfig[] | null;
+}
+
+export interface EvaluatorInput {
+  name: string;
+  description?: string | null;
+  scope: EvaluatorScope;
+  effort: EvaluatorEffort;
+  avatar?: number;
+  personalityId?: string;
+  evaluationEmphasis: string[];
+  evaluationNotes?: string | null;
+  rules: Array<{ name: string; description?: string | null; valuation: number }>;
+  questions?: Array<{ text: string }>;
+  groupId?: string;
+  disabledKnowledgeNodeIds?: string[];
+  disabledResourceIds?: string[];
+  reportBlocks?: ReportBlockConfig[] | null;
 }
 
 export type GroupReportStatus = "GOOD" | "WATCH" | "RISK" | "INSUFFICIENT_DATA";
@@ -371,6 +537,9 @@ export interface GroupReportDimensionAssessment {
 }
 
 export interface GroupReport {
+  blocks?: Array<Record<string, unknown>>;
+  knowledgeSources?: import("./knowledge").KnowledgeReportSnapshot;
+  period?: { from: string; to: string };
   summary: string;
   overallAssessment: GroupReportAssessment & { score: number | null };
   productAssessment: {
@@ -439,6 +608,7 @@ export interface GroupReport {
     description: string;
     action: string;
   }>;
+  questionAnswers?: Array<{ question: string; answer: string }>;
   coverage: {
     resourcesAnalyzed: number;
     datasetsAnalyzed: number;
@@ -446,10 +616,42 @@ export interface GroupReport {
     firstActivityAt: string | null;
     lastActivityAt: string | null;
     limitations: string[];
+    evidenceReceipt?: {
+      budgetBytes: number;
+      bytes: number;
+      counts: Array<{
+        type: string;
+        stored: number;
+        initial: number;
+        final: number;
+      }>;
+      includedIds: Array<{ type: string; ids: string[] }>;
+      nested: {
+        comments: { kept: number; omitted: number };
+        reviews: { kept: number; omitted: number };
+        files: { kept: number; omitted: number };
+      };
+      operations: Array<{
+        action: "shorten_text" | "reduce_list" | "drop_records";
+        reason: string;
+      }>;
+      tokens: { input: number | null; output: number | null } | null;
+    };
   };
   evaluationGuidelines?: {
     emphasis: string[];
     notes: string | null;
+  } | null;
+  evaluator?: {
+    id: string;
+    name: string;
+    scope: "WORKSPACE" | "GROUP";
+    effort: "LOW" | "MEDIUM" | "HIGH";
+    avatar: number;
+    personality?: string;
+    guidelines: { emphasis: string[]; notes: string | null };
+    rules: Array<{ name: string; description: string | null; valuation: number }>;
+    questions?: string[];
   } | null;
 }
 

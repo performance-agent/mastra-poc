@@ -1,6 +1,10 @@
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { GenerationProgressPanel } from "./GenerationProgress";
 import { IndividualInsights } from "./IndividualInsights";
 import { GradingControls } from "./GradingControls";
 import { TaskAnalysis } from "./TaskAnalysis";
+import { KnowledgeSourcePicker, ReportKnowledgeSources } from "./KnowledgeSources";
 import type { GradingSettings } from "@/lib/types";
 import {
   createContext,
@@ -9,6 +13,7 @@ import {
   useId,
   useMemo,
   useState,
+  useRef,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
@@ -33,8 +38,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { api, errorMessage } from "@/lib/api";
+import { api, ApiError, errorMessage } from "@/lib/api";
 import type {
+  GenerationJob,
   AssessmentCriterion,
   AssessmentVerdict,
   EvaluationReport,
@@ -74,8 +80,15 @@ type WorkbenchState = {
   report?: EvaluationReport;
   error?: string;
   isRunning: boolean;
+  submitting: boolean;
+  job?: GenerationJob<EvaluationReport>;
+  reconnecting: boolean;
+  trackingError?: string;
+  retryTracking: () => void;
   run: () => Promise<void>;
   setGradingOverrides: (value?: GradingSettings) => void;
+  knowledgeIds: string[] | null;
+  setKnowledgeIds: (ids: string[] | null) => void;
 };
 
 const WorkbenchContext = createContext<WorkbenchState | null>(null);
@@ -88,6 +101,10 @@ function useWorkbench() {
 
 function newRule(name = "", description = "", valuation = 5): EvaluationRule {
   return { id: crypto.randomUUID(), name, description, valuation };
+}
+
+function isTrackingAccessError(error: unknown) {
+  return error instanceof ApiError && [401, 403, 404].includes(error.statusCode);
 }
 
 function EvaluationProvider({
@@ -111,9 +128,61 @@ function EvaluationProvider({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [gradingOverrides, setGradingOverrides] = useState<GradingSettings>();
-  const [report, setReport] = useState<EvaluationReport>();
+  const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
+  const [jobId, setJobId] = useState<string>();
+  const submittedJobId = useRef<string | undefined>(undefined);
   const [error, setError] = useState<string>();
-  const [isRunning, setIsRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const latestJobQ = useQuery({
+    queryKey: ["workspace", workspaceId, "latest-evaluation-job", groupId],
+    queryFn: ({ signal }) => api.getLatestEvaluationJob(workspaceId, groupId, signal),
+    enabled: !jobId && !submitting,
+    staleTime: 0,
+    refetchOnMount: "always",
+    retry: (count, error) => !isTrackingAccessError(error) && count < 2,
+    refetchInterval: (query) =>
+      !isTrackingAccessError(query.state.error) && query.state.status === "error" ? 5000 : false,
+  });
+  useEffect(() => {
+    if (!jobId && !submitting && !latestJobQ.isFetching && latestJobQ.data)
+      setJobId(latestJobQ.data.id);
+  }, [jobId, submitting, latestJobQ.isFetching, latestJobQ.data]);
+  const jobQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluation-job", groupId, jobId],
+    queryFn: ({ signal }) => api.getEvaluationJob(workspaceId, jobId!, signal),
+    enabled: !!jobId,
+    retry: (count, error) =>
+      !(error instanceof ApiError && [401, 403, 404].includes(error.statusCode)) && count < 2,
+    refetchInterval: (query) => {
+      if (
+        query.state.error instanceof ApiError &&
+        [401, 403, 404].includes(query.state.error.statusCode)
+      )
+        return false;
+      return ["succeeded", "failed"].includes(query.state.data?.status ?? "") ? false : 2000;
+    },
+  });
+  const job = jobQ.data;
+  const trackingError = [jobQ.error, latestJobQ.error].find(
+    (error) => error instanceof ApiError && [401, 403, 404].includes(error.statusCode),
+  );
+  const report = submitting ? undefined : (job?.result ?? undefined);
+  const missingJob = jobQ.error instanceof ApiError && jobQ.error.statusCode === 404;
+  const isRunning =
+    submitting ||
+    (!jobId && (latestJobQ.isPending || latestJobQ.isFetching)) ||
+    (!missingJob && Boolean(jobId) && (!job || ["queued", "running"].includes(job.status)));
+  useEffect(() => {
+    if (!job || !["succeeded", "failed"].includes(job.status)) return;
+    void queryClient.invalidateQueries({
+      queryKey: ["workspace", workspaceId, "evaluations", groupId],
+    });
+    if (submittedJobId.current === job.id) {
+      submittedJobId.current = undefined;
+      if (job.status === "succeeded") toast.success("Evaluation saved");
+      else toast.error("Evaluation could not be completed");
+    }
+  }, [job, queryClient, workspaceId, groupId]);
   const selectedPackage = packagesQ.data?.find((value) => value.id === selectedPackageId);
 
   const selectPackage = (value: RulePackage) => {
@@ -145,43 +214,45 @@ function EvaluationProvider({
   );
 
   const run = async () => {
+    if (knowledgeIds === null) {
+      setError("Wait for knowledge sources to load before generating.");
+      return;
+    }
     const invalidPeriod = Boolean(from) !== Boolean(to) || (from && to && from > to);
     if (invalidPeriod) {
       setError("Choose both dates and make sure the end date is after the start date.");
       return;
     }
 
-    setIsRunning(true);
+    if (isRunning) return;
+    setSubmitting(true);
     setSelectedEvaluationId(undefined);
     setError(undefined);
     try {
-      const response = await api.evaluateWorkspace(
-        workspaceId,
-        {
-          rules: rules.map(({ name, description, valuation }) => ({
-            name: name.trim(),
-            description: description.trim() || undefined,
-            valuation,
-          })),
-          period: from && to ? { from, to } : undefined,
-          groupId,
-          gradingOverrides,
-        },
-        "report",
-      );
-      setReport(response as EvaluationReport);
+      const response = await api.startEvaluationWorkspace(workspaceId, {
+        rules: rules.map(({ name, description, valuation }) => ({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          valuation,
+        })),
+        period: from && to ? { from, to } : undefined,
+        groupId,
+        gradingOverrides,
+        knowledgeSelection: { sourceIds: knowledgeIds },
+      });
+      submittedJobId.current = response.jobId;
+      setJobId(response.jobId);
       void queryClient.invalidateQueries({
         queryKey: ["workspace", workspaceId, "evaluations", groupId],
       });
-      toast.success("Evaluation saved");
     } catch (caught) {
       const message = errorMessage(caught);
       setError(
-        `${message}. Check your workspace access and the group's active resources, then try again.`,
+        `${message}. Check your workspace access and the project's active resources, then try again.`,
       );
       toast.error("Evaluation could not be completed");
     } finally {
-      setIsRunning(false);
+      setSubmitting(false);
     }
   };
 
@@ -205,8 +276,17 @@ function EvaluationProvider({
     report,
     error,
     isRunning,
+    submitting,
+    job,
+    reconnecting: !trackingError && (jobQ.isError || latestJobQ.isError),
+    trackingError: trackingError ? errorMessage(trackingError) : undefined,
+    retryTracking: () => {
+      void (jobId ? jobQ.refetch() : latestJobQ.refetch());
+    },
     run,
     setGradingOverrides,
+    knowledgeIds,
+    setKnowledgeIds,
   };
 
   return <WorkbenchContext value={value}>{children}</WorkbenchContext>;
@@ -245,8 +325,8 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
             Turn team signals into a defensible report.
           </h2>
           <p className="mt-2 max-w-xl text-pretty text-sm leading-6 text-[#496676] dark:text-slate-300">
-            Define what matters for {groupName}. The agent finds relevant group evidence, tests each
-            rule, and explains what supports its conclusion.
+            Define what matters for {groupName}. The agent finds relevant project evidence, tests
+            each rule, and explains what supports its conclusion.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 rounded-full border border-[#99b7c7] bg-white/55 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider dark:border-slate-600 dark:bg-black/15">
@@ -261,6 +341,9 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
 function EvaluationSetup() {
   const {
     workspaceId,
+    groupId,
+    knowledgeIds,
+    setKnowledgeIds,
     rules,
     setRules,
     packages,
@@ -541,11 +624,19 @@ function EvaluationSetup() {
         </p>
       ) : null}
 
+      <div className="mt-5">
+        <KnowledgeSourcePicker
+          key={groupId}
+          workspaceId={workspaceId}
+          groupId={groupId}
+          onChange={setKnowledgeIds}
+        />
+      </div>
       <Button
         type="button"
         size="lg"
         className="mt-5 h-12 w-full bg-[#173d52] text-white shadow-[0_8px_24px_-10px_rgba(23,61,82,0.9)] hover:bg-[#24566e] dark:bg-sky-200 dark:text-slate-950 dark:hover:bg-sky-100"
-        disabled={isRunning || !canRun}
+        disabled={isRunning || !canRun || knowledgeIds === null}
         onClick={run}
       >
         {isRunning ? (
@@ -641,6 +732,7 @@ function RulePackageEditorDialog({
     editor.value?.scope === "ALL_WORKSPACES" ? "ALL_WORKSPACES" : "WORKSPACE",
   );
   const [draftRules, setDraftRules] = useState<EvaluationRule[]>(sourceRules);
+  const [baseline] = useState(() => JSON.stringify([name, evaluates, scope, sourceRules]));
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
@@ -686,6 +778,7 @@ function RulePackageEditorDialog({
     <FormModal
       open
       onOpenChange={(open) => !open && onClose()}
+      dirty={JSON.stringify([name, evaluates, scope, draftRules]) !== baseline}
       title={
         editor.mode === "edit"
           ? "Edit rule package"
@@ -721,38 +814,34 @@ function RulePackageEditorDialog({
       </div>
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">Availability</legend>
-        <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
-          <input
-            type="radio"
-            name="rule-package-scope"
-            value="WORKSPACE"
-            checked={scope === "WORKSPACE"}
-            onChange={() => setScope("WORKSPACE")}
-            className="mt-1"
-          />
-          <span>
-            <span className="block text-sm font-medium">This workspace</span>
-            <span className="block text-xs text-muted-foreground">
-              Only available here, and only to you.
+        <RadioGroup
+          aria-label="Availability"
+          value={scope}
+          onValueChange={(value) => setScope(value as typeof scope)}
+        >
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
+            <RadioGroupItem value="WORKSPACE" aria-label="This workspace" className="mt-1" />
+            <span>
+              <span className="block text-sm font-medium">This workspace</span>
+              <span className="block text-xs text-muted-foreground">
+                Only available here, and only to you.
+              </span>
             </span>
-          </span>
-        </label>
-        <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
-          <input
-            type="radio"
-            name="rule-package-scope"
-            value="ALL_WORKSPACES"
-            checked={scope === "ALL_WORKSPACES"}
-            onChange={() => setScope("ALL_WORKSPACES")}
-            className="mt-1"
-          />
-          <span>
-            <span className="block text-sm font-medium">All my workspaces</span>
-            <span className="block text-xs text-muted-foreground">
-              Available to you anywhere you can evaluate.
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3">
+            <RadioGroupItem
+              value="ALL_WORKSPACES"
+              aria-label="All my workspaces"
+              className="mt-1"
+            />
+            <span>
+              <span className="block text-sm font-medium">All my workspaces</span>
+              <span className="block text-xs text-muted-foreground">
+                Available to you anywhere you can evaluate.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        </RadioGroup>
       </fieldset>
       <div className="space-y-3 border-t pt-4">
         <div className="flex items-center justify-between">
@@ -892,7 +981,17 @@ function DateField({
 }
 
 function EvaluationOutput() {
-  const { report: latestReport, isRunning, workspaceId, selectedEvaluationId } = useWorkbench();
+  const {
+    report: latestReport,
+    isRunning,
+    submitting,
+    job,
+    reconnecting,
+    trackingError,
+    retryTracking,
+    workspaceId,
+    selectedEvaluationId,
+  } = useWorkbench();
   const savedQ = useQuery({
     queryKey: ["workspace", workspaceId, "evaluation", selectedEvaluationId],
     queryFn: () => api.getEvaluation(workspaceId, selectedEvaluationId!),
@@ -903,8 +1002,6 @@ function EvaluationOutput() {
   return (
     <section
       aria-labelledby="evaluation-report-title"
-      aria-live="polite"
-      aria-busy={isRunning}
       className="min-w-0 bg-white/70 p-5 sm:p-7 dark:bg-slate-950/25"
     >
       <div className="mb-5 flex items-center justify-between gap-3">
@@ -918,6 +1015,23 @@ function EvaluationOutput() {
         </div>
         {report ? <StatusMark status={report.status} /> : null}
       </div>
+      {!selectedEvaluationId && (isRunning || job || reconnecting || trackingError) && (
+        <GenerationProgressPanel
+          job={submitting ? undefined : job}
+          submitting={submitting}
+          reconnecting={reconnecting}
+          trackingError={trackingError}
+          limited={
+            !!latestReport && (latestReport.status !== "ready" || !!latestReport.limitations.length)
+          }
+        />
+      )}
+      {!selectedEvaluationId && trackingError && (
+        <Button variant="outline" className="mb-4" onClick={retryTracking}>
+          Retry progress updates
+        </Button>
+      )}
+      <ReportKnowledgeSources snapshot={report?.knowledgeSources} />
       {saved ? (
         <div className="mb-5 rounded-xl border p-4 text-sm">
           <p className="font-semibold">
@@ -952,7 +1066,9 @@ function EvaluationOutput() {
           Loading saved evaluation…
         </p>
       ) : isRunning ? (
-        <EvaluationLoading />
+        <p className="text-sm text-muted-foreground">
+          You can leave this project and return to follow the evaluation.
+        </p>
       ) : report ? (
         <ReportView report={report} />
       ) : (
@@ -1127,18 +1243,20 @@ function ReportView({ report }: { report: EvaluationReport }) {
         <ReportNotes title="Report Limitations" notes={report.limitations} />
       ) : null}
       {diagnosticCount ? (
-        <details className="group rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        <Collapsible className="group rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <CollapsibleTrigger className="flex w-full cursor-pointer items-center justify-between gap-3 p-4 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
             <span>Technical Diagnostics · {diagnosticCount}</span>
             <ChevronDown
               aria-hidden="true"
-              className="transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+              className="transition-transform duration-200 group-data-[state=open]:rotate-180 motion-reduce:transition-none"
             />
-          </summary>
-          <pre className="max-h-72 overflow-auto border-t p-4 text-xs leading-5 text-muted-foreground">
-            {JSON.stringify(report.diagnostics, null, 2)}
-          </pre>
-        </details>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="max-h-72 overflow-auto border-t p-4 text-xs leading-5 text-muted-foreground">
+              {JSON.stringify(report.diagnostics, null, 2)}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
     </div>
   );
@@ -1181,34 +1299,36 @@ function AssessmentCard({ assessment }: { assessment: RuleAssessment }) {
             </div>
           ) : null}
           {assessment.evidence.length ? (
-            <details className="group mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
-              <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-[#315f76] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300">
+            <Collapsible className="group mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+              <CollapsibleTrigger className="flex w-full cursor-pointer items-center justify-between text-sm font-semibold text-[#315f76] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300">
                 <span>
                   {assessment.evidence.length} Evidence{" "}
                   {assessment.evidence.length === 1 ? "Item" : "Items"}
                 </span>
                 <ChevronDown
                   aria-hidden="true"
-                  className="transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+                  className="transition-transform duration-200 group-data-[state=open]:rotate-180 motion-reduce:transition-none"
                 />
-              </summary>
-              <div className="mt-3 space-y-2">
-                {assessment.evidence.map((evidence, index) => (
-                  <div
-                    key={`${evidence.source}-${index}`}
-                    className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70"
-                  >
-                    <p className="break-words font-mono text-[10px] font-semibold uppercase tracking-wider text-[#527387]">
-                      {evidence.source}
-                    </p>
-                    <p className="mt-1 break-words text-sm">{evidence.observation}</p>
-                    <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-                      {evidence.relevance}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </details>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-3 space-y-2">
+                  {assessment.evidence.map((evidence, index) => (
+                    <div
+                      key={`${evidence.source}-${index}`}
+                      className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70"
+                    >
+                      <p className="break-words font-mono text-[10px] font-semibold uppercase tracking-wider text-[#527387]">
+                        {evidence.source}
+                      </p>
+                      <p className="mt-1 break-words text-sm">{evidence.observation}</p>
+                      <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+                        {evidence.relevance}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           ) : null}
           {assessment.limitations.length ? (
             <ReportNotes title="Assessment Gaps" notes={assessment.limitations} compact />

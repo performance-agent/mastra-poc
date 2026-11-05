@@ -10,6 +10,21 @@ import { EvaluationsService } from './evaluations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import type { CreateEvaluationDto } from './dto/create-evaluation.dto';
+import type { GenerationService } from '../generation/generation.service';
+import type { KnowledgeService } from '../knowledge/knowledge.service';
+const emptyKnowledge = {
+  snapshot: async () => ({
+    capturedAt: '2026-11-03T00:00:00Z',
+    sources: [],
+    unavailable: 0,
+  }),
+  workspaceSnapshot: async () => ({
+    capturedAt: '2026-11-03T00:00:00Z',
+    sources: [],
+    unavailable: 0,
+  }),
+  snapshotText: async () => [],
+} as unknown as KnowledgeService;
 
 type StoredData = {
   schemaVersion: number;
@@ -104,6 +119,9 @@ function setup(result = flowResult()) {
     service: new EvaluationsService(
       factory,
       prisma as unknown as PrismaService,
+      {} as GenerationService,
+      undefined,
+      emptyKnowledge,
     ),
     prisma,
     factory,
@@ -221,6 +239,9 @@ describe('EvaluationsService', () => {
     const service = new EvaluationsService(
       factory as EvaluationFlowFactory,
       prisma as unknown as PrismaService,
+      {} as GenerationService,
+      undefined,
+      emptyKnowledge,
     );
 
     await expect(

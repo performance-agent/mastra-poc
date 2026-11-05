@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { ReportsService } from '../reports/reports.service';
 import { CreateReportDto } from '../reports/dto/create-report.dto';
+import { SaveEvaluatorScheduleDto } from '../reports/dto/save-evaluator-schedule.dto';
 import { InvitationsService } from '../invitations/invitations.service';
 import { CreateInvitationDto } from '../invitations/dto/create-invitation.dto';
 
@@ -39,6 +40,26 @@ export class GroupsController {
   @Get(':id/generation-jobs/:jobId')
   jobStatus(@Param('id') id: string, @Param('jobId') jobId: string) {
     return this.reportsService.jobStatus(id, jobId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  @Get(':id/generation-jobs')
+  activeJobs(@Param('id') id: string) {
+    return this.reportsService.activeGroupReports(id);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/generation-jobs/:jobId/cancel')
+  cancelJob(@Param('id') id: string, @Param('jobId') jobId: string) {
+    return this.reportsService.cancelQueuedGroupReport(id, jobId);
   }
 
   @RequireMembership({
@@ -189,6 +210,43 @@ export class GroupsController {
   @Get(':id/resources')
   findAllResources(@Param('id') groupId: string) {
     return this.resourcesService.findAllByGroup(groupId);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  @Get(':id/schedules')
+  listSchedules(@Param('id') id: string) {
+    return this.reportsService.listEvaluatorSchedules(id);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Put(':id/schedules/:evaluatorId')
+  saveSchedule(
+    @Param('id') id: string,
+    @Param('evaluatorId') evaluatorId: string,
+    @Body() dto: SaveEvaluatorScheduleDto,
+  ) {
+    return this.reportsService.saveEvaluatorSchedule(id, evaluatorId, dto);
+  }
+
+  @RequireMembership({
+    resource: 'group',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Delete(':id/schedules/:evaluatorId')
+  deleteSchedule(
+    @Param('id') id: string,
+    @Param('evaluatorId') evaluatorId: string,
+  ) {
+    return this.reportsService.deleteEvaluatorSchedule(id, evaluatorId);
   }
 
   @RequireMembership({

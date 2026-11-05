@@ -54,6 +54,32 @@ export class McpOAuthService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  async connectionDetails(userId: string) {
+    const tokens = await this.prisma.mcpOAuthToken.findMany({
+      where: {
+        userId,
+        resource: this.resource,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { clientId: true },
+      distinct: ['clientId'],
+    });
+    const clients = await this.prisma.mcpOAuthClient.findMany({
+      where: { id: { in: tokens.map((token) => token.clientId) } },
+      select: { id: true, clientName: true },
+    });
+    return {
+      serverUrl: this.resource,
+      clients: tokens.map((token) => ({
+        id: token.clientId,
+        name:
+          clients.find((client) => client.id === token.clientId)?.clientName ??
+          'MCP client',
+      })),
+    };
+  }
+
   protectedResourceMetadata() {
     return {
       resource: this.resource,

@@ -4,7 +4,15 @@ import { Patch } from '@nestjs/common';
 import { GradingSettingsDto } from './dto/grading-settings.dto';
 import { gradingSettings } from './grading';
 import { PrismaService } from '../prisma/prisma.service';
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { RequireMembership } from '../access-control/require-membership.decorator';
 import { CreateEvaluationDto } from './dto/create-evaluation.dto';
 import { EvaluationViewDto } from './dto/evaluation-view.dto';
@@ -109,6 +117,20 @@ export class EvaluationsController {
       data: { gradingSettings: settings },
     });
     return settings;
+  }
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'workspaceId',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Get('jobs/latest')
+  latestJob(
+    @Param('workspaceId') workspaceId: string,
+    @Query('groupId') groupId: string,
+  ) {
+    if (!groupId?.trim()) throw new BadRequestException('groupId is required');
+    return this.evaluations.latestJob(workspaceId, groupId);
   }
 
   @RequireMembership({
