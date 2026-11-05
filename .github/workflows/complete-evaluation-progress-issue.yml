@@ -1,0 +1,25 @@
+name: Complete evaluation progress issue
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+
+permissions:
+  issues: write
+
+jobs:
+  complete-issue:
+    if: github.event.pull_request.merged == true && github.event.pull_request.number == 49
+    runs-on: ubuntu-latest
+    steps:
+      - name: Complete issue 18 after PR 49 merges into dev
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.update({
+              ...context.repo,
+              issue_number: 18,
+              state: 'closed',
+              state_reason: 'completed',
+            });

@@ -1,0 +1,67 @@
+{
+  "feature": "Workspace and project evaluators",
+  "status": "passed",
+  "validation": {
+    "backend": {
+      "command": "npm test -- --runInBand evaluators access-control workspaces/workspaces.service.spec.ts reports/evaluator-run.spec.ts workspaces/workspace-people.service.spec.ts",
+      "suites": 7,
+      "testsPassed": 48
+    },
+    "browser": {
+      "command": "npm run test:evaluators",
+      "testsPassed": 9,
+      "api": "Simulated in Playwright; actual frontend routes and components"
+    },
+    "regression": {
+      "command": "UI_TEST_SCREENSHOTS=0 node --test --test-name-pattern='setup|evaluator|people workspace|wizard' tests/personalization.browser.test.mjs",
+      "testsPassed": 13
+    },
+    "builds": {
+      "backend": "passed",
+      "frontend": "passed",
+      "frontendTypecheck": "passed"
+    },
+    "lint": {
+      "backendChangedFiles": "passed",
+      "frontendChangedFiles": "passed",
+      "autofix": false
+    }
+  },
+  "scenarios": [
+    "Workspace creation with no projects",
+    "Shared availability without duplicating evaluators",
+    "Context and scope labels, including duplicate names",
+    "Workspace and project admin permissions, viewers, inherited read-only detail",
+    "Configuration deep links and invalid or deleted selections",
+    "Sources by context and preserved legacy exclusions",
+    "Workspace personality creation without a project",
+    "Setup project copies leave originals unchanged",
+    "Selecting and creating do not start evaluations",
+    "Shared edits refresh cached project choices through SPA navigation",
+    "List retry, failed save preserves edits, deletion selects a surviving evaluator",
+    "Unsaved evaluator edits survive personality invalidation",
+    "People and Reports expose evaluator levels",
+    "Desktop and mobile layouts"
+  ],
+  "screenshots": [
+    "01-workspace-evaluators.png",
+    "02-create-workspace-evaluator.png",
+    "03-project-evaluators.png",
+    "04-inherited-workspace-evaluator.png",
+    "05-setup-evaluator-selection.png"
+  ],
+  "additionalScreenshots": [
+    "06-workspace-mobile.png",
+    "07-project-mobile.png"
+  ],
+  "compatibility": {
+    "schemaChanges": false,
+    "migrations": false,
+    "prismaClientRegeneratedFromExistingSchema": true,
+    "existingProjectEndpointsPreserved": true,
+    "engineChanges": false
+  },
+  "limitations": [
+    "Browser evidence uses simulated API data, not a live database or evaluation run."
+  ]
+}

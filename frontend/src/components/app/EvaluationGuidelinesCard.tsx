@@ -96,7 +96,7 @@ export function EvaluationGuidelinesCard({ group, canEdit, onSaved }: Props) {
           <div>
             <h2 className="text-sm font-semibold">Evaluation guidelines</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Steer the next Group Report by telling the AI what matters most for this project.
+              Steer the next Project Report by telling the AI what matters most for this project.
               These guidelines do not add sections or change the score scale — they influence how
               evidence is interpreted and which metrics are highlighted.
             </p>

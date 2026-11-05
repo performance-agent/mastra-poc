@@ -7,6 +7,7 @@ import {
   Delete,
   Put,
   Post,
+  Query,
 } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
@@ -20,6 +21,7 @@ import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { InvitationsService } from '../invitations/invitations.service';
 import { CreateInvitationDto } from '../invitations/dto/create-invitation.dto';
+import { WorkspacePeopleService } from './workspace-people.service';
 
 @Controller('workspaces')
 export class WorkspacesController {
@@ -29,7 +31,23 @@ export class WorkspacesController {
     private readonly membersService: MembersService,
     private readonly resourcesService: ResourcesService,
     private readonly invitationsService: InvitationsService,
+    private readonly people: WorkspacePeopleService,
   ) {}
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+    mode: 'context',
+  })
+  @Get(':id/people')
+  listPeople(
+    @CurrentUser() user: User,
+    @Param('id') workspaceId: string,
+    @Query('evaluatorId') evaluatorId?: string,
+  ) {
+    return this.people.list(workspaceId, user.id, evaluatorId);
+  }
 
   @RequireMembership({
     resource: 'workspace',

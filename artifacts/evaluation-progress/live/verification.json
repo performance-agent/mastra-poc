@@ -1,0 +1,13 @@
+{
+  "savedReport": {
+    "id": "23379be3-d83f-45c8-8c55-6b69c7c3aedb",
+    "createdAt": "2026-10-31T15:16:01.876Z",
+    "status": "constrained",
+    "rules": 3
+  },
+  "evaluationsSubmittedDuringTest": 1,
+  "migration": {
+    "migration_name": "20261031000000_generation_progress",
+    "finished_at": "2026-10-31T15:04:18.174Z"
+  }
+}

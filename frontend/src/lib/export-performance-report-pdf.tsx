@@ -472,34 +472,38 @@ function InsightCard({
   );
 }
 
-function GroupReportContent({ data }: { data: GroupReport }) {
+function GroupReportContent({ data }: { data: Partial<GroupReport> }) {
   return (
     <>
-      <Section title="Overall assessment">
-        <Card>
-          <Metrics items={[{ label: "Overall score", value: data.overallAssessment.score }]} />
-          <Assessment assessment={data.overallAssessment} />
-        </Card>
-      </Section>
+      {data.overallAssessment && (
+        <Section title="Overall assessment">
+          <Card>
+            <Metrics items={[{ label: "Overall score", value: data.overallAssessment.score }]} />
+            <Assessment assessment={data.overallAssessment} />
+          </Card>
+        </Section>
+      )}
 
-      <Section title="Coverage">
-        <Metrics
-          items={[
-            { label: "Resources analyzed", value: data.coverage.resourcesAnalyzed },
-            { label: "Datasets analyzed", value: data.coverage.datasetsAnalyzed },
-            { label: "Records analyzed", value: data.coverage.recordsAnalyzed },
-          ]}
-        />
-        <Card>
-          <Fields
+      {data.coverage && (
+        <Section title="Coverage">
+          <Metrics
             items={[
-              { label: "First activity", value: data.coverage.firstActivityAt },
-              { label: "Last activity", value: data.coverage.lastActivityAt },
+              { label: "Resources analyzed", value: data.coverage.resourcesAnalyzed },
+              { label: "Datasets analyzed", value: data.coverage.datasetsAnalyzed },
+              { label: "Records analyzed", value: data.coverage.recordsAnalyzed },
             ]}
           />
-          <ListBlock title="Limitations" items={data.coverage.limitations} />
-        </Card>
-      </Section>
+          <Card>
+            <Fields
+              items={[
+                { label: "First activity", value: data.coverage.firstActivityAt },
+                { label: "Last activity", value: data.coverage.lastActivityAt },
+              ]}
+            />
+            <ListBlock title="Limitations" items={data.coverage.limitations} />
+          </Card>
+        </Section>
+      )}
 
       {data.evaluationGuidelines &&
       (data.evaluationGuidelines.emphasis.length || data.evaluationGuidelines.notes) ? (
@@ -513,98 +517,104 @@ function GroupReportContent({ data }: { data: GroupReport }) {
         </Section>
       ) : null}
 
-      <Section title="Product and ideation">
-        <Card title="Product assessment">
-          <Fields
-            items={[
-              {
-                label: "Ticket evidence",
-                value: data.productAssessment.ticketEvidenceAvailable,
-              },
-            ]}
-          />
-          <Assessment assessment={data.productAssessment.assessment} />
-        </Card>
-        <Dimension title="Ideation" assessment={data.productAssessment.ideation} />
-        <Dimension
-          title="Priorities and scope"
-          assessment={data.productAssessment.prioritiesAndScope}
-        />
-        <Dimension title="Ticket flow" assessment={data.productAssessment.ticketFlow} />
-        {data.productAssessment.themes.map((theme, index) => (
-          <Card key={`${theme.name}-${index}`} title={theme.name}>
-            <Text style={styles.body}>{theme.evolution}</Text>
-          </Card>
-        ))}
-        <ListBlock title="Observed gaps" items={data.productAssessment.gaps} />
-      </Section>
-
-      <Section title="Project execution">
-        <Card title="Project assessment">
-          <Assessment assessment={data.projectAssessment.assessment} />
-        </Card>
-        <Dimension title="Delivery flow" assessment={data.projectAssessment.deliveryFlow} />
-        <Dimension title="Continuity" assessment={data.projectAssessment.continuity} />
-        <Dimension title="Predictability" assessment={data.projectAssessment.predictability} />
-        {data.projectAssessment.projectStages.map((stage, index) => (
-          <Card key={`${stage.label}-${stage.period}-${index}`} title={stage.label}>
-            <View style={styles.row}>
-              <Pill label={stage.period} />
-              <Pill label={titleCase(stage.status)} tone={toneForStatus(stage.status)} />
-            </View>
-            <Text style={styles.body}>{stage.summary}</Text>
-          </Card>
-        ))}
-        <ListBlock title="Project risks" items={data.projectAssessment.risks} />
-        <ListBlock title="Lessons" items={data.projectAssessment.lessons} />
-      </Section>
-
-      <Section title="Engineering">
-        <Card title="Engineering assessment">
-          <Assessment assessment={data.engineeringAssessment.assessment} />
-        </Card>
-        <Dimension title="Traceability" assessment={data.engineeringAssessment.traceability} />
-        <Dimension
-          title="Change discipline"
-          assessment={data.engineeringAssessment.changeDiscipline}
-        />
-        <Dimension title="Reviewability" assessment={data.engineeringAssessment.reviewability} />
-        <Dimension
-          title="Maintenance signals"
-          assessment={data.engineeringAssessment.maintenanceSignals}
-        />
-        {data.engineeringAssessment.commitsToReview.map((commit, index) => (
-          <Card
-            key={`${commit.resource}-${commit.reference ?? commit.message}-${index}`}
-            title={commit.message}
-          >
-            <View style={styles.row}>
-              <Pill label={titleCase(commit.status)} tone={toneForStatus(commit.status)} />
-              <Pill
-                label={`${titleCase(commit.confidence)} confidence`}
-                tone={toneForConfidence(commit.confidence)}
-              />
-            </View>
+      {data.productAssessment && (
+        <Section title="Product and ideation">
+          <Card title="Product assessment">
             <Fields
               items={[
-                { label: "Resource", value: commit.resource },
-                { label: "Reference", value: commit.reference },
-                { label: "Author", value: commit.author },
+                {
+                  label: "Ticket evidence",
+                  value: data.productAssessment.ticketEvidenceAvailable,
+                },
               ]}
             />
-            <ListBlock title="Signals" items={commit.signals} />
-            <ListBlock title="Explanation" items={[commit.explanation]} />
-            <Text style={styles.action}>{commit.recommendedAction}</Text>
-            {commit.url ? (
-              <Link src={commit.url} style={styles.link}>
-                Open commit
-              </Link>
-            ) : null}
+            <Assessment assessment={data.productAssessment.assessment} />
           </Card>
-        ))}
-      </Section>
+          <Dimension title="Ideation" assessment={data.productAssessment.ideation} />
+          <Dimension
+            title="Priorities and scope"
+            assessment={data.productAssessment.prioritiesAndScope}
+          />
+          <Dimension title="Ticket flow" assessment={data.productAssessment.ticketFlow} />
+          {data.productAssessment.themes.map((theme, index) => (
+            <Card key={`${theme.name}-${index}`} title={theme.name}>
+              <Text style={styles.body}>{theme.evolution}</Text>
+            </Card>
+          ))}
+          <ListBlock title="Observed gaps" items={data.productAssessment.gaps} />
+        </Section>
+      )}
 
-      {data.people.length ? (
+      {data.projectAssessment && (
+        <Section title="Project execution">
+          <Card title="Project assessment">
+            <Assessment assessment={data.projectAssessment.assessment} />
+          </Card>
+          <Dimension title="Delivery flow" assessment={data.projectAssessment.deliveryFlow} />
+          <Dimension title="Continuity" assessment={data.projectAssessment.continuity} />
+          <Dimension title="Predictability" assessment={data.projectAssessment.predictability} />
+          {data.projectAssessment.projectStages.map((stage, index) => (
+            <Card key={`${stage.label}-${stage.period}-${index}`} title={stage.label}>
+              <View style={styles.row}>
+                <Pill label={stage.period} />
+                <Pill label={titleCase(stage.status)} tone={toneForStatus(stage.status)} />
+              </View>
+              <Text style={styles.body}>{stage.summary}</Text>
+            </Card>
+          ))}
+          <ListBlock title="Project risks" items={data.projectAssessment.risks} />
+          <ListBlock title="Lessons" items={data.projectAssessment.lessons} />
+        </Section>
+      )}
+
+      {data.engineeringAssessment && (
+        <Section title="Engineering">
+          <Card title="Engineering assessment">
+            <Assessment assessment={data.engineeringAssessment.assessment} />
+          </Card>
+          <Dimension title="Traceability" assessment={data.engineeringAssessment.traceability} />
+          <Dimension
+            title="Change discipline"
+            assessment={data.engineeringAssessment.changeDiscipline}
+          />
+          <Dimension title="Reviewability" assessment={data.engineeringAssessment.reviewability} />
+          <Dimension
+            title="Maintenance signals"
+            assessment={data.engineeringAssessment.maintenanceSignals}
+          />
+          {data.engineeringAssessment.commitsToReview.map((commit, index) => (
+            <Card
+              key={`${commit.resource}-${commit.reference ?? commit.message}-${index}`}
+              title={commit.message}
+            >
+              <View style={styles.row}>
+                <Pill label={titleCase(commit.status)} tone={toneForStatus(commit.status)} />
+                <Pill
+                  label={`${titleCase(commit.confidence)} confidence`}
+                  tone={toneForConfidence(commit.confidence)}
+                />
+              </View>
+              <Fields
+                items={[
+                  { label: "Resource", value: commit.resource },
+                  { label: "Reference", value: commit.reference },
+                  { label: "Author", value: commit.author },
+                ]}
+              />
+              <ListBlock title="Signals" items={commit.signals} />
+              <ListBlock title="Explanation" items={[commit.explanation]} />
+              <Text style={styles.action}>{commit.recommendedAction}</Text>
+              {commit.url ? (
+                <Link src={commit.url} style={styles.link}>
+                  Open commit
+                </Link>
+              ) : null}
+            </Card>
+          ))}
+        </Section>
+      )}
+
+      {data.people?.length ? (
         <Section title="People">
           {data.people.map((person, index) => (
             <Card key={`${person.displayName}-${index}`} title={person.displayName}>
@@ -627,7 +637,7 @@ function GroupReportContent({ data }: { data: GroupReport }) {
         </Section>
       ) : null}
 
-      {data.evidence.length ? (
+      {data.evidence?.length ? (
         <Section title="Evidence">
           {data.evidence.map((evidence, index) => (
             <Evidence key={`${evidence.section}-${evidence.title}-${index}`} evidence={evidence} />
@@ -635,13 +645,56 @@ function GroupReportContent({ data }: { data: GroupReport }) {
         </Section>
       ) : null}
 
-      {data.recommendations.length ? (
+      {data.recommendations?.length ? (
         <Section title="Recommendations">
           {data.recommendations.map((recommendation, index) => (
             <Recommendation
               key={`${recommendation.title}-${index}`}
               recommendation={recommendation}
             />
+          ))}
+        </Section>
+      ) : null}
+      {data.questionAnswers?.length ? (
+        <Section title="Questions">
+          {data.questionAnswers.map((item, index) => (
+            <Card key={index} title={item.question}>
+              <Text style={styles.body}>{item.answer}</Text>
+            </Card>
+          ))}
+        </Section>
+      ) : null}
+      {data.knowledgeSources ? (
+        <Section title="Knowledge sources">
+          <Fields
+            items={[
+              { label: "Captured at", value: data.knowledgeSources.capturedAt },
+              { label: "Unavailable sources", value: data.knowledgeSources.unavailable },
+            ]}
+          />
+          {data.knowledgeSources.sources.map((source) => (
+            <Card key={source.id} title={source.name}>
+              <Fields
+                items={[
+                  { label: "Usage", value: source.usage },
+                  { label: "Scope", value: source.scope },
+                  { label: "Revision", value: source.revision },
+                  { label: "Included characters", value: source.includedCharacters },
+                  { label: "Total characters", value: source.totalCharacters },
+                ]}
+              />
+              {source.excerpts.map((excerpt) => (
+                <View key={excerpt.reference}>
+                  <Text style={styles.cardTitle}>{excerpt.reference}</Text>
+                  <Text style={styles.body}>{excerpt.text}</Text>
+                </View>
+              ))}
+              {source.sourceUrl ? (
+                <Link src={source.sourceUrl} style={styles.link}>
+                  Open source
+                </Link>
+              ) : null}
+            </Card>
           ))}
         </Section>
       ) : null}
@@ -854,14 +907,59 @@ function GithubHistoryContent({ data }: { data: GroupGithubHistoryReport }) {
   );
 }
 
+function OutlinedGroupReportContent({ data }: { data: GroupReport }) {
+  return (
+    <>
+      {data.blocks?.map((block, index) => {
+        if (block.kind === "SUMMARY") {
+          return (
+            <Section key={index} title="Summary">
+              <Text style={styles.body}>{String(block.summary ?? "")}</Text>
+            </Section>
+          );
+        }
+        if (block.kind === "CUSTOM") {
+          return (
+            <Section key={index} title={String(block.title ?? "Assessment")}>
+              <Text style={styles.body}>{String(block.summary ?? "")}</Text>
+              <ListBlock
+                title="Positive signals"
+                items={(block.positiveSignals as string[]) ?? []}
+              />
+              <ListBlock title="Concerns" items={(block.concerns as string[]) ?? []} />
+              <ListBlock title="Limitations" items={(block.limitations as string[]) ?? []} />
+            </Section>
+          );
+        }
+        return <GroupReportContent key={index} data={block as Partial<GroupReport>} />;
+      })}
+      <GroupReportContent
+        data={{
+          coverage: data.coverage,
+          evidence: data.evidence,
+          evaluationGuidelines: data.evaluationGuidelines,
+          knowledgeSources: data.knowledgeSources,
+        }}
+      />
+    </>
+  );
+}
+
 function reportSummary(report: ExportableReport) {
-  return (report.data as GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport)
-    .summary;
+  const data = report.data as GroupReport;
+  return (
+    data.summary ?? String(data.blocks?.find((block) => block.kind === "SUMMARY")?.summary ?? "")
+  );
 }
 
 function ReportContent({ report }: { report: ExportableReport }) {
   if (report.type === "GROUP_REPORT") {
-    return <GroupReportContent data={report.data as GroupReport} />;
+    const data = report.data as GroupReport;
+    return data.blocks?.length ? (
+      <OutlinedGroupReportContent data={data} />
+    ) : (
+      <GroupReportContent data={data} />
+    );
   }
   if (report.type === "GITHUB_HISTORY") {
     return <GithubHistoryContent data={report.data as GroupGithubHistoryReport} />;
@@ -878,7 +976,7 @@ function PerformanceReportPdfDocument({
   groupName: string;
   includePageNumbers?: boolean;
 }) {
-  const title = reportTitle(report.type);
+  const title = report.title || reportTitle(report.type);
   return (
     <Document
       title={`${groupName} - ${title}`}

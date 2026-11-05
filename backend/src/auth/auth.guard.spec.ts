@@ -9,8 +9,7 @@ describe('AuthGuard', () => {
     getAllAndOverride: jest.fn(),
   };
   const usersService = {
-    findOneByFirebaseUid: jest.fn(),
-    create: jest.fn(),
+    findOrCreateForLogin: jest.fn(),
   };
 
   let guard: AuthGuard;
@@ -22,12 +21,14 @@ describe('AuthGuard', () => {
       firebaseService as never,
       reflector as never,
       usersService as never,
+      {} as never,
     );
   });
 
   function createContext(authorization?: string) {
     const request = {
       headers: { authorization },
+      originalUrl: '/api/users',
     };
     return {
       request,
@@ -60,13 +61,12 @@ describe('AuthGuard', () => {
       uid: 'firebase-1',
       email: 'ada@example.com',
     });
-    usersService.findOneByFirebaseUid.mockResolvedValue(null);
-    usersService.create.mockResolvedValue({ id: 'user-1' });
+    usersService.findOrCreateForLogin.mockResolvedValue({ id: 'user-1' });
     const { context, request } = createContext('Bearer token-1');
 
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
 
-    expect(usersService.create).toHaveBeenCalledWith({
+    expect(usersService.findOrCreateForLogin).toHaveBeenCalledWith({
       name: 'ada',
       email: 'ada@example.com',
       firebaseUid: 'firebase-1',
@@ -85,11 +85,11 @@ describe('AuthGuard', () => {
       email: 'ada@example.com',
       name: 'Ada',
     });
-    usersService.findOneByFirebaseUid.mockResolvedValue({ id: 'user-1' });
+    usersService.findOrCreateForLogin.mockResolvedValue({ id: 'user-1' });
     const { context } = createContext('Bearer token-1');
 
     await expect(guard.canActivate(context as never)).resolves.toBe(true);
-    expect(usersService.create).not.toHaveBeenCalled();
+    expect(usersService.findOrCreateForLogin).toHaveBeenCalledTimes(1);
   });
 
   it('rejects tokens that cannot be verified', async () => {

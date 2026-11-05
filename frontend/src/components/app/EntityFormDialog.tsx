@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { ImagePicker } from "./ImagePicker";
+import { useLocation } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { FormModal } from "./FormModal";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
 export interface EntityFormValues {
+  id?: string;
   name: string;
   description?: string;
   photoUrl?: string;
@@ -14,6 +17,7 @@ export function EntityFormDialog({
   open,
   onOpenChange,
   title,
+  scope,
   initial,
   submitLabel,
   onSubmit,
@@ -21,17 +25,38 @@ export function EntityFormDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: string;
+  scope: "organization" | "workspace" | "group";
   initial?: Partial<EntityFormValues>;
   submitLabel?: string;
   onSubmit: (values: EntityFormValues) => Promise<void> | void;
 }) {
+  const { pathname } = useLocation();
+  const route = pathname.match(/^\/organizations\/([^/]+)(?:\/workspaces\/([^/]+))?/);
+  const target = initial?.id
+    ? { scope, targetId: initial.id }
+    : route?.[2]
+      ? { scope: "workspace", targetId: route[2] }
+      : route?.[1]
+        ? { scope: "organization", targetId: route[1] }
+        : null;
+  const [uploading, setUploading] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const initialized = useRef(false);
+  const [baseline, setBaseline] = useState("");
   useEffect(() => {
-    if (open) {
+    if (!open) {
+      initialized.current = false;
+      return;
+    }
+    if (!initialized.current) {
+      initialized.current = true;
+      setBaseline(
+        JSON.stringify([initial?.name ?? "", initial?.description ?? "", initial?.photoUrl ?? ""]),
+      );
       setName(initial?.name ?? "");
       setDescription(initial?.description ?? "");
       setPhotoUrl(initial?.photoUrl ?? "");
@@ -42,9 +67,10 @@ export function EntityFormDialog({
     <FormModal
       open={open}
       onOpenChange={onOpenChange}
+      dirty={!!baseline && JSON.stringify([name, description, photoUrl]) !== baseline}
       title={title}
       submitLabel={submitLabel}
-      submitting={submitting}
+      submitting={submitting || uploading}
       onSubmit={async () => {
         if (!name.trim()) return;
         setSubmitting(true);
@@ -52,7 +78,7 @@ export function EntityFormDialog({
           await onSubmit({
             name: name.trim(),
             description: description.trim() || undefined,
-            photoUrl: photoUrl.trim() || undefined,
+            photoUrl: photoUrl.trim(),
           });
           onOpenChange(false);
         } finally {
@@ -79,16 +105,19 @@ export function EntityFormDialog({
           onChange={(e) => setDescription(e.target.value)}
         />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="ef-photo">Photo URL</Label>
-        <Input
-          id="ef-photo"
-          type="url"
-          placeholder="https://…"
+      {target ? (
+        <ImagePicker
+          variant="logo"
           value={photoUrl}
-          onChange={(e) => setPhotoUrl(e.target.value)}
+          onChange={setPhotoUrl}
+          target={target}
+          onBusyChange={setUploading}
         />
-      </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Create your organization, then add its logo and cover from Personalize.
+        </p>
+      )}
     </FormModal>
   );
 }

@@ -1,3 +1,4 @@
+import { EvidenceStore } from './evidence-store.service';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { ResourceExecutionDataset } from '@pa/agent';
 import type {
@@ -62,7 +63,10 @@ const MAX_RECORDS = 1000;
 
 @Injectable()
 export class PluginRuntimeService {
-  constructor(private readonly registry: PluginRegistryService) {}
+  constructor(
+    private readonly registry: PluginRegistryService,
+    private readonly store: EvidenceStore,
+  ) {}
 
   getPlugin(pluginId: string) {
     return this.registry.get(pluginId);
@@ -82,6 +86,7 @@ export class PluginRuntimeService {
     resources: readonly RuntimeResource[],
     mode: ReportMode,
     from?: Date,
+    period?: RuntimeEvaluationPeriod,
   ): Promise<{
     resources: ResourceProviderData[];
     limitations: ProviderLimitation[];
@@ -112,12 +117,36 @@ export class PluginRuntimeService {
       for (const provider of plugin.dataProviders) {
         const dataType = provider.dataType.key;
         try {
-          const provided = await provider.provide(
-            context as never,
-            pluginResource,
+          if (period && dataType === 'github.participation') {
+            limitations.push({
+              pluginId: installation.pluginId,
+              resourceId: resource.id,
+              dataType,
+              message:
+                'Rolling participation snapshots cannot describe the requested period; use commit evidence.',
+            });
+            continue;
+          }
+          const stored = await this.store.read(
+            resource,
+            dataType,
+            period,
+            (options) =>
+              provider.provide(context as never, pluginResource, options),
           );
-          const filtered =
-            mode === 'activity' && from
+          const provided = stored.records;
+          limitations.push(
+            ...stored.limitations.map((message) => ({
+              pluginId: installation.pluginId,
+              resourceId: resource.id,
+              dataType,
+              message,
+            })),
+          );
+          const periodLimitations: string[] = [];
+          const filtered = period
+            ? filterPeriodRecords(provided, period, periodLimitations)
+            : mode === 'activity' && from
               ? this.filterActivityRecords(
                   provided,
                   from,
@@ -127,6 +156,14 @@ export class PluginRuntimeService {
                   limitations,
                 )
               : [...provided];
+          limitations.push(
+            ...periodLimitations.map((message) => ({
+              pluginId: installation.pluginId,
+              resourceId: resource.id,
+              dataType,
+              message,
+            })),
+          );
           datasets.push({
             dataType,
             records: filtered.slice(0, MAX_RECORDS),
@@ -162,6 +199,10 @@ export class PluginRuntimeService {
     operationName: string,
     period?: RuntimeEvaluationPeriod,
   ): Promise<ResourceExecutionDataset> {
+    if (period && operationName === 'github.participation')
+      throw new BadRequestException(
+        'Rolling participation snapshots cannot evaluate a historical period; use github.commit',
+      );
     const installation = resource.pluginInstallation;
     const plugin = await this.registry.get(installation.pluginId);
     const provider = plugin.dataProviders.find(
@@ -173,17 +214,25 @@ export class PluginRuntimeService {
       );
     }
 
-    const records = await provider.provide(
-      this.createContext(plugin, installation),
-      toPluginResource(resource),
-      period ? { period } : undefined,
+    const stored = await this.store.read(
+      resource,
+      operationName,
+      period,
+      (options) =>
+        provider.provide(
+          this.createContext(plugin, installation),
+          toPluginResource(resource),
+          options,
+        ),
     );
-    const limitations: string[] = [];
+    const records = stored.records;
+    const limitations: string[] = [...stored.limitations];
     const filtered = period
       ? filterPeriodRecords(records, period, limitations)
       : [...records];
 
     return {
+      sourceNamespace: `${installation.pluginId}:${installation.id}`,
       dataType: operationName,
       records: filtered.slice(0, MAX_RECORDS),
       count: filtered.length,
@@ -263,14 +312,49 @@ function filterPeriodRecords(
   const from = Date.parse(`${period.from}T00:00:00.000Z`);
   const to = Date.parse(`${period.to}T23:59:59.999Z`);
   let withoutTimestamp = 0;
-  const filtered = records.filter((record) => {
-    const timestamp = recordTimestamp(record);
-    if (timestamp === null) {
-      withoutTimestamp += 1;
-      return true;
+  const filtered: unknown[] = [];
+  for (const value of records) {
+    if (!value || typeof value !== 'object') continue;
+    const record = { ...(value as Record<string, unknown>) };
+    let nestedMatch = false;
+    for (const key of [
+      'comments',
+      'issueComments',
+      'reviewCommentsData',
+      'reviews',
+    ]) {
+      if (!Array.isArray(record[key])) continue;
+      const items = record[key] as Array<Record<string, unknown>>;
+      record[key] = items.filter((item) =>
+        ['createdAt', 'updatedAt', 'submittedAt'].some((field) => {
+          const time =
+            typeof item[field] === 'string' ? Date.parse(item[field]) : NaN;
+          return time >= from && time <= to;
+        }),
+      );
+      if ((record[key] as unknown[]).length) nestedMatch = true;
     }
-    return timestamp >= from && timestamp <= to;
-  });
+    const timestamps = [
+      'createdAt',
+      'updatedAt',
+      'closedAt',
+      'mergedAt',
+      'resolvedAt',
+      'committedAt',
+      'authoredAt',
+    ]
+      .map((key) =>
+        typeof record[key] === 'string' ? Date.parse(record[key]) : NaN,
+      )
+      .filter(Number.isFinite);
+    if (!timestamps.length) withoutTimestamp++;
+    if (
+      !timestamps.length ||
+      nestedMatch ||
+      timestamps.some((time) => time >= from && time <= to)
+    )
+      filtered.push(record);
+  }
   if (withoutTimestamp > 0) {
     limitations.push(
       `${withoutTimestamp} records had no recognized timestamp and were retained`,
@@ -302,6 +386,8 @@ function createHostSecretReader<TDefinitions extends SecretDefinitions>(
   values: Readonly<Record<string, unknown>>,
 ): SecretReader<InferSecretValues<TDefinitions>> {
   return {
+    // The async contract keeps configuration errors as rejected secret reads.
+    // eslint-disable-next-line @typescript-eslint/require-await
     async get(key) {
       const definition = definitions.definitions.find(
         (candidate) => candidate.key === key,

@@ -1,3 +1,4 @@
+import { generationError } from '../generation.js';
 import {
   ruleAssessmentAiOutputSchema,
   type RuleAssessmentAiOutput,
@@ -13,7 +14,7 @@ import type {
   RuleAssessmentRequest,
 } from './types.js';
 
-const DEFAULT_MAX_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 1;
 
 type AssessmentOutcome =
   | { kind: 'assessed'; ruleId: string; value: RuleAssessment }
@@ -57,11 +58,11 @@ async function assessRule(
   let rawOutput: unknown;
   try {
     rawOutput = await assessor.assess(request);
-  } catch {
+  } catch (error) {
     return failed(
       request.rule.id,
       'ai_generation_failed',
-      'The AI model could not assess this rule.',
+      generationError(error),
     );
   }
 

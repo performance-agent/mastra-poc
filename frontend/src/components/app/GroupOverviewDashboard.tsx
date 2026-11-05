@@ -32,9 +32,9 @@ interface Props {
   reports: GroupReportSource[];
   isLoading: boolean;
   errorMessage?: string;
-  isCreating: boolean;
-  isWaitingForReport: boolean;
-  onCreate: () => Promise<void>;
+  isCreating?: boolean;
+  isWaitingForReport?: boolean;
+  onCreate: () => void;
   onRefresh: () => void;
   onOpenReport: (reportId: string) => void;
 }
@@ -256,8 +256,8 @@ export function GroupOverviewDashboard({
       <EmptyState
         icon={<FileChartColumn className="h-4 w-4" />}
         title="No dashboard data yet"
-        description="Generate a Group Report to see the group's current status and score history. Legacy GitHub reports are not included."
-        actionLabel={isCreating ? "Starting…" : "Generate Group Report"}
+        description="Reports with an overall assessment show the project's status and score history here. Choose an evaluator to generate one."
+        actionLabel={isCreating ? "Starting…" : "Open evaluators"}
         onAction={isCreating ? undefined : onCreate}
       />
     );
@@ -300,9 +300,9 @@ export function GroupOverviewDashboard({
   const positiveSignal = overall.positiveSignals[0] ?? null;
   const concern = overall.concerns[0] ?? null;
   const nextRecommendation =
-    latest.data.recommendations.find((item) => item.priority === "HIGH") ??
-    latest.data.recommendations.find((item) => item.priority === "MEDIUM") ??
-    latest.data.recommendations[0] ??
+    latest.data.recommendations?.find((item) => item.priority === "HIGH") ??
+    latest.data.recommendations?.find((item) => item.priority === "MEDIUM") ??
+    latest.data.recommendations?.[0] ??
     null;
   const hasTakeaways = Boolean(positiveSignal || concern || nextRecommendation);
 
@@ -334,7 +334,7 @@ export function GroupOverviewDashboard({
                 Generated {formatDate(latest.createdAt, true)}
               </p>
               <h2 id="group-dashboard-title" className="mt-1 text-xl font-semibold">
-                Group overview
+                Project overview
               </h2>
               <p className="mt-2 wrap-break-word text-sm text-muted-foreground">
                 {overall.summary}
@@ -391,9 +391,7 @@ export function GroupOverviewDashboard({
                     size="icon"
                     variant="outline"
                     aria-label={
-                      isCreating || isWaitingForReport
-                        ? "Generating new report"
-                        : "Generate new report"
+                      isCreating || isWaitingForReport ? "Generating new report" : "Open evaluators"
                     }
                     onClick={onCreate}
                     disabled={isCreating || isWaitingForReport}
@@ -406,9 +404,7 @@ export function GroupOverviewDashboard({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">
-                  {isCreating || isWaitingForReport
-                    ? "Generating new report"
-                    : "Generate new report"}
+                  {isCreating || isWaitingForReport ? "Generating new report" : "Open evaluators"}
                 </TooltipContent>
               </Tooltip>
             </div>

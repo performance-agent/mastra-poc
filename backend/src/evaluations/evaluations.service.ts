@@ -1,3 +1,16 @@
+import { randomUUID } from 'node:crypto';
+import { KnowledgeService } from '../knowledge/knowledge.service';
+import {
+  knowledgePackage,
+  type KnowledgeReportSnapshot,
+} from '../knowledge/knowledge-prompt';
+import { gradingSettings, studentSummaries, resolvedMembers } from './grading';
+import {
+  IndividualInsightsService,
+  type SynthesisInput,
+} from './individual-insights.service';
+import { GenerationService } from '../generation/generation.service';
+import type { ReportProgress } from '../generation/progress';
 import {
   BadRequestException,
   Inject,
@@ -18,7 +31,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { ListEvaluationsDto } from './dto/list-evaluations.dto';
 
 type SavedEvaluationData = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   rules: CreateEvaluationDto['rules'];
   period: EvaluationPeriod | null;
   report: ReturnType<typeof toReportResponse>;
@@ -35,20 +48,106 @@ export class EvaluationsService {
     @Inject(EVALUATION_FLOW_FACTORY)
     private readonly flowFactory: EvaluationFlowFactory,
     private readonly prisma: PrismaService,
+    private readonly jobs: GenerationService,
+    private readonly insights: IndividualInsightsService = new IndividualInsightsService(),
+    private readonly knowledge: KnowledgeService,
   ) {}
+
+  async enqueue(
+    workspaceId: string,
+    dto: CreateEvaluationDto,
+    view: EvaluationView = EvaluationView.REPORT,
+  ) {
+    validatePeriod(dto.period);
+    await this.validateGroup(workspaceId, dto.groupId);
+    const knowledge = await this.prepareKnowledge(workspaceId, dto);
+    return this.jobs.enqueue(
+      workspaceId,
+      dto.groupId,
+      'evaluation',
+      { ...dto, knowledgeSources: knowledge },
+      (progress) => this.evaluate(workspaceId, dto, view, progress, knowledge),
+    );
+  }
+  jobStatus(workspaceId: string, jobId: string) {
+    return this.jobs.status(jobId, { workspaceId });
+  }
+
+  private async prepareKnowledge(
+    workspaceId: string,
+    dto: CreateEvaluationDto,
+  ) {
+    const snapshot = dto.groupId
+      ? await this.knowledge.snapshot(dto.groupId, dto.knowledgeSelection)
+      : await this.knowledge.workspaceSnapshot(
+          workspaceId,
+          dto.knowledgeSelection,
+        );
+    return knowledgePackage(
+      snapshot,
+      await this.knowledge.snapshotText(snapshot),
+      dto.rules.map((r) => r.name + ' ' + (r.description ?? '')).join('\n'),
+      12_000,
+    );
+  }
+
+  async latestJob(workspaceId: string, groupId: string) {
+    await this.validateGroup(workspaceId, groupId);
+    return this.jobs.latestEvaluation(workspaceId, groupId);
+  }
 
   async evaluate(
     workspaceId: string,
     dto: CreateEvaluationDto,
     view: EvaluationView = EvaluationView.REPORT,
+    progress?: ReportProgress,
+    knowledge?: KnowledgeReportSnapshot,
   ) {
+    const evaluationId = randomUUID();
+    const { generationStage } = await import('@pa/agent');
+    return generationStage(
+      'evaluation-request',
+      { workspaceId, dto, view },
+      () =>
+        this.evaluateRequest(
+          workspaceId,
+          dto,
+          view,
+          evaluationId,
+          progress,
+          knowledge,
+        ),
+      {
+        evaluationId,
+        workspaceId,
+        groupId: dto.groupId,
+        runner: langSmithRunnerTag(),
+      },
+    );
+  }
+
+  private async evaluateRequest(
+    workspaceId: string,
+    dto: CreateEvaluationDto,
+    view: EvaluationView,
+    evaluationId: string,
+    progress?: ReportProgress,
+    capturedKnowledge?: KnowledgeReportSnapshot,
+  ) {
+    await progress?.('preparing');
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { organizationId: true },
+      select: { organizationId: true, gradingSettings: true },
     });
     if (!workspace) throw new NotFoundException('Workspace not found');
+    const settings = gradingSettings(
+      workspace.gradingSettings,
+      dto.gradingOverrides,
+    );
     await this.validateGroup(workspaceId, dto.groupId);
+    const knowledge =
+      capturedKnowledge ?? (await this.prepareKnowledge(workspaceId, dto));
     // Snapshot the request before running the agent, which may transform rules.
     const rules = JSON.parse(
       JSON.stringify(dto.rules),
@@ -56,10 +155,15 @@ export class EvaluationsService {
     let flow: Awaited<ReturnType<EvaluationFlowFactory>>;
     try {
       const flowKey = dto.groupId ?? '*';
-      let flowPromise = this.flowPromises.get(flowKey);
+      let flowPromise = knowledge.sources.length
+        ? undefined
+        : this.flowPromises.get(flowKey);
       if (!flowPromise) {
-        flowPromise = this.flowFactory(dto.groupId);
-        this.flowPromises.set(flowKey, flowPromise);
+        flowPromise = knowledge.sources.length
+          ? this.flowFactory(dto.groupId, knowledge)
+          : this.flowFactory(dto.groupId);
+        if (!knowledge.sources.length)
+          this.flowPromises.set(flowKey, flowPromise);
       }
       flow = await flowPromise;
     } catch (error) {
@@ -69,6 +173,7 @@ export class EvaluationsService {
       );
     }
 
+    await progress?.('preparing', 'completed');
     const result = (await flow.invoke(
       {
         context: {
@@ -81,7 +186,11 @@ export class EvaluationsService {
       {
         runName: 'group-evaluation-flow',
         tags: [langSmithRunnerTag()],
+        ...(progress
+          ? { configurable: { onEvaluationProgress: progress } }
+          : {}),
         metadata: {
+          evaluationId,
           workspaceId,
           ...(dto.groupId ? { groupId: dto.groupId } : {}),
           view,
@@ -89,32 +198,117 @@ export class EvaluationsService {
       },
     )) as EvaluationFlowResult;
 
-    const report = toReportResponse(result);
+    await progress?.('saving');
+    const summaries = studentSummaries(result, settings, rules);
+    const freshness =
+      result.resourceExecutionResult?.calls
+        .filter((c) => c.status === 'succeeded')
+        .map((c) => ({
+          resourceId: c.resourceId,
+          operation: c.operationName,
+          limitations:
+            (c.rawData as { limitations?: string[] }).limitations ?? [],
+        })) ?? [];
+    const report = {
+      ...toReportResponse(result),
+      knowledgeSources: knowledge,
+      studentSummaries: summaries,
+      individualInsightsJobId: randomUUID(),
+      period: period ?? null,
+      evidenceFreshness: freshness,
+    };
+    const synthesisInput: SynthesisInput = {
+      period: period ?? null,
+      limitations: [
+        ...report.limitations,
+        ...freshness.flatMap((f) => f.limitations),
+      ],
+      groupContext: Object.entries(report.assessments).map(([ruleId, a]) => ({
+        ruleId,
+        ruleName: a.ruleName,
+        overview: a.overview,
+        rationale: a.rationale,
+        limitations: a.limitations,
+      })),
+      people: [...resolvedMembers(result, true)].map(
+        ([identifier, person]) => ({
+          identifier,
+          name: person.name,
+          rules: [...person.rules].map(([ruleId, assessment]) => ({
+            ruleId,
+            assessment,
+          })),
+        }),
+      ),
+    };
     let saved: { id: string; createdAt: Date };
     try {
-      saved = await this.prisma.performanceReport.create({
-        data: {
-          organizationId: workspace.organizationId,
-          workspaceId,
-          groupId: dto.groupId ?? null,
-          type: 'AGENT_EVALUATION',
-          data: JSON.parse(
-            JSON.stringify({
-              schemaVersion: 1,
-              rules,
-              period: period ?? null,
-              report,
-            }),
-          ) as Prisma.InputJsonValue,
-        },
-        select: { id: true, createdAt: true },
+      saved = await this.prisma.$transaction(async (tx) => {
+        const saved = await tx.performanceReport.create({
+          data: {
+            id: evaluationId,
+            organizationId: workspace.organizationId,
+            workspaceId,
+            groupId: dto.groupId ?? null,
+            type: 'AGENT_EVALUATION',
+            data: JSON.parse(
+              JSON.stringify({
+                schemaVersion: 2,
+                synthesisInput,
+                gradingSettings: settings,
+                evidenceFreshness: freshness,
+                rules,
+                period: period ?? null,
+                report,
+              }),
+            ) as Prisma.InputJsonValue,
+          },
+          select: { id: true, createdAt: true },
+        });
+        await tx.generationJob.create({
+          data: {
+            id: report.individualInsightsJobId,
+            workspaceId,
+            groupId: dto.groupId,
+            kind: 'individual-synthesis',
+            input: { evaluationId },
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+          },
+        });
+        return saved;
       });
     } catch {
       throw new ServiceUnavailableException(
         'The evaluation finished but could not be saved. Evaluation storage is unavailable.',
       );
     }
+    await progress?.('saving', 'completed');
+    this.jobs.schedule(
+      report.individualInsightsJobId,
+      async (synthesisProgress) => {
+        const stored = await this.prisma.performanceReport.findFirst({
+          where: { id: evaluationId, workspaceId, type: 'AGENT_EVALUATION' },
+        });
+        if (!stored) throw new NotFoundException('Evaluation not found');
+        const input = (
+          stored.data as unknown as { synthesisInput: SynthesisInput }
+        ).synthesisInput;
+        const { generationStage } = await import('@pa/agent');
+        return generationStage(
+          'individual-synthesis',
+          { evaluationId },
+          () => this.insights.generate(input, evaluationId, synthesisProgress),
+          {
+            evaluationId,
+            workspaceId,
+            groupId: dto.groupId,
+            runner: langSmithRunnerTag(),
+          },
+        );
+      },
+    );
     return {
+      individualInsightsJobId: report.individualInsightsJobId,
       ...(view === EvaluationView.FULL ? result : report),
       evaluationId: saved.id,
       createdAt: saved.createdAt,
@@ -160,7 +354,26 @@ export class EvaluationsService {
       where: { id: evaluationId, workspaceId, type: 'AGENT_EVALUATION' },
     });
     if (!saved) throw new NotFoundException('Evaluation not found');
-    return saved;
+    const data = saved.data as unknown as SavedEvaluationData & {
+      report: ReturnType<typeof toReportResponse> & {
+        individualInsightsJobId?: string;
+        individualInsights?: unknown;
+        individualInsightsJobStatus?: string;
+      };
+    };
+    if (data.report.individualInsightsJobId) {
+      const job = await this.jobs
+        .status(data.report.individualInsightsJobId, { workspaceId })
+        .catch(() => null);
+      data.report = {
+        ...data.report,
+        individualInsightsJobStatus: job?.status ?? 'failed',
+        ...(job?.status === 'succeeded'
+          ? { individualInsights: job.result }
+          : {}),
+      };
+    }
+    return { ...saved, data };
   }
 
   private async validateGroup(workspaceId: string, groupId?: string) {
@@ -170,7 +383,7 @@ export class EvaluationsService {
       select: { id: true },
     });
     if (!group)
-      throw new NotFoundException('Group not found in this workspace');
+      throw new NotFoundException('Project not found in this workspace');
   }
 }
 

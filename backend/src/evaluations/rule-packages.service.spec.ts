@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { RulePackageScope } from '../../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { RulePackageWriteScope } from './dto/rule-package.dto';
@@ -143,17 +143,26 @@ describe('RulePackagesService', () => {
     );
   });
 
-  it('rejects edits to public packages', async () => {
+  it('claims a public package for the workspace when it is edited', async () => {
     const { service, prisma } = setup();
     prisma.rulePackage.findUnique.mockResolvedValue({
       ownerId: null,
       scope: RulePackageScope.PUBLIC,
       workspaceId: null,
     });
+    prisma.rulePackage.update.mockResolvedValue({ id: 'public-1' });
 
-    await expect(
-      service.update('workspace-1', 'user-1', 'public-1', input),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await service.update('workspace-1', 'user-1', 'public-1', input);
+
+    expect(prisma.rulePackage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          scope: RulePackageScope.WORKSPACE,
+          ownerId: 'user-1',
+          workspaceId: 'workspace-1',
+        }),
+      }),
+    );
   });
 
   it('deletes an owned private package', async () => {

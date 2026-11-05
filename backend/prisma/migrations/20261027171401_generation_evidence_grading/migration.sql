@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "RulePackage" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
+
+-- AlterTable
+ALTER TABLE "RulePackageRule" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;

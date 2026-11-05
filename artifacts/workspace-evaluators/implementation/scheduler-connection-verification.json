@@ -1,0 +1,19 @@
+{
+  "checkedOn": "2026-11-05",
+  "cause": "Node.js v24.11.1 resolved localhost to ::1 first; PostgreSQL connections through that IPv6 endpoint failed with ECONNRESET, exposed by Prisma as P1017. The IPv4 endpoint 127.0.0.1 worked.",
+  "localConfiguration": "Updated the hostname in backend/.env to 127.0.0.1 without changing credentials. The environment file remains ignored and is not committed.",
+  "exampleConfiguration": "backend/.env.example now uses explicit IPv4 for the local Docker database.",
+  "migrationStatus": "All 36 existing migrations applied; no schema change required.",
+  "livePrismaQuery": {
+    "query": "evaluatorSchedule.findMany()",
+    "before": "P1017",
+    "after": "3 consecutive queries passed against local PostgreSQL",
+    "scheduledRows": 0
+  },
+  "schedulerProtection": "Errors during startup and timer passes are logged and contained. The next timer pass checks again; slow checks cannot overlap.",
+  "unitTests": {
+    "command": "npm test -- --runInBand reports/reports-scheduler.spec.ts reports/reports.service.spec.ts",
+    "suitesPassed": 2,
+    "testsPassed": 25
+  }
+}

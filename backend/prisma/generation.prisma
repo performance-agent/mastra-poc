@@ -1,0 +1,76 @@
+model ProviderRecord {
+  id String @id @default(cuid())
+  installationId String
+  resourceId String
+  resource PluginInstallationResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  operation String
+  externalId String
+  payload Json
+  sourceUpdatedAt DateTime? @db.Timestamptz(3)
+  syncedAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([installationId, resourceId, operation, externalId])
+  @@index([resourceId, operation])
+}
+
+model ResourceSync {
+  id String @id @default(cuid())
+  installationId String
+  resourceId String
+  resource PluginInstallationResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  operation String
+  checkpoint DateTime? @db.Timestamptz(3)
+  head String?
+  progress Json?
+  leaseToken String?
+  leaseUntil DateTime? @db.Timestamptz(3)
+  nextRetryAt DateTime? @db.Timestamptz(3)
+  error String?
+  @@unique([installationId, resourceId, operation])
+}
+
+model SyncCoverage {
+  id String @id @default(cuid())
+  resourceId String
+  resource PluginInstallationResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  operation String
+  from DateTime @db.Timestamptz(3)
+  to DateTime @db.Timestamptz(3)
+  completedAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([resourceId, operation])
+}
+
+model GenerationJob {
+  id String @id @default(cuid())
+  workspaceId String
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  groupId String?
+  kind String
+  status GenerationJobStatus @default(queued)
+  input Json
+  result Json?
+  progress Json?
+  error String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  @@index([status, createdAt])
+  @@index([workspaceId, groupId])
+}
+
+model TaskAnalysis {
+  id String @id @default(cuid())
+  workspaceId String
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  groupId String?
+  source Json
+  result Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([workspaceId, groupId])
+}
+
+enum GenerationJobStatus {
+  queued
+  running
+  succeeded
+  failed
+}

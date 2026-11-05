@@ -1,24 +1,24 @@
+import { PersonalizeDialog } from "./PersonalizeDialog";
+import { Avatar as ProfileAvatar } from "./Avatar";
+import { useExperience } from "@/lib/experience-context";
+import { Home, Palette, Building2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
 import { useAuth } from "@/lib/auth";
 import isotipo from "@/assets/brand/isotipo.svg";
 import logotipo from "@/assets/brand/logotipo.svg";
 
-function initials(name?: string | null, email?: string | null) {
-  const source = name || email || "User";
-  const parts = source.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  return source.slice(0, 2).toUpperCase();
-}
-
 export function TopBar() {
   const { firebaseUser, signOut } = useAuth();
-  const displayName = firebaseUser?.displayName || firebaseUser?.email || "User";
+  const experience = useExperience();
+  const [personalizeOpen, setPersonalizeOpen] = useState(false);
+  const displayName =
+    experience.profile?.name || firebaseUser?.displayName || firebaseUser?.email || "User";
   const email = firebaseUser?.email || "";
-  const photoUrl = firebaseUser?.photoURL || undefined;
+  const photoUrl = experience.profile?.photoUrl ?? firebaseUser?.photoURL ?? undefined;
   const [showMobileLogotipo, setShowMobileLogotipo] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const rightSectionRef = useRef<HTMLDivElement>(null);
@@ -75,25 +75,42 @@ export function TopBar() {
         ref={containerRef}
         className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8"
       >
-        <Link
-          to="/organizations"
-          aria-label="Performance Agent"
-          className="group flex items-center gap-2"
-        >
+        <Link to="/" aria-label="Platformance home" className="group flex items-center gap-2">
           <img ref={isotipoRef} src={isotipo} alt="" className="h-7 w-7 shrink-0" />
           <img
             ref={logotipoRef}
             src={logotipo}
             alt=""
-            className={`h-7 w-auto shrink-0 sm:block ${showMobileLogotipo ? "block" : "hidden"}`}
+            className={`h-7 w-auto shrink-0 dark:invert sm:block ${showMobileLogotipo ? "block" : "hidden"}`}
           />
         </Link>
         <div ref={rightSectionRef} className="flex items-center gap-2">
+          <Link
+            to={experience.organizationId ? "/organizations/$organizationId" : "/"}
+            params={experience.organizationId ? { organizationId: experience.organizationId } : {}}
+            className="rounded-lg p-2 hover:bg-muted"
+            aria-label="Your home"
+          >
+            <Home className="h-4 w-4" />
+          </Link>
+          <Link
+            to="/organizations"
+            className="rounded-lg p-2 hover:bg-muted"
+            aria-label="Organizations"
+          >
+            <Building2 className="h-4 w-4" />
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Personalize"
+            title="Personalize"
+            onClick={() => setPersonalizeOpen(true)}
+          >
+            <Palette className="h-4 w-4" />
+          </Button>
           <div className="hidden items-center gap-2 rounded-md px-2 py-1 sm:flex">
-            <Avatar className="h-7 w-7">
-              <AvatarImage src={photoUrl} alt={displayName} />
-              <AvatarFallback className="text-xs">{initials(displayName, email)}</AvatarFallback>
-            </Avatar>
+            <ProfileAvatar name={displayName} src={photoUrl} size="sm" />
             <div className="max-w-40 leading-tight">
               <p className="truncate text-xs font-medium">{displayName}</p>
               {email ? <p className="truncate text-[11px] text-muted-foreground">{email}</p> : null}
@@ -110,6 +127,7 @@ export function TopBar() {
           </Button>
         </div>
       </div>
+      <PersonalizeDialog open={personalizeOpen} onOpenChange={setPersonalizeOpen} />
     </header>
   );
 }

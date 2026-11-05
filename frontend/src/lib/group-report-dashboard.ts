@@ -71,6 +71,14 @@ export function buildGroupReportDashboardData(
 ): GroupReportDashboardData {
   const reports = sourceReports
     .filter(isGroupPerformanceReport)
+    .map((report) => ({
+      ...report,
+      data:
+        Array.isArray(report.data.blocks) && report.data.blocks.length > 0
+          ? (Object.assign({}, ...report.data.blocks) as GroupReport)
+          : report.data,
+    }))
+    .filter((report) => report.data.overallAssessment)
     .sort((left, right) => timestamp(right) - timestamp(left));
   const latest = reports[0] ?? null;
   const previous = reports[1] ?? null;
@@ -96,7 +104,9 @@ export function buildGroupReportDashboardData(
         data: GroupReport & {
           overallAssessment: GroupReport["overallAssessment"] & { score: number };
         };
-      } => report.data.overallAssessment.score !== null,
+      } =>
+        typeof report.data.overallAssessment.score === "number" &&
+        Number.isFinite(report.data.overallAssessment.score),
     )
     .map((report) => ({
       id: report.id,
@@ -108,27 +118,27 @@ export function buildGroupReportDashboardData(
   const dimensions = [
     {
       label: "Product",
-      current: latest.data.productAssessment.assessment.status,
+      current: latest.data.productAssessment?.assessment.status,
     },
     {
       label: "Project",
-      current: latest.data.projectAssessment.assessment.status,
+      current: latest.data.projectAssessment?.assessment.status,
     },
     {
       label: "Engineering",
-      current: latest.data.engineeringAssessment.assessment.status,
+      current: latest.data.engineeringAssessment?.assessment.status,
     },
-  ];
+  ].filter((dimension) => dimension.current !== undefined);
 
-  const peopleDistribution = latest.data.people.reduce((distribution, person) => {
+  const peopleDistribution = (latest.data.people ?? []).reduce((distribution, person) => {
     distribution[person.assessment.status] += 1;
     return distribution;
   }, emptyDistribution());
-  const consistencyDistribution = latest.data.people.reduce((distribution, person) => {
+  const consistencyDistribution = (latest.data.people ?? []).reduce((distribution, person) => {
     distribution[person.consistency.level] += 1;
     return distribution;
   }, emptyConsistencyDistribution());
-  const confidenceDistribution = latest.data.people.reduce((distribution, person) => {
+  const confidenceDistribution = (latest.data.people ?? []).reduce((distribution, person) => {
     distribution[person.assessment.confidence] += 1;
     return distribution;
   }, emptyConfidenceDistribution());

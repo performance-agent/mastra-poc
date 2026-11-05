@@ -1,4 +1,7 @@
 model Group {
+  knowledgeNodes KnowledgeNode[]
+  knowledgeConnections KnowledgeConnection[]
+  knowledgeExclusions KnowledgeExclusion[]
   id          String  @id @default(cuid())
   name        String
   description String?
@@ -16,6 +19,8 @@ model Group {
   resourceAssignments PluginInstallationResourceAssignment[]
   performanceReports  PerformanceReport[]
   invitations         Invitation[]
+  evaluators          Evaluator[]
+  evaluatorSchedules  EvaluatorSchedule[]
 
   @@index([workspaceId])
 }

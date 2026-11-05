@@ -14,6 +14,7 @@ export type ResourceExecutor = {
 };
 
 export type ResourceExecutionDataset = {
+  sourceNamespace?: string;
   dataType: string;
   records: readonly unknown[];
   count: number;

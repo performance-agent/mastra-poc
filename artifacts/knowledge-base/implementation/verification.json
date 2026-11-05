@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-03",
+  "migration": "20261103000000_knowledge_base applied to local PostgreSQL",
+  "backend": { "build": "passed", "focusedSuites": 8, "focusedTestsPassed": 76, "productionKnowledgeLint": "passed" },
+  "frontend": { "build": "passed", "knowledgeBrowserScenariosPassed": 8, "existingWorkflowRegressionScenariosPassed": 41, "focusedLint": "passed", "consistencyCorrection": "Shared application components, Projects terminology, explicit entity image scopes and owner-only Drive administration" },
+  "drivePermissions": "permissions-integration.json verifies real database roles, private connection metadata, denial of other admins/viewers before accessing Google, shared copies and sync suspension after owner permission loss; no additional migration",
+  "httpSmoke": { "swagger": 200, "unauthenticatedKnowledgeLibrary": 401, "unauthenticatedDriveConnections": 401 },
+  "liveIntegration": "See integration.json: real PostgreSQL, private Firebase Storage, PDF/DOCX extraction and configured-model knowledge-only report generation; isolated test records and blobs removed afterward",
+  "browserEvidence": "ui/: labeled simulated API/auth scenarios, separate from the real service integration",
+  "limitations": [
+    "Google Drive account authorization and live synchronization await administrator OAuth credentials; provider boundary and synchronization cases use simulated responses",
+    "Full backend suite retains pre-existing ESM-loading and outdated fixture/expectation failures; focused suite passes",
+    "No OCR; large documents provide relevance-selected excerpts whose coverage is saved in each report"
+  ]
+}

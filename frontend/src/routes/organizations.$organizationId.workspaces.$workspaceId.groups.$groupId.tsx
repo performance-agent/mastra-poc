@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Boxes, Check, Download, FileText, RefreshCw } from "lucide-react";
+import { Plus, Boxes, Check, Users, Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { Breadcrumbs } from "@/components/app/Breadcrumbs";
@@ -19,11 +19,10 @@ import { MemberList } from "@/components/app/MemberList";
 import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
-import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
-import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
-import { EvaluationWorkbench } from "@/components/app/EvaluationWorkbench";
-import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
-import { EvaluationGuidelinesCard } from "@/components/app/EvaluationGuidelinesCard";
+import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
+import { RulesTab } from "@/components/app/RulesTab";
+import { ReportsPanel } from "@/components/app/ReportsPanel";
+import { KnowledgeResources } from "@/components/app/KnowledgeResources";
 import { GroupOverviewDashboard } from "@/components/app/GroupOverviewDashboard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,20 +36,18 @@ import {
   findCurrentMembership,
   highestRole,
 } from "@/lib/membership-role";
-import type {
-  GroupGithubActivityReport,
-  GroupGithubHistoryReport,
-  GroupReport,
-  PerformanceReport,
-  Role,
-} from "@/lib/types";
+import type { Role } from "@/lib/types";
 
 const tabSchema = z.object({
-  tab: z
-    .enum(["overview", "members", "resources", "guidelines", "reports", "evaluation"])
-    .optional(),
+  tab: z.enum(["overview", "members", "resources", "reports", "evaluation", "rules"]).optional(),
+  reportId: z.string().optional(),
+  knowledgeView: z.string().optional(),
+  driveConnection: z.string().optional(),
+  driveError: z.string().optional(),
+  knowledgeNode: z.string().optional(),
+  evaluatorId: z.string().optional(),
 });
-type GroupTab = "overview" | "members" | "resources" | "guidelines" | "reports" | "evaluation";
+type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation" | "rules";
 
 export const Route = createFileRoute(
   "/organizations/$organizationId/workspaces/$workspaceId/groups/$groupId",
@@ -58,8 +55,8 @@ export const Route = createFileRoute(
   validateSearch: tabSchema,
   head: () => ({
     meta: [
-      { title: "Group — Performance Agent" },
-      { name: "description", content: "Manage group members and resource assignments." },
+      { title: "Project — Performance Agent" },
+      { name: "description", content: "Manage project members and resource assignments." },
     ],
   }),
   component: GroupPage,
@@ -74,6 +71,12 @@ function GroupPage() {
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
   const qc = useQueryClient();
+  const selectEvaluator = useCallback(
+    (evaluatorId: string | undefined) => {
+      void navigate({ search: { tab: "evaluation", evaluatorId }, replace: true });
+    },
+    [navigate],
+  );
   const { firebaseUser } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -81,9 +84,6 @@ function GroupPage() {
   const [role, setRole] = useState<Role>("VIEWER");
   const [resSearch, setResSearch] = useState("");
   const [pending, setPending] = useState<Record<string, "assign" | "unassign" | undefined>>({});
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [isCreatingReport, setIsCreatingReport] = useState(false);
-  const [reportStartedAt, setReportStartedAt] = useState<string | null>(null);
 
   const orgQ = useQuery({
     queryKey: ["organization", organizationId],
@@ -120,7 +120,6 @@ function GroupPage() {
   const reportsQ = useQuery({
     queryKey: ["group", groupId, "reports"],
     queryFn: () => api.listGroupReports(groupId),
-    refetchInterval: reportStartedAt ? 5000 : false,
   });
 
   const assignedResourceIds = useMemo(
@@ -155,21 +154,6 @@ function GroupPage() {
         )
       : list;
   }, [assignedResourceIds, orgResourcesQ.data, resSearch]);
-  const selectedReport = useMemo(() => {
-    const reports = reportsQ.data ?? [];
-    return reports.find((report) => report.id === selectedReportId) ?? reports[0] ?? null;
-  }, [reportsQ.data, selectedReportId]);
-
-  useEffect(() => {
-    if (!reportStartedAt) return;
-    const createdReport = (reportsQ.data ?? []).find(
-      (report) => report.createdAt && new Date(report.createdAt) >= new Date(reportStartedAt),
-    );
-    if (createdReport) {
-      setSelectedReportId(createdReport.id);
-      setReportStartedAt(null);
-    }
-  }, [reportStartedAt, reportsQ.data]);
 
   const refreshMembers = () => {
     qc.invalidateQueries({ queryKey: ["group", groupId, "members"] });
@@ -187,7 +171,7 @@ function GroupPage() {
   ]);
   const currentUserId =
     groupMembership?.userId ?? workspaceMembership?.userId ?? organizationMembership?.userId;
-  const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const canManageRoles = canManageMemberRoles(actorRole);
   const evaluationRole = highestRole([workspaceMembership?.role, organizationMembership?.role]);
   const canEvaluate = evaluationRole === "OWNER" || evaluationRole === "ADMIN";
   const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
@@ -216,20 +200,6 @@ function GroupPage() {
       toast.error(errorMessage(e));
     } finally {
       setPending((p) => ({ ...p, [resourceId]: undefined }));
-    }
-  };
-
-  const createReport = async () => {
-    setIsCreatingReport(true);
-    try {
-      await api.createGroupReport(groupId, { type: "GROUP_REPORT" });
-      setReportStartedAt(new Date().toISOString());
-      toast.success("Report generation started");
-      reportsQ.refetch();
-    } catch (e) {
-      toast.error(errorMessage(e));
-    } finally {
-      setIsCreatingReport(false);
     }
   };
 
@@ -268,54 +238,79 @@ function GroupPage() {
               { value: "overview", label: "Overview" },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
-              { value: "guidelines", label: "Guidelines" },
-              { value: "evaluation", label: "Agent evaluation" },
+              { value: "evaluation", label: "Evaluators" },
               { value: "reports", label: "Reports", count: reportsQ.data?.length },
+              { value: "rules", label: "Rules" },
             ]}
           />
 
           {tab === "overview" && (
-            <GroupOverviewDashboard
-              reports={reportsQ.data ?? []}
-              isLoading={reportsQ.isLoading}
-              errorMessage={reportsQ.error ? errorMessage(reportsQ.error) : undefined}
-              isCreating={isCreatingReport}
-              isWaitingForReport={Boolean(reportStartedAt)}
-              onCreate={createReport}
-              onRefresh={() => reportsQ.refetch()}
-              onOpenReport={(reportId) => {
-                setSelectedReportId(reportId);
-                setTab("reports");
-              }}
-            />
-          )}
-
-          {tab === "guidelines" && (
-            <EvaluationGuidelinesCard
-              group={group}
-              canEdit={canManageRoles}
-              onSaved={(updated) => {
-                qc.setQueryData(["group", groupId], updated);
-              }}
-            />
-          )}
-
-          {tab === "evaluation" &&
-            (canEvaluate ? (
-              <EvaluationWorkbench
-                workspaceId={workspaceId}
-                groupName={group.name}
-                groupId={groupId}
-              />
-            ) : (
-              <Card className="rounded-xl p-8 text-center">
-                <Sparkles aria-hidden="true" className="mx-auto h-8 w-8 text-muted-foreground" />
-                <h2 className="mt-3 font-semibold">Evaluation access is restricted</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Workspace owners and admins can run evaluations and manage rule packages.
-                </p>
+            <div className="space-y-6">
+              <Card className="flex flex-col gap-3 rounded-xl border-primary/20 bg-primary/5 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-semibold">Set up evaluators</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Choose how this project should be read, then generate a report for each one.
+                  </p>
+                </div>
+                <Button onClick={() => setTab("evaluation")}>
+                  <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Open evaluators
+                </Button>
               </Card>
-            ))}
+              <GroupOverviewDashboard
+                reports={reportsQ.data ?? []}
+                isLoading={reportsQ.isLoading}
+                errorMessage={reportsQ.error ? errorMessage(reportsQ.error) : undefined}
+                onCreate={() => setTab("evaluation")}
+                onRefresh={() => void reportsQ.refetch()}
+                onOpenReport={(reportId) => void navigate({ search: { tab: "reports", reportId } })}
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <StatCard
+                  icon={<Users className="h-4 w-4" />}
+                  label="Members"
+                  value={membersQ.data?.length ?? 0}
+                />
+                <StatCard
+                  icon={<Boxes className="h-4 w-4" />}
+                  label="Assigned resources"
+                  value={groupResourcesQ.data?.length ?? 0}
+                />
+              </div>
+
+              {(groupResourcesQ.data ?? []).length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="text-sm font-semibold text-muted-foreground">
+                    Assigned resources
+                  </h2>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {(groupResourcesQ.data ?? []).slice(0, 4).map((resource) => (
+                      <ResourceCard key={resource.id} resource={resource} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {tab === "evaluation" && (
+            <EvaluatorsTab
+              key={groupId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              workspaceName={wsQ.data?.name ?? "Workspace"}
+              groupId={groupId}
+              groupName={group.name}
+              canManageGroup={canManageRoles}
+              canManageWorkspace={canEvaluate}
+              evaluatorId={search.evaluatorId}
+              onSelect={selectEvaluator}
+            />
+          )}
+
+          {tab === "rules" && (
+            <RulesTab workspaceId={workspaceId} groupId={groupId} canManage={canEvaluate} />
+          )}
 
           {tab === "members" && (
             <div className="space-y-4">
@@ -385,126 +380,134 @@ function GroupPage() {
           )}
 
           {tab === "resources" && (
-            <div className="space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="w-full sm:w-72">
-                  <SearchInput
-                    value={resSearch}
-                    onChange={setResSearch}
-                    placeholder="Search resources…"
+            <KnowledgeResources
+              key={groupId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              groupId={groupId}
+              initialView={search.knowledgeView}
+              initialConnectionId={search.driveConnection}
+              initialError={search.driveError}
+              initialNodeId={search.knowledgeNode}
+            >
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="w-full sm:w-72">
+                    <SearchInput
+                      value={resSearch}
+                      onChange={setResSearch}
+                      placeholder="Search resources…"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Search assigned resources and organization resources available to assign.
+                  </p>
+                </div>
+                {groupResourcesQ.isLoading || orgResourcesQ.isLoading ? (
+                  <LoadingState />
+                ) : groupResourcesQ.error || orgResourcesQ.error ? (
+                  <ErrorState
+                    message={errorMessage(groupResourcesQ.error ?? orgResourcesQ.error)}
+                    onRetry={() => {
+                      groupResourcesQ.refetch();
+                      orgResourcesQ.refetch();
+                    }}
                   />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Search assigned resources and organization resources available to assign.
-                </p>
-              </div>
-              {groupResourcesQ.isLoading || orgResourcesQ.isLoading ? (
-                <LoadingState />
-              ) : groupResourcesQ.error || orgResourcesQ.error ? (
-                <ErrorState
-                  message={errorMessage(groupResourcesQ.error ?? orgResourcesQ.error)}
-                  onRetry={() => {
-                    groupResourcesQ.refetch();
-                    orgResourcesQ.refetch();
-                  }}
-                />
-              ) : (
-                <div className="space-y-6">
-                  <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-muted-foreground">
-                      Assigned resources
-                    </h2>
-                    {filteredAssignedResources.length === 0 ? (
-                      <EmptyState
-                        icon={<Boxes className="h-4 w-4" />}
-                        title="No assigned resources"
-                        description="Assign organization resources to make them available in this group."
-                      />
-                    ) : (
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {filteredAssignedResources.map((r) => (
-                          <ResourceCard
-                            key={r.id}
-                            resource={r}
-                            action={
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={pending[r.id] === "unassign"}
-                                onClick={() => toggleResource(r.id, "unassign")}
-                              >
-                                Unassign
-                              </Button>
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
+                ) : (
+                  <div className="space-y-6">
+                    <section className="space-y-3">
+                      <h2 className="text-sm font-semibold text-muted-foreground">
+                        Assigned resources
+                      </h2>
+                      {filteredAssignedResources.length === 0 ? (
+                        <EmptyState
+                          icon={<Boxes className="h-4 w-4" />}
+                          title="No assigned resources"
+                          description="Assign organization resources to make them available in this project."
+                        />
+                      ) : (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {filteredAssignedResources.map((r) => (
+                            <ResourceCard
+                              key={r.id}
+                              resource={r}
+                              action={
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={pending[r.id] === "unassign"}
+                                  onClick={() => toggleResource(r.id, "unassign")}
+                                >
+                                  Unassign
+                                </Button>
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
 
-                  <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-muted-foreground">
-                      Available to assign
-                    </h2>
-                    {availableResources.length === 0 ? (
-                      <EmptyState
-                        icon={<Boxes className="h-4 w-4" />}
-                        title="No resources available"
-                        description="Connect a plugin in the organization to bring in more resources."
-                      />
-                    ) : (
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {availableResources.map((r) => (
-                          <ResourceCard
-                            key={r.id}
-                            resource={r}
-                            action={
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={pending[r.id] === "assign"}
-                                onClick={() => toggleResource(r.id, "assign")}
-                              >
-                                <Check className="mr-1 h-3 w-3" /> Assign
-                              </Button>
-                            }
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                </div>
-              )}
-            </div>
+                    <section className="space-y-3">
+                      <h2 className="text-sm font-semibold text-muted-foreground">
+                        Available to assign
+                      </h2>
+                      {availableResources.length === 0 ? (
+                        <EmptyState
+                          icon={<Boxes className="h-4 w-4" />}
+                          title="No resources available"
+                          description="Connect a plugin in the organization to bring in more resources."
+                        />
+                      ) : (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {availableResources.map((r) => (
+                            <ResourceCard
+                              key={r.id}
+                              resource={r}
+                              action={
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={pending[r.id] === "assign"}
+                                  onClick={() => toggleResource(r.id, "assign")}
+                                >
+                                  <Check className="mr-1 h-3 w-3" /> Assign
+                                </Button>
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                )}
+              </div>
+            </KnowledgeResources>
           )}
 
           {tab === "reports" && (
-            <ReportsTab
+            <ReportsPanel
+              workspaceName={wsQ.data?.name}
               groupName={group.name}
-              reports={reportsQ.data ?? []}
-              selectedReport={selectedReport}
-              selectedReportId={selectedReportId}
-              isLoading={reportsQ.isLoading}
-              error={reportsQ.error}
-              isCreating={isCreatingReport}
-              isWaitingForReport={Boolean(reportStartedAt)}
-              onCreate={createReport}
-              onRefresh={() => reportsQ.refetch()}
-              onSelect={setSelectedReportId}
+              groupId={groupId}
+              initialReportId={search.reportId}
+              canDelete={canManageRoles}
+              canManage={canManageRoles}
+              onOpenEvaluators={() => setTab("evaluation")}
             />
           )}
         </div>
       )}
 
       <EntityFormDialog
+        scope="group"
         open={editOpen}
         onOpenChange={setEditOpen}
-        title="Edit group"
+        title="Edit project"
         initial={toFormInitial(group)}
         onSubmit={async (v) => {
           try {
             await api.updateGroup(groupId, v);
-            toast.success("Group updated");
+            toast.success("Project updated");
             qc.invalidateQueries({ queryKey: ["group", groupId] });
             qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "groups"] });
           } catch (e) {
@@ -521,7 +524,7 @@ function GroupPage() {
         onConfirm={async () => {
           try {
             await api.deleteGroup(groupId);
-            toast.success("Group deleted");
+            toast.success("Project deleted");
             qc.invalidateQueries({ queryKey: ["workspace", workspaceId, "groups"] });
             navigate({
               to: "/organizations/$organizationId/workspaces/$workspaceId",
@@ -549,158 +552,24 @@ function GroupPage() {
   );
 }
 
-function ReportsTab({
-  groupName,
-  reports,
-  selectedReport,
-  selectedReportId,
-  isLoading,
-  error,
-  isCreating,
-  isWaitingForReport,
-  onCreate,
-  onRefresh,
-  onSelect,
+function StatCard({
+  icon,
+  label,
+  value,
 }: {
-  groupName: string;
-  reports: Array<
-    PerformanceReport<GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport>
-  >;
-  selectedReport: PerformanceReport<
-    GroupReport | GroupGithubActivityReport | GroupGithubHistoryReport
-  > | null;
-  selectedReportId: string | null;
-  isLoading: boolean;
-  error: unknown;
-  isCreating: boolean;
-  isWaitingForReport: boolean;
-  onCreate: () => Promise<void>;
-  onRefresh: () => void;
-  onSelect: (id: string) => void;
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
 }) {
-  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
-
-  const exportSelectedReport = async () => {
-    if (!selectedReport || exportingReportId) return;
-    setExportingReportId(selectedReport.id);
-    try {
-      const { exportPerformanceReportAsPdf } = await import("@/lib/export-performance-report-pdf");
-      await exportPerformanceReportAsPdf({ report: selectedReport, groupName });
-      toast.success("PDF downloaded");
-    } catch (exportError) {
-      toast.error(`Could not export PDF: ${errorMessage(exportError)}`);
-    } finally {
-      setExportingReportId(null);
-    }
-  };
-
   return (
-    <div className="min-w-0 space-y-4">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-muted-foreground">Group reports</h2>
-          <p className="mt-1 max-w-2xl wrap-break-word text-xs text-muted-foreground">
-            Generate a full historical report from all plugin resources assigned to this group.
-          </p>
-        </div>
-        <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
-          <Button className="w-full sm:w-auto" variant="outline" onClick={onRefresh}>
-            <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
-          </Button>
-          <Button className="w-full sm:w-auto" onClick={onCreate} disabled={isCreating}>
-            <FileText className="mr-1.5 h-4 w-4" />
-            {isCreating ? "Starting..." : "Group report"}
-          </Button>
-        </div>
+    <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        {icon}
       </div>
-
-      {isWaitingForReport && (
-        <Card className="rounded-xl p-4 shadow-card">
-          <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            <span className="min-w-0 wrap-break-word">
-              Report generation started. Refreshing until the new report is available.
-            </span>
-          </div>
-        </Card>
-      )}
-
-      {isLoading ? (
-        <LoadingState />
-      ) : error ? (
-        <ErrorState message={errorMessage(error)} onRetry={onRefresh} />
-      ) : reports.length === 0 ? (
-        <EmptyState
-          icon={<FileText className="h-4 w-4" />}
-          title="No reports yet"
-          description="Generate a historical report to analyze the group's delivery signals."
-          actionLabel="Generate group report"
-          onAction={onCreate}
-        />
-      ) : (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]">
-          <Card className="h-fit min-w-0 overflow-hidden rounded-xl p-2 shadow-card">
-            <div className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
-              {reports.map((report) => (
-                <button
-                  key={report.id}
-                  type="button"
-                  onClick={() => onSelect(report.id)}
-                  className={`w-56 shrink-0 rounded-lg px-3 py-2 text-left transition-colors lg:w-full ${
-                    (selectedReportId ?? reports[0]?.id) === report.id
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <div className="truncate text-sm font-medium">
-                    {report.type === "GROUP_REPORT"
-                      ? "Group report"
-                      : report.type === "GITHUB_HISTORY"
-                        ? "GitHub history"
-                        : "GitHub activity"}
-                  </div>
-                  <div className="truncate text-[11px]">
-                    {report.createdAt
-                      ? new Date(report.createdAt).toLocaleString()
-                      : "Generated report"}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          {selectedReport ? (
-            <div className="min-w-0 overflow-hidden">
-              <div className="mb-3 flex justify-end">
-                <Button
-                  className="w-full sm:w-auto"
-                  variant="outline"
-                  onClick={exportSelectedReport}
-                  disabled={Boolean(exportingReportId)}
-                >
-                  {exportingReportId ? (
-                    <RefreshCw aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download aria-hidden="true" className="mr-1.5 h-4 w-4" />
-                  )}
-                  {exportingReportId ? "Exporting…" : "Export as PDF"}
-                </Button>
-              </div>
-              {selectedReport.type === "GROUP_REPORT" ? (
-                <GroupReportRenderer report={selectedReport as PerformanceReport<GroupReport>} />
-              ) : selectedReport.type === "GITHUB_HISTORY" ? (
-                <GroupGithubHistoryReportRenderer
-                  report={selectedReport as PerformanceReport<GroupGithubHistoryReport>}
-                />
-              ) : (
-                <GroupGithubActivityReportRenderer
-                  report={selectedReport as PerformanceReport<GroupGithubActivityReport>}
-                />
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
-    </div>
+      <div>
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-lg font-semibold">{value}</div>
+      </div>
+    </Card>
   );
 }

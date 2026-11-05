@@ -1,3 +1,4 @@
+import { EvidenceStore } from './runtime/evidence-store.service';
 import { Module } from '@nestjs/common';
 import { PluginRegistryService } from './plugin-registry.service';
 import { PluginsController } from './plugins.controller';
@@ -11,6 +12,7 @@ import {
 @Module({
   controllers: [PluginsController],
   providers: [
+    EvidenceStore,
     PluginRegistryService,
     PluginRuntimeService,
     PluginResourceExecutor,

@@ -1,3 +1,8 @@
+import { PluginConfigurationFields } from "@/components/app/PluginConfigurationFields";
+import { McpSetup } from "@/components/app/McpSetup";
+import { PluginMark } from "@/components/app/PluginMark";
+import { TeamSpaceDialog } from "@/components/app/TeamSpaceDialog";
+import { OrganizationHome } from "@/components/app/OrganizationHome";
 import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -5,8 +10,6 @@ import { z } from "zod";
 import { toast } from "sonner";
 import {
   Plus,
-  Building2,
-  Users,
   FolderTree,
   Boxes,
   Plug,
@@ -14,6 +17,7 @@ import {
   MoreHorizontal,
   Pencil,
   Database,
+  Info,
 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
@@ -43,6 +47,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -170,7 +175,7 @@ function OrganizationPage() {
             value={tab}
             onChange={setTab}
             items={[
-              { value: "overview", label: "Overview" },
+              { value: "overview", label: "Home" },
               { value: "workspaces", label: "Workspaces", count: workspacesQ.data?.length },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources", count: resourcesQ.data?.length },
@@ -179,18 +184,7 @@ function OrganizationPage() {
             ]}
           />
 
-          {tab === "overview" && (
-            <OverviewTab
-              workspaces={workspacesQ.data?.length ?? 0}
-              members={membersQ.data?.length ?? 0}
-              resources={resourcesQ.data?.length ?? 0}
-              dataTypes={dataTypesQ.data?.length ?? 0}
-              plugins={
-                new Set((orgPluginInstallationsQ.data ?? []).map((item) => item.pluginId)).size
-              }
-              recentResources={resourcesQ.data?.slice(0, 4) ?? []}
-            />
-          )}
+          {tab === "overview" && <OrganizationHome />}
           {tab === "workspaces" && <WorkspacesTab organizationId={organizationId} />}
           {tab === "members" && <MembersTab organizationId={organizationId} />}
           {tab === "resources" && <ResourcesTab organizationId={organizationId} />}
@@ -200,6 +194,7 @@ function OrganizationPage() {
       )}
 
       <EntityFormDialog
+        scope="organization"
         open={editOpen}
         onOpenChange={setEditOpen}
         title="Edit organization"
@@ -235,66 +230,6 @@ function OrganizationPage() {
         }}
       />
     </AppShell>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <Card className="flex items-center gap-3 rounded-xl border-border p-4 shadow-card">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        {icon}
-      </div>
-      <div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="text-lg font-semibold">{value}</div>
-      </div>
-    </Card>
-  );
-}
-
-function OverviewTab({
-  workspaces,
-  members,
-  resources,
-  dataTypes,
-  plugins,
-  recentResources,
-}: {
-  workspaces: number;
-  members: number;
-  resources: number;
-  dataTypes: number;
-  plugins: number;
-  recentResources: Resource[];
-}) {
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatCard icon={<FolderTree className="h-4 w-4" />} label="Workspaces" value={workspaces} />
-        <StatCard icon={<Users className="h-4 w-4" />} label="Members" value={members} />
-        <StatCard icon={<Boxes className="h-4 w-4" />} label="Resources" value={resources} />
-        <StatCard icon={<Database className="h-4 w-4" />} label="Data Types" value={dataTypes} />
-        <StatCard icon={<Plug className="h-4 w-4" />} label="Plugins" value={plugins} />
-      </div>
-      {recentResources.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground">Recent resources</h2>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {recentResources.map((r) => (
-              <ResourceCard key={r.id} resource={r} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -337,7 +272,7 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
         <EmptyState
           icon={<FolderTree className="h-4 w-4" />}
           title="No workspaces yet"
-          description="Create a workspace to organize groups, members, and resources."
+          description="Create a workspace to organize projects, members, and resources."
           actionLabel="New workspace"
           onAction={() => setCreateOpen(true)}
         />
@@ -358,22 +293,13 @@ function WorkspacesTab({ organizationId }: { organizationId: string }) {
         </div>
       )}
 
-      <EntityFormDialog
+      <TeamSpaceDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="New workspace"
-        submitLabel="Create"
-        onSubmit={async (v) => {
-          try {
-            await api.createWorkspace(organizationId, v);
-            toast.success("Workspace created");
-            refresh();
-          } catch (e) {
-            toast.error(errorMessage(e));
-          }
-        }}
+        organizationId={organizationId}
       />
       <EntityFormDialog
+        scope="workspace"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         title="Edit workspace"
@@ -566,6 +492,7 @@ function ResourcesTab({ organizationId }: { organizationId: string }) {
         </div>
       )}
       <EntityFormDialog
+        scope="organization"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
         title="Edit resource"
@@ -824,6 +751,12 @@ function EditPluginInstallationDialog({
     <FormModal
       open={!!installation}
       onOpenChange={onOpenChange}
+      dirty={
+        name !== (installation?.name ?? "") ||
+        Object.entries(configuration).some(
+          ([key, value]) => value !== String(installation?.configuration[key] ?? ""),
+        )
+      }
       title="Edit plugin connection"
       submitLabel="Save"
       submitting={submitting}
@@ -848,23 +781,15 @@ function EditPluginInstallationDialog({
           autoFocus
         />
       </div>
-      {(plugin?.configurationFields ?? [])
-        .filter((field) => field.configurable)
-        .map((field) => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`plugin-edit-${field.key}`}>{field.label}</Label>
-            <Input
-              id={`plugin-edit-${field.key}`}
-              type={field.sensitive ? "password" : field.key === "email" ? "email" : "text"}
-              value={configuration[field.key] ?? ""}
-              placeholder={field.sensitive ? "Leave blank to keep the current value" : undefined}
-              required={field.required && !field.sensitive}
-              onChange={(event) =>
-                setConfiguration((current) => ({ ...current, [field.key]: event.target.value }))
-              }
-            />
-          </div>
-        ))}
+      {plugin && (
+        <PluginConfigurationFields
+          plugin={plugin}
+          values={configuration}
+          editing
+          prefix="plugin-edit"
+          onChange={(key, value) => setConfiguration((current) => ({ ...current, [key]: value }))}
+        />
+      )}{" "}
     </FormModal>
   );
 }
@@ -885,6 +810,7 @@ function ConnectJiraDialog({
     <FormModal
       open={!!plugin}
       onOpenChange={onOpenChange}
+      dirty={JSON.stringify(values) !== JSON.stringify({ name: "Jira" })}
       title="Connect Jira"
       submitLabel="Connect and sync"
       submitting={submitting}
@@ -907,28 +833,14 @@ function ConnectJiraDialog({
           onChange={(event) => setValues((v) => ({ ...v, name: event.target.value }))}
         />
       </div>
-      {(plugin?.configurationFields ?? [])
-        .filter((field) => field.configurable)
-        .map((field) => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`jira-${field.key}`}>{field.label}</Label>
-            <Input
-              id={`jira-${field.key}`}
-              required={field.required}
-              type={
-                field.sensitive
-                  ? "password"
-                  : field.key === "email"
-                    ? "email"
-                    : field.key === "siteUrl"
-                      ? "url"
-                      : "text"
-              }
-              value={values[field.key] ?? ""}
-              onChange={(event) => setValues((v) => ({ ...v, [field.key]: event.target.value }))}
-            />
-          </div>
-        ))}
+      {plugin && (
+        <PluginConfigurationFields
+          plugin={plugin}
+          values={values}
+          prefix="jira"
+          onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
+        />
+      )}{" "}
     </FormModal>
   );
 }
@@ -939,7 +851,7 @@ function pluginStatusLabel(status: PluginStatus) {
   const normalized = status.toString().toUpperCase();
   if (normalized === "ACTIVE" || normalized === "CONNECTED") return "Connected";
   if (normalized === "PENDING") return "Pending";
-  if (normalized === "AVAILABLE") return "Available";
+  if (normalized === "AVAILABLE") return "Not connected";
   if (normalized === "DISABLED") return "Disabled";
   if (normalized === "REVOKED") return "Revoked";
   if (normalized === "ERROR") return "Error";
@@ -950,7 +862,7 @@ function pluginStatusClasses(status: PluginStatus) {
   const normalized = status.toString().toUpperCase();
   if (normalized === "ACTIVE" || normalized === "CONNECTED") {
     return {
-      shell: "border-success/20 bg-success/10 text-success",
+      shell: "border-transparent bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
       dot: "bg-success",
     };
   }
@@ -977,9 +889,8 @@ function PluginStatusBadge({ status }: { status: PluginStatus }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${classes.shell}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${classes.shell}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${classes.dot}`} />
       {pluginStatusLabel(status)}
     </span>
   );
@@ -991,6 +902,8 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<PluginInstallation | null>(null);
   const [connectingJira, setConnectingJira] = useState<PluginCatalogItem | null>(null);
+  const [configuringMcp, setConfiguringMcp] = useState(false);
+  const [managing, setManaging] = useState<PluginCatalogItem | null>(null);
   const availableQ = useQuery({ queryKey: ["plugins"], queryFn: api.listPlugins });
   const connectedQ = useQuery({
     queryKey: ["organization", organizationId, "plugin-installations"],
@@ -1065,16 +978,26 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
     }
   };
 
+  if (configuringMcp)
+    return (
+      <div className="space-y-5">
+        <Button variant="ghost" onClick={() => setConfiguringMcp(false)}>
+          ← Plugins
+        </Button>
+        <McpSetup />
+      </div>
+    );
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-7">
       <div>
-        <h2 className="text-lg font-semibold">Plugin catalog</h2>
-        <p className="text-sm text-muted-foreground">
-          Connect external tools and discover the resources and data they provide.
+        <h2 className="text-2xl font-semibold tracking-tight">Plugins</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Connect your sources. Bring your assistant.
         </p>
       </div>
       <div className="max-w-md">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search plugins…" />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search plugins" />
       </div>
       {isLoading ? (
         <LoadingState />
@@ -1093,139 +1016,194 @@ function PluginsTab({ organizationId }: { organizationId: string }) {
           description="Try a different search or add a plugin to the compiled catalog."
         />
       ) : (
-        <div className="grid items-start gap-4 xl:grid-cols-2">
-          {plugins.map((plugin) => {
-            const connections = installations.filter(
-              (installation) => installation.pluginId === plugin.id,
-            );
-            const status: PluginStatus = connections.some((item) => item.lastSyncError)
-              ? "ERROR"
-              : connections.some((item) => item.status === "ACTIVE")
-                ? "ACTIVE"
-                : (connections[0]?.status ?? "AVAILABLE");
-            return (
-              <Card key={plugin.id} className="overflow-hidden rounded-xl shadow-card">
-                <div className="space-y-4 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
-                        <Plug className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-semibold">{plugin.name}</h3>
+        <div className="space-y-7">
+          {plugins.some((p) => p.configurationKind !== "mcp") && (
+            <div>
+              <h3 className="text-xl font-semibold tracking-tight">Data sources</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Bring evidence into your workspace.
+              </p>
+            </div>
+          )}
+          <div className="grid items-stretch gap-5 md:grid-cols-2">
+            {plugins
+              .filter((p) => p.configurationKind !== "mcp")
+              .map((plugin) => {
+                const connections = installations.filter(
+                  (installation) => installation.pluginId === plugin.id,
+                );
+                const status: PluginStatus = connections.some((item) => item.lastSyncError)
+                  ? "ERROR"
+                  : connections.some((item) => item.status === "ACTIVE")
+                    ? "ACTIVE"
+                    : (connections[0]?.status ?? "AVAILABLE");
+                return (
+                  <Card
+                    key={plugin.id}
+                    role="region"
+                    aria-label={`${plugin.name} plugin`}
+                    className="flex min-h-44 rounded-2xl p-5 shadow-none sm:p-6"
+                  >
+                    <div className="flex w-full items-start gap-5">
+                      <PluginMark pluginId={plugin.id} className="mt-0.5 size-11 sm:size-12" />
+                      <div className="flex min-w-0 flex-1 flex-col self-stretch">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h4 className="text-lg font-semibold tracking-tight">{plugin.name}</h4>
                           <PluginStatusBadge status={status} />
                         </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          Version {plugin.version}
+                        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                          {plugin.id === "github"
+                            ? "Repositories, pull requests, reviews and issues."
+                            : plugin.id === "jira"
+                              ? "Projects, issues and delivery context."
+                              : plugin.description}
+                        </p>
+                        {connections.length > 0 && (
+                          <p className="mt-3 text-sm text-muted-foreground">
+                            {connections.length}{" "}
+                            {connections.length === 1 ? "connection" : "connections"} ·{" "}
+                            {connections.reduce(
+                              (total, item) =>
+                                total + (item.pluginInstallationResources?.length ?? 0),
+                              0,
+                            )}{" "}
+                            resources
+                          </p>
+                        )}
+                        <div className="mt-auto pt-4">
+                          <Button
+                            variant={connections.length ? "outline" : "default"}
+                            className={connections.length ? "bg-card shadow-none" : ""}
+                            onClick={() =>
+                              connections.length ? setManaging(plugin) : handleConnectPlugin(plugin)
+                            }
+                          >
+                            {connections.length
+                              ? `Manage ${connections.length === 1 ? "connection" : "connections"}`
+                              : `Connect ${plugin.name}`}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+          </div>
+          {plugins
+            .filter((p) => p.configurationKind === "mcp")
+            .map((plugin) => (
+              <section key={plugin.id} className="space-y-3">
+                <div>
+                  <h3 className="text-xl font-semibold tracking-tight">AI assistants</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Use your own assistant to analyze connected evidence.
+                  </p>
+                </div>
+                <Card className="rounded-2xl p-5 shadow-none sm:p-6">
+                  <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+                    <div className="flex gap-4">
+                      <PluginMark pluginId="mcp" />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-lg font-semibold tracking-tight">{plugin.name}</h4>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                            Optional
+                          </span>
+                        </div>
+                        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                          Analyze and save reports from your preferred assistant, using your
+                          workspace evaluators.
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          ChatGPT · Claude · Cursor · VS Code · Local agents
                         </p>
                       </div>
                     </div>
-                    <Button size="sm" onClick={() => handleConnectPlugin(plugin)}>
-                      <Plus className="mr-1.5 h-4 w-4" />
-                      {connections.length ? "Connect another" : "Connect"}
+                    <Button
+                      className="shrink-0 sm:min-w-40"
+                      onClick={() => setConfiguringMcp(true)}
+                    >
+                      Configure MCP
                     </Button>
                   </div>
-
-                  <p className="text-sm text-muted-foreground">
-                    {plugin.description ?? "No description provided."}
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {plugin.resourceTypes.map((type) => (
-                      <span
-                        key={type.key}
-                        className="rounded-full border bg-muted/60 px-2.5 py-1 text-[11px] text-muted-foreground"
-                      >
-                        Resource · {type.name}
-                      </span>
-                    ))}
-                    {plugin.dataTypes.map((type) => (
-                      <span
-                        key={type.key}
-                        className="rounded-full border bg-muted/60 px-2.5 py-1 text-[11px] text-muted-foreground"
-                      >
-                        Data · {titleCaseProvider(type.key.replace(`${plugin.id}.`, ""))}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="border-t bg-muted/20 px-5 py-4">
-                  <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <span>Connections</span>
-                    <span>{connections.length}</span>
-                  </div>
-                  {connections.length === 0 ? (
-                    <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                      No connections yet. Connect this plugin to start discovering resources.
-                    </div>
-                  ) : (
-                    <div className="overflow-hidden rounded-lg border bg-card">
-                      {connections.map((installation, index) => (
-                        <div
-                          key={installation.id}
-                          className={`flex items-center gap-3 p-3 ${index ? "border-t" : ""}`}
-                        >
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                            <Plug className="h-3.5 w-3.5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-sm font-medium">{installation.name}</p>
-                              <PluginStatusBadge
-                                status={installation.lastSyncError ? "ERROR" : installation.status}
-                              />
-                            </div>
-                            <p className="truncate text-xs text-muted-foreground">
-                              Installation {installation.externalId} ·{" "}
-                              {installation.pluginInstallationResources?.length ?? 0} resources
-                              {installation.lastSyncedAt
-                                ? ` · Synced ${new Date(installation.lastSyncedAt).toLocaleDateString()}`
-                                : ""}
-                            </p>
-                            {installation.lastSyncError && (
-                              <p className="mt-1 line-clamp-1 text-xs text-destructive">
-                                {installation.lastSyncError}
-                              </p>
-                            )}
-                          </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-8 w-8 shrink-0"
-                                aria-label={`${installation.name} actions`}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleSyncPlugin(installation)}
-                                disabled={syncingId === installation.id}
-                              >
-                                <RefreshCw
-                                  className={`mr-2 h-3.5 w-3.5 ${syncingId === installation.id ? "animate-spin" : ""}`}
-                                />
-                                Sync
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setEditing(installation)}>
-                                <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
+                </Card>
+                <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <Info className="size-4 shrink-0" />
+                  Uses the same project permissions as the platform.
+                </p>
+              </section>
+            ))}
         </div>
       )}
+      <Sheet
+        open={!!managing}
+        onOpenChange={(open) => {
+          if (!open) setManaging(null);
+        }}
+      >
+        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+          {managing && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4 pr-6">
+                <PluginMark pluginId={managing.id} className="size-10" />
+                <div>
+                  <SheetTitle>{managing.name} connections</SheetTitle>
+                  <SheetDescription>
+                    Manage the connections that provide your evidence.
+                  </SheetDescription>
+                </div>
+              </div>
+              <Button variant="outline" onClick={() => handleConnectPlugin(managing)}>
+                <Plus className="size-4" />
+                Connect another {managing.name}
+              </Button>
+              <div className="space-y-4">
+                {installations
+                  .filter((item) => item.pluginId === managing.id)
+                  .map((installation) => (
+                    <article
+                      key={installation.id}
+                      className="space-y-4 rounded-xl border bg-card p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="font-semibold">{installation.name}</h3>
+                        <PluginStatusBadge
+                          status={installation.lastSyncError ? "ERROR" : installation.status}
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {installation.pluginInstallationResources?.length ?? 0} resources
+                        {installation.lastSyncedAt
+                          ? ` · Synced ${new Date(installation.lastSyncedAt).toLocaleDateString()}`
+                          : ""}
+                      </p>
+                      {installation.lastSyncError && (
+                        <p className="text-sm text-destructive">{installation.lastSyncError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={syncingId === installation.id}
+                          onClick={() => handleSyncPlugin(installation)}
+                        >
+                          <RefreshCw
+                            className={`size-3.5 ${syncingId === installation.id ? "animate-spin" : ""}`}
+                          />
+                          {syncingId === installation.id ? "Syncing…" : "Sync"}
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setEditing(installation)}>
+                          <Pencil className="size-3.5" />
+                          Edit
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
       <EditPluginInstallationDialog
         installation={editing}
         plugin={(availableQ.data ?? []).find((item) => item.id === editing?.pluginId)}

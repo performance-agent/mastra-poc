@@ -1,3 +1,4 @@
+﻿import { ExperienceProvider } from "@/lib/experience-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -88,7 +89,9 @@ function RootComponent() {
       <HeadContent />
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <AuthGate />
+          <ExperienceProvider>
+            <AuthGate />
+          </ExperienceProvider>
         </AuthProvider>
         <Toaster />
       </QueryClientProvider>
@@ -120,7 +123,7 @@ function AuthGate() {
         window.location.replace(redirect);
         return;
       }
-      navigate({ to: "/organizations", replace: true });
+      navigate({ to: "/", replace: true });
     }
   }, [firebaseUser, isLoading, isLogin, navigate, oauthRequest]);
 
