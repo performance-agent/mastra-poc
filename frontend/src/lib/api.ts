@@ -478,6 +478,20 @@ export const api = {
     }),
   deletePersonality: (id: string) => request<void>(`/personalities/${id}`, { method: "DELETE" }),
   listEvaluators: (groupId: string) => request<Evaluator[]>(`/groups/${groupId}/evaluators`),
+  listWorkspaceEvaluators: (workspaceId: string) =>
+    request<Evaluator[]>(`/workspaces/${workspaceId}/evaluators`),
+  createWorkspaceEvaluator: (workspaceId: string, body: EvaluatorInput) =>
+    request<Evaluator>(`/workspaces/${workspaceId}/evaluators`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listWorkspacePersonalities: (workspaceId: string) =>
+    request<Personality[]>(`/workspaces/${workspaceId}/personalities`),
+  createWorkspacePersonality: (workspaceId: string, body: { name: string; instruction: string }) =>
+    request<Personality>(`/workspaces/${workspaceId}/personalities`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   createEvaluator: (groupId: string, body: EvaluatorInput) =>
     request<Evaluator>(`/groups/${groupId}/evaluators`, {
       method: "POST",

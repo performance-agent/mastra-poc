@@ -1,9 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  GripVertical,
+  LockKeyhole,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { EvaluatorMark } from "@/components/app/EvaluatorMark";
+import { EvaluatorScopeBadge } from "@/components/app/EvaluatorScopeBadge";
 import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
@@ -23,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
+import { evaluatorConfigurationHref, invalidateEvaluatorQueries } from "@/lib/evaluators";
 import { knowledgeApi, type KnowledgeNode } from "@/lib/knowledge";
 import {
   EVALUATOR_CHARACTERS,
@@ -365,26 +377,47 @@ function emptyDraft(scope: EvaluatorScope, personalityId: string): Draft {
 }
 
 export function EvaluatorsTab({
+  organizationId,
+  workspaceId,
+  workspaceName,
+  groupName,
   groupId,
-  canManageGroup,
+  canManageGroup = false,
   canManageWorkspace,
+  evaluatorId,
+  onSelect,
 }: {
-  groupId: string;
-  canManageGroup: boolean;
+  organizationId: string;
+  workspaceId: string;
+  workspaceName: string;
+  groupName?: string;
+  groupId?: string;
+  canManageGroup?: boolean;
   canManageWorkspace: boolean;
+  evaluatorId?: string;
+  onSelect: (id: string | undefined) => void;
 }) {
   const qc = useQueryClient();
+  const workspaceContext = !groupId;
+  const canCreate = workspaceContext ? canManageWorkspace : canManageGroup;
+  const contextName = workspaceContext ? workspaceName : (groupName ?? "Project");
+  const newLabel = workspaceContext ? "New workspace evaluator" : "New project evaluator";
   const evaluatorsQ = useQuery({
-    queryKey: ["group", groupId, "evaluators"],
-    queryFn: () => api.listEvaluators(groupId),
+    queryKey: workspaceContext
+      ? ["workspace", workspaceId, "evaluators"]
+      : ["group", groupId, "evaluators"],
+    queryFn: () =>
+      groupId ? api.listEvaluators(groupId) : api.listWorkspaceEvaluators(workspaceId),
   });
   const personalitiesQ = useQuery({
-    queryKey: ["group", groupId, "personalities"],
-    queryFn: () => api.listPersonalities(groupId),
+    queryKey: workspaceContext
+      ? ["workspace", workspaceId, "personalities"]
+      : ["group", groupId, "personalities"],
+    queryFn: () =>
+      groupId ? api.listPersonalities(groupId) : api.listWorkspacePersonalities(workspaceId),
   });
   const evaluators = evaluatorsQ.data ?? [];
   const personalities = personalitiesQ.data ?? [];
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -399,13 +432,26 @@ export function EvaluatorsTab({
   } | null>(null);
   const [deletePersonalityId, setDeletePersonalityId] = useState<string | null>(null);
   const instructionRef = useRef<HTMLTextAreaElement>(null);
+  const loadedDraft = useRef<{ id: string; serialized: string } | null>(null);
 
   useEffect(() => {
-    if (creating || selectedId || !evaluatorsQ.data?.length) return;
-    const first = evaluatorsQ.data[0];
-    setSelectedId(first.id);
-    setDraft(draftFrom(first));
-  }, [creating, evaluatorsQ.data, selectedId]);
+    if (creating || !evaluatorsQ.data) return;
+    const selected = evaluatorsQ.data.find((item) => item.id === evaluatorId);
+    const nextDraft = selected ? draftFrom(selected) : null;
+    const previous = loadedDraft.current;
+    setDraft((current) =>
+      selected &&
+      previous?.id === selected.id &&
+      current &&
+      JSON.stringify(current) !== previous.serialized
+        ? current
+        : nextDraft,
+    );
+    loadedDraft.current = selected
+      ? { id: selected.id, serialized: JSON.stringify(nextDraft) }
+      : null;
+    if (!evaluatorId && evaluatorsQ.data[0]) onSelect(evaluatorsQ.data[0].id);
+  }, [creating, evaluatorId, evaluatorsQ.data, onSelect]);
 
   const fitInstruction = (element: HTMLTextAreaElement | null) => {
     if (!element || element.clientWidth === 0) return false;
@@ -427,8 +473,10 @@ export function EvaluatorsTab({
     return () => cancelAnimationFrame(frame);
   }, [personalityDraft]);
 
-  const selected = evaluators.find((evaluator) => evaluator.id === selectedId) ?? null;
-  const canEdit = draft?.scope === "WORKSPACE" ? canManageWorkspace : canManageGroup;
+  const selected = evaluators.find((evaluator) => evaluator.id === evaluatorId) ?? null;
+  const inherited = !workspaceContext && draft?.scope === "WORKSPACE";
+  const canEdit = !inherited && (workspaceContext ? canManageWorkspace : canManageGroup);
+  const missingSelection = Boolean(evaluatorId && !selected);
 
   useEffect(() => {
     if (!draft) return;
@@ -440,24 +488,23 @@ export function EvaluatorsTab({
 
   const open = (evaluator: Evaluator) => {
     setCreating(false);
-    setSelectedId(evaluator.id);
+    onSelect(evaluator.id);
     setDraft(draftFrom(evaluator));
   };
 
   const startCreate = () => {
-    const fallback =
-      personalities.find((item) => item.name === "Direct") ?? personalities[0];
+    const fallback = personalities.find((item) => item.name === "Direct") ?? personalities[0];
     if (!fallback) {
       toast.error("No personalities are available");
       return;
     }
     setCreating(true);
-    setSelectedId(null);
-    setDraft(emptyDraft("GROUP", fallback.id));
+    onSelect(undefined);
+    setDraft(emptyDraft(workspaceContext ? "WORKSPACE" : "GROUP", fallback.id));
   };
 
   const persist = async () => {
-    if (!draft) return;
+    if (!draft || !canEdit) return;
     const body: EvaluatorInput = {
       name: draft.name.trim(),
       description: draft.description.trim() || null,
@@ -479,19 +526,20 @@ export function EvaluatorsTab({
         .map((question) => ({ text: question.text.trim() })),
       disabledKnowledgeNodeIds: draft.disabledKnowledgeNodeIds,
       disabledResourceIds: draft.disabledResourceIds,
-      reportBlocks:
-        draft.reportBlocks && draft.reportBlocks.length > 0 ? draft.reportBlocks : null,
+      reportBlocks: draft.reportBlocks && draft.reportBlocks.length > 0 ? draft.reportBlocks : null,
       ...(draft.scope === "GROUP" ? { groupId } : {}),
     };
     setSaving(true);
     try {
       const saved = creating
-        ? await api.createEvaluator(groupId, body)
-        : await api.updateEvaluator(selectedId!, body);
+        ? groupId
+          ? await api.createEvaluator(groupId, body)
+          : await api.createWorkspaceEvaluator(workspaceId, body)
+        : await api.updateEvaluator(evaluatorId!, body);
       toast.success(creating ? "Evaluator created" : "Evaluator saved");
-      await qc.invalidateQueries({ queryKey: ["group", groupId, "evaluators"] });
+      await invalidateEvaluatorQueries(qc);
       setCreating(false);
-      setSelectedId(saved.id);
+      onSelect(saved.id);
       setDraft(draftFrom(saved));
     } catch (error) {
       toast.error(errorMessage(error));
@@ -505,7 +553,7 @@ export function EvaluatorsTab({
       toast.error("Name is required");
       return;
     }
-    if (draft.scope === "WORKSPACE") {
+    if (draft.scope === "WORKSPACE" && !creating) {
       setConfirmOpen(true);
       return;
     }
@@ -524,10 +572,9 @@ export function EvaluatorsTab({
     try {
       const saved = personalityDraft.id
         ? await api.updatePersonality(personalityDraft.id, body)
-        : await api.createPersonality(groupId, body);
+        : await api.createWorkspacePersonality(workspaceId, body);
       toast.success(personalityDraft.id ? "Personality saved" : "Personality created");
-      await qc.invalidateQueries({ queryKey: ["group", groupId, "personalities"] });
-      await qc.invalidateQueries({ queryKey: ["group", groupId, "evaluators"] });
+      await invalidateEvaluatorQueries(qc);
       setDraft((current) =>
         current && !personalityDraft.id ? { ...current, personalityId: saved.id } : current,
       );
@@ -542,8 +589,7 @@ export function EvaluatorsTab({
     try {
       await api.deletePersonality(deletePersonalityId);
       toast.success("Personality deleted");
-      await qc.invalidateQueries({ queryKey: ["group", groupId, "personalities"] });
-      await qc.invalidateQueries({ queryKey: ["group", groupId, "evaluators"] });
+      await invalidateEvaluatorQueries(qc);
       const remaining = personalities.filter((item) => item.id !== deletePersonalityId);
       setDraft((current) =>
         current?.personalityId === deletePersonalityId
@@ -564,551 +610,753 @@ export function EvaluatorsTab({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
-      <Card className="h-fit rounded-xl p-3 shadow-card">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">Evaluators</h2>
-          {canManageGroup && (
-            <Button size="sm" variant="outline" onClick={startCreate}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> New
-            </Button>
-          )}
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Evaluators</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {workspaceContext
+              ? "Shared evaluators, available in every project in this workspace."
+              : "Use a project evaluator or one shared by your workspace."}
+          </p>
         </div>
-        {evaluators.length === 0 ? (
-          <EmptyState
-            title="No evaluators yet"
-            description="Create one to decide how this project should be read."
-            actionLabel={canManageGroup ? "New evaluator" : undefined}
-            onAction={canManageGroup ? startCreate : undefined}
-          />
-        ) : (
-          <div className="space-y-4">
-            {evaluators.map((evaluator) => {
-              const selected = !creating && selectedId === evaluator.id;
-              return (
-                <button
-                  key={evaluator.id}
-                  type="button"
-                  onClick={() => open(evaluator)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-2 text-left transition-[padding] duration-300 ${
-                    selected
-                      ? "py-3 text-foreground"
-                      : "py-2 text-muted-foreground hover:text-foreground"
-                  }`}
-                  onMouseEnter={() => setHoveredId(evaluator.id)}
-                  onMouseLeave={() =>
-                    setHoveredId((current) => (current === evaluator.id ? null : current))
-                  }
-                >
-                  <EvaluatorMark
-                    name={evaluator.name}
-                    avatar={evaluator.avatar}
-                    state={hoveredId === evaluator.id ? "hover" : "idle"}
-                    size={selected ? 52 : 40}
-                  />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {evaluator.name}
-                    </span>
-                    <span className="block text-[11px]">
-                      {evaluator.scope === "WORKSPACE" ? "Workspace" : "Project"} ·{" "}
-                      {evaluator.effort.toLowerCase()}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        {canCreate && (
+          <Button onClick={startCreate}>
+            <Plus className="mr-1.5 size-4" />
+            {newLabel}
+          </Button>
         )}
-      </Card>
-
-      {draft ? (
-        <Card className="rounded-xl p-4 shadow-card sm:p-5">
-          <div className="mb-5 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="font-semibold">
-                {creating ? "New evaluator" : draft.name || "Evaluator"}
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                How it speaks, how it judges, and what the report has to answer.
+      </div>
+      {missingSelection && !creating && (
+        <p role="status" className="rounded-lg border p-3 text-sm">
+          This evaluator is no longer available in this context. Select another evaluator.
+        </p>
+      )}
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
+        <Card className="h-fit rounded-xl p-3 shadow-card">
+          {evaluators.length === 0 ? (
+            <EmptyState
+              title="No evaluators yet"
+              description={`Create one to decide how ${contextName} should be read.`}
+              actionLabel={canCreate ? newLabel : undefined}
+              onAction={canCreate ? startCreate : undefined}
+            />
+          ) : (
+            <div className="space-y-5">
+              {(workspaceContext
+                ? (["WORKSPACE"] as const)
+                : (["GROUP", "WORKSPACE"] as const)
+              ).map((scope) => {
+                const items = evaluators.filter((item) => item.scope === scope);
+                return (
+                  <section
+                    key={scope}
+                    aria-label={
+                      scope === "GROUP"
+                        ? "Project evaluators"
+                        : workspaceContext
+                          ? "Workspace evaluators"
+                          : "From workspace"
+                    }
+                    className="space-y-2"
+                  >
+                    <div className="border-b pb-2">
+                      <h3 className="text-sm font-semibold">
+                        {scope === "GROUP"
+                          ? "Project evaluators"
+                          : workspaceContext
+                            ? "Workspace evaluators"
+                            : "From workspace"}{" "}
+                        <span className="ml-1 text-muted-foreground">{items.length}</span>
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {scope === "GROUP" ? groupName : workspaceName}
+                      </p>
+                    </div>
+                    {!items.length && (
+                      <p className="py-2 text-xs text-muted-foreground">
+                        No evaluators at this level yet.
+                      </p>
+                    )}
+                    {items.map((evaluator) => {
+                      const selected = !creating && evaluatorId === evaluator.id;
+                      return (
+                        <button
+                          key={evaluator.id}
+                          type="button"
+                          onClick={() => open(evaluator)}
+                          className={`flex w-full items-center gap-3 rounded-xl px-2 text-left transition-[padding] duration-300 ${
+                            selected
+                              ? "bg-[var(--brand-soft)] py-3 text-foreground"
+                              : "py-2 text-muted-foreground hover:text-foreground"
+                          }`}
+                          onMouseEnter={() => setHoveredId(evaluator.id)}
+                          onMouseLeave={() =>
+                            setHoveredId((current) => (current === evaluator.id ? null : current))
+                          }
+                        >
+                          <EvaluatorMark
+                            name={evaluator.name}
+                            avatar={evaluator.avatar}
+                            state={hoveredId === evaluator.id ? "hover" : "idle"}
+                            size={selected ? 52 : 40}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
+                              {evaluator.name}
+                              <EvaluatorScopeBadge scope={evaluator.scope} />
+                            </span>
+                            <span className="block text-[11px]">
+                              {evaluator.scope === "WORKSPACE" ? "Workspace" : "Project"} ·{" "}
+                              {evaluator.effort.toLowerCase()}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </section>
+                );
+              })}
+              <p className="border-t pt-3 text-xs text-muted-foreground">
+                Workspace evaluators are available in all projects automatically.
               </p>
             </div>
-            {canEdit && (
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  size="sm"
-                  onClick={requestSave}
-                  disabled={saving}
-                  className="hover:bg-primary"
-                >
-                  {saving ? "Saving..." : creating ? "Create" : "Save"}
-                </Button>
-                {!creating && selected && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="hover:bg-red-600 hover:text-white"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+          )}
+        </Card>
 
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="evaluator-name">Name</Label>
-              <Input
-                id="evaluator-name"
-                value={draft.name}
-                disabled={!canEdit}
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="evaluator-description">Description</Label>
-              <Textarea
-                id="evaluator-description"
-                value={draft.description}
-                disabled={!canEdit}
-                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-              />
-            </div>
-            <div className="grid gap-3">
-              <div className="flex items-center justify-between gap-2">
+        {draft && !canEdit && selected ? (
+          <Card className="space-y-5 rounded-xl p-4 shadow-card sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <EvaluatorMark name={selected.name} avatar={selected.avatar} size={48} />
                 <div>
-                  <Label>Personality</Label>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    How this evaluator speaks. Up to three. At least one stays.
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-semibold">{selected.name}</h2>
+                    <EvaluatorScopeBadge scope={selected.scope} />
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {selected.scope === "WORKSPACE" ? workspaceName : groupName}
                   </p>
                 </div>
-                {canManageWorkspace && personalities.length < MAX_PERSONALITIES && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setPersonalityDraft({ name: "", instruction: "" })
-                    }
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" /> New
-                  </Button>
-                )}
               </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {personalities.map((item) => {
-                  const selected = draft.personalityId === item.id;
-                  return (
-                    <div
-                      key={item.id}
-                      role="button"
-                      tabIndex={canEdit ? 0 : -1}
-                      aria-pressed={selected}
-                      onClick={() => {
-                        if (!canEdit) return;
-                        setDraft({ ...draft, personalityId: item.id });
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.target !== event.currentTarget) return;
-                        if (!canEdit || (event.key !== "Enter" && event.key !== " ")) return;
-                        event.preventDefault();
-                        setDraft({ ...draft, personalityId: item.id });
-                      }}
-                      className={`cursor-pointer rounded-xl border px-3 py-3 text-left ${
-                        selected
-                          ? "border-foreground bg-background shadow-card"
-                          : "border-border text-muted-foreground"
-                      } ${canEdit ? "" : "cursor-default"}`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="block min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                          {item.name}
-                        </span>
-                        {canManageWorkspace && (
-                          <div className="flex shrink-0">
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7"
-                              aria-label={`Edit ${item.name}`}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setPersonalityDraft({
-                                  id: item.id,
-                                  name: item.name,
-                                  instruction: item.instruction,
-                                });
-                              }}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7"
-                              aria-label={`Delete ${item.name}`}
-                              disabled={personalities.length <= 1}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDeletePersonalityId(item.id);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                      <span className="mt-1 line-clamp-3 block text-xs">{item.instruction}</span>
+              {inherited && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to={evaluatorConfigurationHref(organizationId, selected)}>
+                    Manage in workspace <ExternalLink className="ml-1 size-3.5" />
+                  </Link>
+                </Button>
+              )}
+            </div>
+            <div className="rounded-lg border bg-[var(--brand-soft)] p-3 text-sm">
+              {inherited ? (
+                <>
+                  <p className="font-medium">Shared from {workspaceName}</p>
+                  <p className="mt-1">
+                    Available in all projects. Changes are managed in the workspace.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  {workspaceContext
+                    ? "Available in all projects."
+                    : `Only available in ${contextName}.`}
+                </p>
+              )}
+              {!canManageWorkspace && selected.scope === "WORKSPACE" && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs">
+                  <LockKeyhole className="size-3.5" />
+                  Workspace admin permissions required to edit.
+                </p>
+              )}
+            </div>
+            <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
+              <dt className="font-medium">Description</dt>
+              <dd>{selected.description || "No description"}</dd>
+              <dt className="font-medium">Personality</dt>
+              <dd>{selected.personality?.name}</dd>
+              <dt className="font-medium">Effort</dt>
+              <dd className="capitalize">{selected.effort.toLowerCase()}</dd>
+            </dl>
+            <section className="space-y-2">
+              <h3 className="font-medium">Behavior rules</h3>
+              {selected.rules.length ? (
+                selected.rules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium">{rule.name}</p>
+                      {rule.description && (
+                        <p className="mt-1 text-muted-foreground">{rule.description}</p>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <div className="flex items-center justify-between">
-                <Label>Behavior</Label>
-                {canEdit && draft.rules.length < MAX_BEHAVIOR_RULES && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setDraft({ ...draft, rules: [...draft.rules, blankRule()] })}
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" /> Add
-                  </Button>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                How it should judge what it sees. A short order, not a question to answer. Up to
-                four. Importance is attention, not a score.
-              </p>
-              {draft.rules.map((rule, index) => (
-                <div key={rule.key} className="grid gap-2 rounded-lg border border-border p-3">
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
-                    <Input
-                      aria-label="Rule name"
-                      placeholder="Rule name"
-                      value={rule.name}
-                      disabled={!canEdit}
-                      onChange={(event) => {
-                        const rules = draft.rules.slice();
-                        rules[index] = { ...rule, name: event.target.value };
-                        setDraft({ ...draft, rules });
-                      }}
-                    />
-                    <Input
-                      aria-label="Importance"
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={rule.valuation}
-                      disabled={!canEdit}
-                      onChange={(event) => {
-                        const rules = draft.rules.slice();
-                        rules[index] = {
-                          ...rule,
-                          valuation: Math.min(10, Math.max(1, Number(event.target.value) || 1)),
-                        };
-                        setDraft({ ...draft, rules });
-                      }}
-                    />
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      Importance {rule.valuation}
+                    </span>
                   </div>
-                  <Textarea
-                    aria-label="Rule description"
-                    placeholder="When you see this, judge it this way."
-                    value={rule.description}
-                    disabled={!canEdit}
-                    onChange={(event) => {
-                      const rules = draft.rules.slice();
-                      rules[index] = { ...rule, description: event.target.value };
-                      setDraft({ ...draft, rules });
-                    }}
-                  />
-                  {canEdit && !(draft.rules.length === 1 && isBlankRule(rule)) && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="justify-self-start"
-                      onClick={() =>
-                        setDraft({
-                          ...draft,
-                          rules: withOpenRule(draft.rules.filter((item) => item.key !== rule.key)),
-                        })
-                      }
-                    >
-                      Remove rule
-                    </Button>
-                  )}
-                </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No behavior rules.</p>
+              )}
+            </section>
+            <section className="space-y-2">
+              <h3 className="font-medium">Questions</h3>
+              {selected.questions.map((question) => (
+                <p key={question.id} className="rounded-lg border p-3 text-sm">
+                  {question.text}
+                </p>
               ))}
-            </div>
-
-            <div className="grid gap-3">
-              <div className="flex items-center justify-between">
-                <Label>Questions</Label>
-                {canEdit && draft.questions.length < MAX_QUESTIONS && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        questions: [...draft.questions, blankQuestion()],
-                      })
-                    }
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" /> Add
-                  </Button>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                What the report has to answer. One short question each. These do not change the
-                voice.
+              {!selected.questions.length && (
+                <p className="text-sm text-muted-foreground">No questions.</p>
+              )}
+            </section>
+            {selected.evaluationEmphasis.length > 0 && (
+              <p className="text-sm">Focus: {selected.evaluationEmphasis.join(", ")}</p>
+            )}
+            {selected.evaluationNotes && (
+              <p className="whitespace-pre-wrap text-sm">{selected.evaluationNotes}</p>
+            )}
+            <section className="space-y-2">
+              <h3 className="font-medium">Report structure</h3>
+              <p className="text-sm text-muted-foreground">
+                {selected.reportBlocks?.map((block) => block.title || block.kind).join(" · ") ||
+                  "Default report structure"}
               </p>
-              {draft.questions.map((question, index) => (
-                <div key={question.key} className="flex items-start gap-2">
-                  <Input
-                    aria-label="Question"
-                    placeholder="What should this report answer?"
-                    value={question.text}
-                    disabled={!canEdit}
-                    onChange={(event) => {
-                      const questions = draft.questions.slice();
-                      questions[index] = { ...question, text: event.target.value };
-                      setDraft({ ...draft, questions });
-                    }}
-                  />
-                  {canEdit && !(draft.questions.length === 1 && isBlankQuestion(question)) && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        setDraft({
-                          ...draft,
-                          questions: withOpenQuestion(
-                            draft.questions.filter((item) => item.key !== question.key),
-                          ),
-                        })
-                      }
-                    >
-                      Remove
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <ReportStructure
-              blocks={draft.reportBlocks}
-              canEdit={canEdit}
-              onChange={(reportBlocks) => setDraft({ ...draft, reportBlocks })}
-            />
-
+            </section>
             <SourceAccess
+              workspaceId={workspaceId}
               groupId={groupId}
-              disabledKnowledgeNodeIds={draft.disabledKnowledgeNodeIds}
-              disabledResourceIds={draft.disabledResourceIds}
-              canEdit={canEdit}
-              onChange={(next) => setDraft({ ...draft, ...next })}
+              disabledKnowledgeNodeIds={selected.disabledKnowledgeNodeIds}
+              disabledResourceIds={selected.disabledResourceIds}
+              canEdit={false}
+              onChange={() => {}}
             />
-
-            <div className="grid gap-3">
+          </Card>
+        ) : draft ? (
+          <Card className="rounded-xl p-4 shadow-card sm:p-5">
+            <div className="mb-5 flex items-start justify-between gap-3">
               <div>
-                <Label>Character</Label>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Pick a shape, then a color. Each evaluator keeps its own.
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-semibold">
+                    {creating ? newLabel : draft.name || "Evaluator"}
+                  </h2>
+                  <EvaluatorScopeBadge scope={draft.scope} />
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {draft.scope === "WORKSPACE" ? workspaceName : groupName}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  How it speaks, how it judges, and what the report has to answer.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center justify-center gap-6 overflow-visible py-4">
-                {EVALUATOR_CHARACTERS.map((character, index) => {
-                  const selected = avatarParts(draft.avatar).character === index;
-                  return (
-                    <button
-                      key={character.variant}
+              {canEdit && (
+                <div className="flex shrink-0 items-center gap-1">
+                  {creating && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setCreating(false);
+                        setDraft(null);
+                        onSelect(evaluators[0]?.id);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={requestSave}
+                    disabled={saving}
+                    className="hover:bg-primary"
+                  >
+                    {saving ? "Saving..." : creating ? "Create" : "Save"}
+                  </Button>
+                  {!creating && selected && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="hover:bg-red-600 hover:text-white"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-5 rounded-lg border bg-[var(--brand-soft)] px-3 py-3 text-sm">
+              {workspaceContext ? (
+                creating ? (
+                  <p>
+                    Available in all projects. Create it once and use it across this workspace.
+                    Creating an evaluator does not run an evaluation.
+                  </p>
+                ) : (
+                  <p>Changes apply to all projects in {workspaceName}.</p>
+                )
+              ) : (
+                <p>Only available in {contextName}.</p>
+              )}
+            </div>
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="evaluator-name">Name</Label>
+                <Input
+                  id="evaluator-name"
+                  value={draft.name}
+                  disabled={!canEdit}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="evaluator-description">Description</Label>
+                <Textarea
+                  id="evaluator-description"
+                  value={draft.description}
+                  disabled={!canEdit}
+                  onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                />
+              </div>
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <Label>Personality</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      How this evaluator speaks. Up to three. At least one stays.
+                    </p>
+                  </div>
+                  {canManageWorkspace && !inherited && personalities.length < MAX_PERSONALITIES && (
+                    <Button
                       type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPersonalityDraft({ name: "", instruction: "" })}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> New
+                    </Button>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {personalities.map((item) => {
+                    const selected = draft.personalityId === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        role="button"
+                        tabIndex={canEdit ? 0 : -1}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          if (!canEdit) return;
+                          setDraft({ ...draft, personalityId: item.id });
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (!canEdit || (event.key !== "Enter" && event.key !== " ")) return;
+                          event.preventDefault();
+                          setDraft({ ...draft, personalityId: item.id });
+                        }}
+                        className={`cursor-pointer rounded-xl border px-3 py-3 text-left ${
+                          selected
+                            ? "border-foreground bg-background shadow-card"
+                            : "border-border text-muted-foreground"
+                        } ${canEdit ? "" : "cursor-default"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="block min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                            {item.name}
+                          </span>
+                          {canManageWorkspace && !inherited && (
+                            <div className="flex shrink-0">
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                aria-label={`Edit ${item.name}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setPersonalityDraft({
+                                    id: item.id,
+                                    name: item.name,
+                                    instruction: item.instruction,
+                                  });
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                aria-label={`Delete ${item.name}`}
+                                disabled={personalities.length <= 1}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDeletePersonalityId(item.id);
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <span className="mt-1 line-clamp-3 block text-xs">{item.instruction}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between">
+                  <Label>Behavior</Label>
+                  {canEdit && draft.rules.length < MAX_BEHAVIOR_RULES && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setDraft({ ...draft, rules: [...draft.rules, blankRule()] })}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  How it should judge what it sees. A short order, not a question to answer. Up to
+                  four. Importance is attention, not a score.
+                </p>
+                {draft.rules.map((rule, index) => (
+                  <div key={rule.key} className="grid gap-2 rounded-lg border border-border p-3">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
+                      <Input
+                        aria-label="Rule name"
+                        placeholder="Rule name"
+                        value={rule.name}
+                        disabled={!canEdit}
+                        onChange={(event) => {
+                          const rules = draft.rules.slice();
+                          rules[index] = { ...rule, name: event.target.value };
+                          setDraft({ ...draft, rules });
+                        }}
+                      />
+                      <Input
+                        aria-label="Importance"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={rule.valuation}
+                        disabled={!canEdit}
+                        onChange={(event) => {
+                          const rules = draft.rules.slice();
+                          rules[index] = {
+                            ...rule,
+                            valuation: Math.min(10, Math.max(1, Number(event.target.value) || 1)),
+                          };
+                          setDraft({ ...draft, rules });
+                        }}
+                      />
+                    </div>
+                    <Textarea
+                      aria-label="Rule description"
+                      placeholder="When you see this, judge it this way."
+                      value={rule.description}
                       disabled={!canEdit}
-                      aria-label={character.label}
-                      aria-pressed={selected}
-                      className={`origin-center rounded-2xl transition-transform duration-300 ease-out ${
-                        selected
-                          ? "z-10 scale-[1.65] drop-shadow-[0_14px_16px_rgba(0,0,0,0.16)]"
-                          : "scale-100"
-                      }`}
-                      onMouseEnter={() => setCharacterHover(index)}
-                      onMouseLeave={() =>
-                        setCharacterHover((current) => (current === index ? null : current))
-                      }
+                      onChange={(event) => {
+                        const rules = draft.rules.slice();
+                        rules[index] = { ...rule, description: event.target.value };
+                        setDraft({ ...draft, rules });
+                      }}
+                    />
+                    {canEdit && !(draft.rules.length === 1 && isBlankRule(rule)) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="justify-self-start"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            rules: withOpenRule(
+                              draft.rules.filter((item) => item.key !== rule.key),
+                            ),
+                          })
+                        }
+                      >
+                        Remove rule
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between">
+                  <Label>Questions</Label>
+                  {canEdit && draft.questions.length < MAX_QUESTIONS && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
                       onClick={() =>
                         setDraft({
                           ...draft,
-                          avatar: packAvatar(index, avatarParts(draft.avatar).color),
+                          questions: [...draft.questions, blankQuestion()],
                         })
                       }
                     >
-                      <EvaluatorMark
-                        name={character.label}
-                        avatar={packAvatar(index, 0)}
-                        color={
-                          selected ? EVALUATOR_COLORS[avatarParts(draft.avatar).color].color : null
-                        }
-                        state={characterHover === index ? "hover" : "idle"}
-                        size={72}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-3 py-1">
-                {EVALUATOR_COLORS.map((swatch, index) => {
-                  const selected = avatarParts(draft.avatar).color === index;
-                  return (
-                    <button
-                      key={swatch.label}
-                      type="button"
+                      <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  What the report has to answer. One short question each. These do not change the
+                  voice.
+                </p>
+                {draft.questions.map((question, index) => (
+                  <div key={question.key} className="flex items-start gap-2">
+                    <Input
+                      aria-label="Question"
+                      placeholder="What should this report answer?"
+                      value={question.text}
                       disabled={!canEdit}
-                      aria-label={swatch.label}
-                      aria-pressed={selected}
-                      className={`h-6 w-6 origin-center rounded-full transition-transform duration-300 ease-out ${
-                        selected
-                          ? "z-10 scale-150 shadow-[0_6px_12px_rgba(0,0,0,0.2)]"
-                          : "scale-100"
-                      }`}
-                      style={{ backgroundColor: swatch.color }}
-                      onClick={() =>
-                        setDraft({
-                          ...draft,
-                          avatar: packAvatar(avatarParts(draft.avatar).character, index),
-                        })
-                      }
+                      onChange={(event) => {
+                        const questions = draft.questions.slice();
+                        questions[index] = { ...question, text: event.target.value };
+                        setDraft({ ...draft, questions });
+                      }}
                     />
-                  );
-                })}
+                    {canEdit && !(draft.questions.length === 1 && isBlankQuestion(question)) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            questions: withOpenQuestion(
+                              draft.questions.filter((item) => item.key !== question.key),
+                            ),
+                          })
+                        }
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <ReportStructure
+                blocks={draft.reportBlocks}
+                canEdit={canEdit}
+                onChange={(reportBlocks) => setDraft({ ...draft, reportBlocks })}
+              />
+
+              <SourceAccess
+                workspaceId={workspaceId}
+                groupId={groupId}
+                disabledKnowledgeNodeIds={draft.disabledKnowledgeNodeIds}
+                disabledResourceIds={draft.disabledResourceIds}
+                canEdit={canEdit}
+                onChange={(next) => setDraft({ ...draft, ...next })}
+              />
+
+              <div className="grid gap-3">
+                <div>
+                  <Label>Character</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Pick a shape, then a color. Each evaluator keeps its own.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-6 overflow-visible py-4">
+                  {EVALUATOR_CHARACTERS.map((character, index) => {
+                    const selected = avatarParts(draft.avatar).character === index;
+                    return (
+                      <button
+                        key={character.variant}
+                        type="button"
+                        disabled={!canEdit}
+                        aria-label={character.label}
+                        aria-pressed={selected}
+                        className={`origin-center rounded-2xl transition-transform duration-300 ease-out ${
+                          selected
+                            ? "z-10 scale-[1.65] drop-shadow-[0_14px_16px_rgba(0,0,0,0.16)]"
+                            : "scale-100"
+                        }`}
+                        onMouseEnter={() => setCharacterHover(index)}
+                        onMouseLeave={() =>
+                          setCharacterHover((current) => (current === index ? null : current))
+                        }
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            avatar: packAvatar(index, avatarParts(draft.avatar).color),
+                          })
+                        }
+                      >
+                        <EvaluatorMark
+                          name={character.label}
+                          avatar={packAvatar(index, 0)}
+                          color={
+                            selected
+                              ? EVALUATOR_COLORS[avatarParts(draft.avatar).color].color
+                              : null
+                          }
+                          state={characterHover === index ? "hover" : "idle"}
+                          size={72}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-3 py-1">
+                  {EVALUATOR_COLORS.map((swatch, index) => {
+                    const selected = avatarParts(draft.avatar).color === index;
+                    return (
+                      <button
+                        key={swatch.label}
+                        type="button"
+                        disabled={!canEdit}
+                        aria-label={swatch.label}
+                        aria-pressed={selected}
+                        className={`h-6 w-6 origin-center rounded-full transition-transform duration-300 ease-out ${
+                          selected
+                            ? "z-10 scale-150 shadow-[0_6px_12px_rgba(0,0,0,0.2)]"
+                            : "scale-100"
+                        }`}
+                        style={{ backgroundColor: swatch.color }}
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            avatar: packAvatar(avatarParts(draft.avatar).character, index),
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <EffortSlider
+                value={draft.effort}
+                disabled={!canEdit}
+                onChange={(effort) => setDraft({ ...draft, effort })}
+              />
+            </div>
+          </Card>
+        ) : (
+          <Card className="rounded-xl p-8 text-center shadow-card">
+            <p className="text-sm text-muted-foreground">
+              Select an evaluator to see its configuration.
+            </p>
+          </Card>
+        )}
+
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title="This evaluator is shared"
+          description="Saving a workspace evaluator changes how it reads every project in this workspace."
+          confirmLabel="Save anyway"
+          onConfirm={() => {
+            setConfirmOpen(false);
+            void persist();
+          }}
+        />
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Delete ${selected?.name ?? "this evaluator"}?`}
+          description="Existing reports stay, labeled as general once the evaluator is gone."
+          destructive
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            if (!selected) return;
+            try {
+              await api.deleteEvaluator(selected.id);
+              toast.success("Evaluator deleted");
+              await invalidateEvaluatorQueries(qc);
+              onSelect(undefined);
+              setDraft(null);
+              setCreating(false);
+            } catch (error) {
+              toast.error(errorMessage(error));
+            }
+          }}
+        />
+        <ConfirmDialog
+          open={deletePersonalityId !== null}
+          onOpenChange={(open) => {
+            if (!open) setDeletePersonalityId(null);
+          }}
+          title="Delete this personality?"
+          description="Evaluators using it switch to another personality. The last one cannot be deleted."
+          destructive
+          confirmLabel="Delete"
+          onConfirm={() => void removePersonality()}
+        />
+        <Dialog
+          open={personalityDraft !== null}
+          onOpenChange={(open) => {
+            if (!open) setPersonalityDraft(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {personalityDraft?.id ? "Edit personality" : "New personality"}
+              </DialogTitle>
+              <DialogDescription>
+                This changes emphasis and tone. Claims still have to follow the evidence.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="personality-name">Name</Label>
+                <Input
+                  id="personality-name"
+                  value={personalityDraft?.name ?? ""}
+                  maxLength={40}
+                  onChange={(event) =>
+                    setPersonalityDraft((current) =>
+                      current ? { ...current, name: event.target.value } : current,
+                    )
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="personality-instruction">Instruction</Label>
+                <Textarea
+                  id="personality-instruction"
+                  ref={instructionRef}
+                  value={personalityDraft?.instruction ?? ""}
+                  maxLength={800}
+                  rows={1}
+                  className="min-h-0 resize-y overflow-hidden [field-sizing:content]"
+                  onChange={(event) => {
+                    fitInstruction(event.currentTarget);
+                    setPersonalityDraft((current) =>
+                      current ? { ...current, instruction: event.target.value } : current,
+                    );
+                  }}
+                />
               </div>
             </div>
-
-            <EffortSlider
-              value={draft.effort}
-              disabled={!canEdit}
-              onChange={(effort) => setDraft({ ...draft, effort })}
-            />
-          </div>
-        </Card>
-      ) : (
-        <Card className="rounded-xl p-8 text-center shadow-card">
-          <p className="text-sm text-muted-foreground">
-            Select an evaluator to see its configuration.
-          </p>
-        </Card>
-      )}
-
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="This evaluator is shared"
-        description="Saving a workspace evaluator changes how it reads every project in this workspace."
-        confirmLabel="Save anyway"
-        onConfirm={() => {
-          setConfirmOpen(false);
-          void persist();
-        }}
-      />
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={`Delete ${selected?.name ?? "this evaluator"}?`}
-        description="Existing reports stay, labeled as general once the evaluator is gone."
-        destructive
-        confirmLabel="Delete"
-        onConfirm={async () => {
-          if (!selected) return;
-          try {
-            await api.deleteEvaluator(selected.id);
-            toast.success("Evaluator deleted");
-            setSelectedId(null);
-            setDraft(null);
-            setCreating(false);
-            await qc.invalidateQueries({ queryKey: ["group", groupId, "evaluators"] });
-          } catch (error) {
-            toast.error(errorMessage(error));
-          }
-        }}
-      />
-      <ConfirmDialog
-        open={deletePersonalityId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletePersonalityId(null);
-        }}
-        title="Delete this personality?"
-        description="Evaluators using it switch to another personality. The last one cannot be deleted."
-        destructive
-        confirmLabel="Delete"
-        onConfirm={() => void removePersonality()}
-      />
-      <Dialog
-        open={personalityDraft !== null}
-        onOpenChange={(open) => {
-          if (!open) setPersonalityDraft(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {personalityDraft?.id ? "Edit personality" : "New personality"}
-            </DialogTitle>
-            <DialogDescription>
-              This changes emphasis and tone. Claims still have to follow the evidence.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="personality-name">Name</Label>
-              <Input
-                id="personality-name"
-                value={personalityDraft?.name ?? ""}
-                maxLength={40}
-                onChange={(event) =>
-                  setPersonalityDraft((current) =>
-                    current ? { ...current, name: event.target.value } : current,
-                  )
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="personality-instruction">Instruction</Label>
-              <Textarea
-                id="personality-instruction"
-                ref={instructionRef}
-                value={personalityDraft?.instruction ?? ""}
-                maxLength={800}
-                rows={1}
-                className="min-h-0 resize-y overflow-hidden [field-sizing:content]"
-                onChange={(event) => {
-                  fitInstruction(event.currentTarget);
-                  setPersonalityDraft((current) =>
-                    current ? { ...current, instruction: event.target.value } : current,
-                  );
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setPersonalityDraft(null)}>
-              Cancel
-            </Button>
-            <Button type="button" onClick={() => void savePersonality()}>
-              {personalityDraft?.id ? "Save" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPersonalityDraft(null)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void savePersonality()}>
+                {personalityDraft?.id ? "Save" : "Create"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }
@@ -1126,53 +1374,50 @@ function knowledgeDetail(node: KnowledgeNode) {
 }
 
 function SourceAccess({
+  workspaceId,
   groupId,
   disabledKnowledgeNodeIds,
   disabledResourceIds,
   canEdit,
   onChange,
 }: {
-  groupId: string;
+  workspaceId: string;
+  groupId?: string;
   disabledKnowledgeNodeIds: string[];
   disabledResourceIds: string[];
   canEdit: boolean;
-  onChange: (next: {
-    disabledKnowledgeNodeIds?: string[];
-    disabledResourceIds?: string[];
-  }) => void;
+  onChange: (next: { disabledKnowledgeNodeIds?: string[]; disabledResourceIds?: string[] }) => void;
 }) {
-  const group = useQuery({
-    queryKey: ["group", groupId],
-    queryFn: () => api.getGroup(groupId),
-  });
   const resources = useQuery({
-    queryKey: ["group", groupId, "resources"],
-    queryFn: () => api.listGroupResources(groupId),
+    queryKey: groupId ? ["group", groupId, "resources"] : ["workspace", workspaceId, "resources"],
+    queryFn: () =>
+      groupId ? api.listGroupResources(groupId) : api.listWorkspaceResources(workspaceId),
   });
   const library = useQuery({
-    queryKey: ["knowledge", group.data?.workspaceId, groupId],
-    queryFn: () => knowledgeApi.list({ workspaceId: group.data!.workspaceId!, groupId }),
-    enabled: Boolean(group.data?.workspaceId),
+    queryKey: ["knowledge", workspaceId, groupId],
+    queryFn: () => knowledgeApi.list({ workspaceId, groupId }),
   });
   const [open, setOpen] = useState(false);
   const documents = (library.data?.nodes ?? []).filter(
     (node) => node.kind === "DOCUMENT" && !node.excluded,
   );
   const assigned = resources.data ?? [];
-  const visibleIds = new Set([...assigned.map((resource) => resource.id), ...documents.map((node) => node.id)]);
+  const visibleIds = new Set([
+    ...assigned.map((resource) => resource.id),
+    ...documents.map((node) => node.id),
+  ]);
   const turnedOff = [...disabledResourceIds, ...disabledKnowledgeNodeIds].filter((id) =>
     visibleIds.has(id),
   ).length;
   const total = assigned.length + documents.length;
-  const loading =
-    group.isLoading || resources.isLoading || (Boolean(group.data?.workspaceId) && library.isLoading);
-  const failed = group.error ?? resources.error ?? library.error;
+  const loading = resources.isLoading || library.isLoading;
+  const failed = resources.error ?? library.error;
   const summary = loading
     ? "Loading sources…"
     : failed
       ? "Sources could not be loaded"
       : total === 0
-        ? "No sources in this project"
+        ? `No sources in this ${groupId ? "project" : "workspace"}`
         : turnedOff === 0
           ? `${total} sources, all on`
           : `${total} sources, ${turnedOff} off`;
@@ -1183,7 +1428,7 @@ function SourceAccess({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
         <p className="text-xs text-muted-foreground">{summary}</p>
         <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-          Configure
+          {canEdit ? "Configure" : "View sources"}
         </Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -1201,7 +1446,6 @@ function SourceAccess({
             <ErrorState
               message={errorMessage(failed)}
               onRetry={() => {
-                void group.refetch();
                 void resources.refetch();
                 void library.refetch();
               }}
@@ -1212,7 +1456,7 @@ function SourceAccess({
                 <p className="text-xs font-medium text-muted-foreground">Plugin resources</p>
                 {assigned.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    No plugin resources assigned to this project.
+                    No plugin resources assigned to this {groupId ? "project" : "workspace"}.
                   </p>
                 ) : (
                   assigned.map((resource) => (
@@ -1239,7 +1483,7 @@ function SourceAccess({
                 <p className="text-xs font-medium text-muted-foreground">Knowledge</p>
                 {documents.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    No knowledge documents in this project.
+                    No knowledge documents in this {groupId ? "project" : "workspace"}.
                   </p>
                 ) : (
                   documents.map((node) => (
@@ -1314,7 +1558,8 @@ function standardBlocks(): ReportBlockConfig[] {
 }
 
 function moveBlock(blocks: ReportBlockConfig[], from: number, to: number) {
-  if (from === to || from < 0 || to < 0 || from >= blocks.length || to >= blocks.length) return blocks;
+  if (from === to || from < 0 || to < 0 || from >= blocks.length || to >= blocks.length)
+    return blocks;
   const copy = blocks.slice();
   const [item] = copy.splice(from, 1);
   copy.splice(to, 0, item);
@@ -1361,7 +1606,8 @@ function ReportStructure({
         <div>
           <Label>Report structure</Label>
           <p className="mt-1 text-xs text-muted-foreground">
-            Off uses the standard report. On lets this evaluator choose its own blocks. Drag a section to reorder it.
+            Off uses the standard report. On lets this evaluator choose its own blocks. Drag a
+            section to reorder it.
           </p>
         </div>
         <Switch
@@ -1374,7 +1620,9 @@ function ReportStructure({
       {blocks && (
         <div className="grid gap-2">
           {blocks.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Add at least one block, or turn this off.</p>
+            <p className="text-xs text-muted-foreground">
+              Add at least one block, or turn this off.
+            </p>
           ) : (
             blocks.map((block, index) => (
               <div
@@ -1421,7 +1669,9 @@ function ReportStructure({
                     {block.kind === "CUSTOM" ? `: ${block.title}` : ""}
                   </span>
                   {block.prompt ? (
-                    <span className="mt-1 block text-[11px] text-muted-foreground">{block.prompt}</span>
+                    <span className="mt-1 block text-[11px] text-muted-foreground">
+                      {block.prompt}
+                    </span>
                   ) : null}
                 </span>
                 {canEdit && (

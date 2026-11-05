@@ -60,7 +60,47 @@ export class EvaluatorsService {
       where: { id: groupId },
     });
     if (!group) throw new NotFoundException('Project not found');
-    await this.assertCanManage(dto.scope, group.workspaceId, group.id, userId);
+    return this.createInContext(group.workspaceId, group.id, userId, dto);
+  }
+
+  async listForWorkspace(workspaceId: string) {
+    await this.requireWorkspace(workspaceId);
+    return this.prisma.evaluator.findMany({
+      where: { workspaceId, scope: 'WORKSPACE', groupId: null },
+      include,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  async createForWorkspace(
+    workspaceId: string,
+    userId: string,
+    dto: CreateEvaluatorDto,
+  ) {
+    await this.requireWorkspace(workspaceId);
+    if (dto.scope !== 'WORKSPACE') {
+      throw new BadRequestException(
+        'Workspace evaluators must use WORKSPACE scope',
+      );
+    }
+    return this.createInContext(workspaceId, null, userId, dto);
+  }
+
+  private async requireWorkspace(workspaceId: string) {
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: workspaceId },
+    });
+    if (!workspace) throw new NotFoundException('Workspace not found');
+    return workspace;
+  }
+
+  private async createInContext(
+    workspaceId: string,
+    groupId: string | null,
+    userId: string,
+    dto: CreateEvaluatorDto,
+  ) {
+    await this.assertCanManage(dto.scope, workspaceId, groupId, userId);
     const guidelines = this.guidelines(
       dto.evaluationEmphasis ?? [],
       dto.evaluationNotes,
@@ -68,10 +108,10 @@ export class EvaluatorsService {
     const avatar =
       dto.avatar ??
       (await this.prisma.evaluator.count({
-        where: { workspaceId: group.workspaceId },
+        where: { workspaceId },
       })) % AVATAR_COUNT;
     const personalityId = await this.personalityFor(
-      group.workspaceId,
+      workspaceId,
       dto.personalityId,
     );
     return this.prisma.evaluator.create({
@@ -87,8 +127,8 @@ export class EvaluatorsService {
         disabledKnowledgeNodeIds: this.idList(dto.disabledKnowledgeNodeIds),
         disabledResourceIds: this.idList(dto.disabledResourceIds),
         reportBlocks: this.reportBlocks(dto.reportBlocks),
-        workspaceId: group.workspaceId,
-        groupId: dto.scope === 'GROUP' ? group.id : null,
+        workspaceId,
+        groupId: dto.scope === 'GROUP' ? groupId : null,
         ownerId: userId,
         ...(dto.rules?.length
           ? {
@@ -218,8 +258,13 @@ export class EvaluatorsService {
       where: { id: groupId },
     });
     if (!group) throw new NotFoundException('Project not found');
+    return this.listWorkspacePersonalities(group.workspaceId);
+  }
+
+  async listWorkspacePersonalities(workspaceId: string) {
+    await this.requireWorkspace(workspaceId);
     return this.prisma.evaluatorVoice.findMany({
-      where: { workspaceId: group.workspaceId },
+      where: { workspaceId },
       orderBy: { position: 'asc' },
     });
   }
@@ -233,9 +278,18 @@ export class EvaluatorsService {
       where: { id: groupId },
     });
     if (!group) throw new NotFoundException('Project not found');
-    await this.assertWorkspaceManager(group.workspaceId, userId);
+    return this.createWorkspacePersonality(group.workspaceId, userId, dto);
+  }
+
+  async createWorkspacePersonality(
+    workspaceId: string,
+    userId: string,
+    dto: PersonalityDto,
+  ) {
+    await this.requireWorkspace(workspaceId);
+    await this.assertWorkspaceManager(workspaceId, userId);
     const existing = await this.prisma.evaluatorVoice.findMany({
-      where: { workspaceId: group.workspaceId },
+      where: { workspaceId },
       orderBy: { position: 'desc' },
     });
     if (existing.length >= MAX_PERSONALITIES) {
@@ -246,7 +300,7 @@ export class EvaluatorsService {
     const position = (existing[0]?.position ?? -1) + 1;
     return this.prisma.evaluatorVoice.create({
       data: {
-        workspaceId: group.workspaceId,
+        workspaceId,
         name: dto.name.trim(),
         instruction: dto.instruction.trim(),
         position,

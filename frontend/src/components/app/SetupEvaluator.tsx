@@ -1,4 +1,6 @@
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { evaluatorConfigurationHref } from "@/lib/evaluators";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +23,7 @@ import { EVALUATION_EMPHASIS_VALUES, EMPHASIS_LABELS } from "@/lib/evaluation-gu
 import type { Evaluator, Personality } from "@/lib/types";
 import type { Setup, SetupEvaluatorDraft } from "@/lib/experience";
 import { EvaluatorMark } from "./EvaluatorMark";
+import { EvaluatorScopeBadge } from "./EvaluatorScopeBadge";
 
 function setupEvaluatorFrom(evaluator: Evaluator): SetupEvaluatorDraft {
   return {
@@ -42,12 +45,18 @@ function setupEvaluatorFrom(evaluator: Evaluator): SetupEvaluatorDraft {
 }
 
 export function SetupEvaluator({
+  organizationId,
+  workspaceName,
+  groupName,
   draft,
   evaluators,
   voices,
   onChange,
   canManage,
 }: {
+  organizationId: string;
+  workspaceName: string;
+  groupName: string;
   draft: Setup;
   evaluators: Evaluator[];
   voices: Personality[];
@@ -61,24 +70,55 @@ export function SetupEvaluator({
   };
   return (
     <div className="space-y-7">
-      <div className="grid gap-3 sm:grid-cols-3" aria-label="Existing evaluators">
-        {evaluators.map((item) => (
-          <Button
-            key={item.id}
-            variant="outline"
-            type="button"
-            className={`h-auto justify-start gap-3 whitespace-normal p-4 text-left ${(!value && draft.evaluatorId === item.id) || value?.baseId === item.id ? "setup-selected" : ""}`}
-            aria-pressed={(!value && draft.evaluatorId === item.id) || value?.baseId === item.id}
-            onClick={() => onChange({ evaluatorId: item.id, evaluatorDraft: null })}
+      <div className="space-y-5" aria-label="Existing evaluators">
+        {(["GROUP", "WORKSPACE"] as const).map((scope) => (
+          <section
+            key={scope}
+            aria-label={scope === "GROUP" ? "Project evaluators" : "From workspace"}
+            className="space-y-3"
           >
-            <EvaluatorMark avatar={item.avatar} name={item.name} size={34} />
-            <span>
-              <span className="block">{item.name}</span>
-              <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                {item.personality?.name || item.effort.toLowerCase()}
-              </span>
-            </span>
-          </Button>
+            <div>
+              <h3 className="font-medium">
+                {scope === "GROUP" ? "Project evaluators" : "From workspace"}{" "}
+                <span className="text-muted-foreground">
+                  {evaluators.filter((item) => item.scope === scope).length}
+                </span>
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {scope === "GROUP" ? groupName : workspaceName}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {evaluators
+                .filter((item) => item.scope === scope)
+                .map((item) => (
+                  <Button
+                    key={item.id}
+                    variant="outline"
+                    type="button"
+                    className={`h-auto justify-start gap-3 whitespace-normal p-4 text-left ${(!value && draft.evaluatorId === item.id) || value?.baseId === item.id ? "setup-selected" : ""}`}
+                    aria-pressed={
+                      (!value && draft.evaluatorId === item.id) || value?.baseId === item.id
+                    }
+                    onClick={() => onChange({ evaluatorId: item.id, evaluatorDraft: null })}
+                  >
+                    <EvaluatorMark avatar={item.avatar} name={item.name} size={34} />
+                    <span>
+                      <span className="flex flex-wrap items-center gap-2">
+                        {item.name}
+                        <EvaluatorScopeBadge scope={item.scope} />
+                      </span>
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                        {scope === "WORKSPACE" ? workspaceName : groupName}
+                      </span>
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                        {item.personality?.name || item.effort.toLowerCase()}
+                      </span>
+                    </span>
+                  </Button>
+                ))}
+            </div>
+          </section>
         ))}
         {!evaluators.length && (
           <p className="col-span-full text-sm text-muted-foreground">
@@ -92,27 +132,57 @@ export function SetupEvaluator({
             <EvaluatorMark avatar={selected.avatar} name={selected.name} size={64} />
             <div>
               <h2 className="font-semibold">{selected.name}</h2>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <EvaluatorScopeBadge scope={selected.scope} />
+                <span className="text-sm text-muted-foreground">
+                  {selected.scope === "WORKSPACE" ? workspaceName : groupName}
+                </span>
+              </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 {selected.description || "Ready to review your team's work."}
               </p>
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
+            {selected.scope === "WORKSPACE"
+              ? "Available in all projects. "
+              : `Only available in ${groupName}. `}
+            Choosing an evaluator does not start an evaluation.
+          </p>
+          <Button variant="link" className="h-auto p-0" asChild>
+            <Link
+              to={evaluatorConfigurationHref(organizationId, selected)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View evaluator configuration <ExternalLink className="ml-1 size-3.5" />
+            </Link>
+          </Button>
+          <p className="text-sm text-muted-foreground">
             Use this evaluator as it is, or customize a copy for your team.
           </p>
           {canManage && (
-            <Button
-              variant="outline"
-              disabled={!voices.length}
-              onClick={() => onChange({ evaluatorDraft: setupEvaluatorFrom(selected) })}
-            >
-              Customize a copy
-            </Button>
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                disabled={!voices.length}
+                onClick={() => onChange({ evaluatorDraft: setupEvaluatorFrom(selected) })}
+              >
+                Customize a copy
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Creates a project evaluator in {groupName}. The original stays unchanged.
+              </p>
+            </div>
           )}
         </div>
       )}
       {value && (
         <fieldset disabled={!canManage} className="space-y-6 border-t pt-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <EvaluatorScopeBadge scope="GROUP" />
+            <p className="text-sm">New copy in {groupName}</p>
+          </div>
           <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_240px]">
             <div className="space-y-6">
               <label className="grid gap-2 text-sm font-medium">
@@ -422,8 +492,8 @@ export function SetupEvaluator({
             </CollapsibleContent>
           </Collapsible>
           <p className="border-t pt-4 text-xs text-muted-foreground">
-            Customizing creates a copy for this team when you continue. The original evaluator stays
-            unchanged.
+            Customizing creates a project evaluator in {groupName} when you continue. The original
+            evaluator stays unchanged.
           </p>
           <Button
             type="button"

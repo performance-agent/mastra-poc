@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, Clock3, Loader2, Plug, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, errorMessage } from "@/lib/api";
+import { invalidateEvaluatorQueries } from "@/lib/evaluators";
 import { SETUP_STEPS, setupUrl, type SetupStep } from "@/lib/experience";
 import { useExperience, shortcutUrl } from "@/lib/experience-context";
 import { setupPeriod } from "@/lib/setup";
@@ -286,7 +287,7 @@ export function SetupPage({
       });
       change({ evaluatorId: created.id, evaluatorDraft: null });
       await flush();
-      await evaluators.refetch();
+      await invalidateEvaluatorQueries(qc);
     }
     if (skip && step === "plugins") {
       const existing = await api.listGroupResources(current.groupId);
@@ -546,6 +547,9 @@ export function SetupPage({
                   )}
                   {step === "evaluator" && (
                     <SetupEvaluator
+                      organizationId={org}
+                      workspaceName={workspace?.name ?? "Workspace"}
+                      groupName={group?.name ?? "Project"}
                       draft={draft}
                       evaluators={evaluators.data ?? []}
                       voices={voices.data ?? []}

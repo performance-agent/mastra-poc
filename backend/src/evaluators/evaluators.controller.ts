@@ -22,6 +22,60 @@ import { EvaluatorsService } from './evaluators.service';
 export class EvaluatorsController {
   constructor(private readonly evaluators: EvaluatorsService) {}
 
+  @Get('workspaces/:id/evaluators')
+  @RequireMembership({
+    param: 'id',
+    resource: 'workspace',
+    mode: 'context',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  listWorkspace(@Param('id') workspaceId: string) {
+    return this.evaluators.listForWorkspace(workspaceId);
+  }
+
+  @Post('workspaces/:id/evaluators')
+  @RequireMembership({
+    param: 'id',
+    resource: 'workspace',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  createWorkspace(
+    @Param('id') workspaceId: string,
+    @CurrentUser() user: User,
+    @Body() dto: CreateEvaluatorDto,
+  ) {
+    return this.evaluators.createForWorkspace(workspaceId, user.id, dto);
+  }
+
+  @Get('workspaces/:id/personalities')
+  @RequireMembership({
+    param: 'id',
+    resource: 'workspace',
+    mode: 'context',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  listWorkspacePersonalities(@Param('id') workspaceId: string) {
+    return this.evaluators.listWorkspacePersonalities(workspaceId);
+  }
+
+  @Post('workspaces/:id/personalities')
+  @RequireMembership({
+    param: 'id',
+    resource: 'workspace',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  createWorkspacePersonality(
+    @Param('id') workspaceId: string,
+    @CurrentUser() user: User,
+    @Body() dto: PersonalityDto,
+  ) {
+    return this.evaluators.createWorkspacePersonality(
+      workspaceId,
+      user.id,
+      dto,
+    );
+  }
+
   @Get('groups/:id/evaluators')
   @RequireMembership({
     param: 'id',

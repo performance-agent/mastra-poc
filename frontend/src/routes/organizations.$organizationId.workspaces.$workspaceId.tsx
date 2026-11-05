@@ -1,6 +1,6 @@
 import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Plus, Users, Layers, Boxes, Check } from "lucide-react";
@@ -21,6 +21,7 @@ import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
 import { WorkspacePeople } from "@/components/app/WorkspacePeople";
+import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
 import { KnowledgeResources } from "@/components/app/KnowledgeResources";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -42,8 +43,16 @@ const tabSchema = z.object({
   driveConnection: z.string().optional(),
   driveError: z.string().optional(),
   knowledgeNode: z.string().optional(),
+  evaluatorId: z.string().optional(),
 });
-const workspaceTabs = ["overview", "groups", "people", "members", "resources"] as const;
+const workspaceTabs = [
+  "overview",
+  "groups",
+  "people",
+  "members",
+  "resources",
+  "evaluators",
+] as const;
 type WorkspaceTab = (typeof workspaceTabs)[number];
 
 export const Route = createFileRoute("/organizations/$organizationId/workspaces/$workspaceId")({
@@ -76,6 +85,13 @@ function WorkspacePage() {
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
+  const selectEvaluator = useCallback(
+    (evaluatorId: string | undefined) => {
+      void navigate({ search: { tab: "evaluators", evaluatorId }, replace: true });
+    },
+    [navigate],
+  );
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -99,6 +115,22 @@ function WorkspacePage() {
     queryKey: ["workspace", workspaceId, "resources"],
     queryFn: () => api.listWorkspaceResources(workspaceId),
   });
+  const orgMembersQ = useQuery({
+    queryKey: ["organization", organizationId, "members"],
+    queryFn: () => api.listOrgMembers(organizationId),
+  });
+  const evaluatorsQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluators"],
+    queryFn: () => api.listWorkspaceEvaluators(workspaceId),
+    enabled: !isNestedRoute,
+  });
+  const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
+  const canManageWorkspace = canManageMemberRoles(
+    highestRole([
+      findCurrentMembership(membersQ.data ?? [], identity)?.role,
+      findCurrentMembership(orgMembersQ.data ?? [], identity)?.role,
+    ]),
+  );
 
   const ws = wsQ.data;
   const org = orgQ.data;
@@ -138,11 +170,27 @@ function WorkspacePage() {
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
               { value: "people", label: "People" },
+              { value: "evaluators", label: "Evaluators", count: evaluatorsQ.data?.length },
             ]}
           />
 
           {tab === "people" && (
-            <WorkspacePeople organizationId={organizationId} workspaceId={workspaceId} />
+            <WorkspacePeople
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              workspaceName={ws.name}
+            />
+          )}
+          {tab === "evaluators" && (
+            <EvaluatorsTab
+              key={workspaceId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              workspaceName={ws.name}
+              canManageWorkspace={canManageWorkspace}
+              evaluatorId={search.evaluatorId}
+              onSelect={selectEvaluator}
+            />
           )}
           {tab === "overview" && (
             <div className="space-y-6">

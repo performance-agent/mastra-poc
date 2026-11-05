@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Plus, Boxes, Check, Users, Sparkles } from "lucide-react";
@@ -44,6 +44,7 @@ const tabSchema = z.object({
   driveConnection: z.string().optional(),
   driveError: z.string().optional(),
   knowledgeNode: z.string().optional(),
+  evaluatorId: z.string().optional(),
 });
 type GroupTab = "overview" | "members" | "resources" | "reports" | "evaluation" | "rules";
 
@@ -69,6 +70,12 @@ function GroupPage() {
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
   const qc = useQueryClient();
+  const selectEvaluator = useCallback(
+    (evaluatorId: string | undefined) => {
+      void navigate({ search: { tab: "evaluation", evaluatorId }, replace: true });
+    },
+    [navigate],
+  );
   const { firebaseUser } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -163,7 +170,7 @@ function GroupPage() {
   ]);
   const currentUserId =
     groupMembership?.userId ?? workspaceMembership?.userId ?? organizationMembership?.userId;
-  const canManageRoles = actorRole ? canManageMemberRoles(actorRole) : true;
+  const canManageRoles = canManageMemberRoles(actorRole);
   const evaluationRole = highestRole([workspaceMembership?.role, organizationMembership?.role]);
   const canEvaluate = evaluationRole === "OWNER" || evaluationRole === "ADMIN";
   const inviteRoles = actorRole ? assignableRoles(actorRole) : undefined;
@@ -279,9 +286,16 @@ function GroupPage() {
 
           {tab === "evaluation" && (
             <EvaluatorsTab
+              key={groupId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              workspaceName={wsQ.data?.name ?? "Workspace"}
               groupId={groupId}
+              groupName={group.name}
               canManageGroup={canManageRoles}
               canManageWorkspace={canEvaluate}
+              evaluatorId={search.evaluatorId}
+              onSelect={selectEvaluator}
             />
           )}
 
@@ -463,6 +477,8 @@ function GroupPage() {
 
           {tab === "reports" && (
             <ReportsPanel
+              workspaceName={wsQ.data?.name}
+              groupName={group.name}
               groupId={groupId}
               initialReportId={search.reportId}
               canDelete={canManageRoles}

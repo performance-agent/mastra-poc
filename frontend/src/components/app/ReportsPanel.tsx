@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { EvaluatorMark } from "@/components/app/EvaluatorMark";
+import { EvaluatorScopeBadge } from "@/components/app/EvaluatorScopeBadge";
 import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import { EmptyState } from "@/components/app/EmptyState";
 import { ErrorState } from "@/components/app/ErrorState";
@@ -61,12 +62,16 @@ export function ReportsPanel({
   onOpenEvaluators,
   canDelete = false,
   canManage = false,
+  workspaceName = "Workspace",
+  groupName = "Project",
 }: {
   groupId: string;
   initialReportId?: string;
   onOpenEvaluators: () => void;
   canDelete?: boolean;
   canManage?: boolean;
+  workspaceName?: string;
+  groupName?: string;
 }) {
   const qc = useQueryClient();
   const evaluatorsQ = useQuery({
@@ -383,6 +388,7 @@ export function ReportsPanel({
                         <span className="block truncate text-sm font-medium text-foreground">
                           {entry.label}
                         </span>
+                        {entry.evaluator && <EvaluatorScopeBadge scope={entry.evaluator.scope} />}
                         <span className="block text-[11px]">
                           {status === "queued"
                             ? "Queued"
@@ -411,10 +417,7 @@ export function ReportsPanel({
               })}
             </div>
             <div className="mt-4 grid gap-2">
-              <Button
-                onClick={() => setPickerOpen(true)}
-                disabled={evaluators.length === 0}
-              >
+              <Button onClick={() => setPickerOpen(true)} disabled={evaluators.length === 0}>
                 <FileText className="mr-1.5 h-4 w-4" /> Generate
               </Button>
               <Button variant="outline" onClick={() => void sharePage()}>
@@ -580,7 +583,8 @@ export function ReportsPanel({
           <DialogHeader>
             <DialogTitle>Generate reports</DialogTitle>
             <DialogDescription>
-              Each selected evaluator writes its own report with the sources enabled on that evaluator.
+              Each selected evaluator writes its own report with the sources enabled on that
+              evaluator.
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end">
@@ -619,7 +623,10 @@ export function ReportsPanel({
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">{evaluator.name}</span>
                       <span className="block text-[11px] text-muted-foreground">
-                        {evaluator.scope === "WORKSPACE" ? "Workspace" : "Project"}
+                        <EvaluatorScopeBadge scope={evaluator.scope} />
+                        <span className="ml-1">
+                          {evaluator.scope === "WORKSPACE" ? workspaceName : groupName}
+                        </span>
                       </span>
                     </span>
                   </label>
@@ -650,10 +657,7 @@ export function ReportsPanel({
             </Label>
           </div>
           <DialogFooter>
-            <Button
-              onClick={generate}
-              disabled={submitting || picked.length === 0}
-            >
+            <Button onClick={generate} disabled={submitting || picked.length === 0}>
               {submitting ? "Starting..." : "Generate"}
             </Button>
           </DialogFooter>

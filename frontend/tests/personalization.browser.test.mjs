@@ -300,6 +300,10 @@ async function setup(t, options = {}) {
             name,
             avatar: i ? 24 : 15,
             scope: "GROUP",
+            workspaceId: "ws-a",
+            groupId: "group-a",
+            disabledKnowledgeNodeIds: [],
+            disabledResourceIds: [],
             effort: "MEDIUM",
             personalityId: "voice-direct",
             personality: { id: "voice-direct", name: "Direct" },
@@ -1265,10 +1269,10 @@ test(
       true,
     );
     await screenshot(page, "03-people-mobile", peopleMcpEvidence);
-    await choose(page, "Evaluator", "Careful · Platform team");
+    await choose(page, "Evaluator", "Careful Project · Platform team");
     await page.getByText("No report from this evaluator yet.", { exact: true }).waitFor();
     await page.getByText("This evaluator belongs to another project.", { exact: true }).waitFor();
-    await choose(page, "Evaluator", "Balanced");
+    await choose(page, "Evaluator", "Balanced Workspace · Product & Engineering");
     await page.setViewportSize({ width: 1440, height: 1050 });
     await page.getByRole("link", { name: "View report", exact: true }).click();
     await page.waitForURL("**/groups/group-a?tab=reports&reportId=report-people");

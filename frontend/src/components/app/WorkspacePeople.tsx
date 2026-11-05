@@ -15,6 +15,7 @@ import {
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Avatar } from "./Avatar";
 import { EvaluatorMark } from "./EvaluatorMark";
+import { EvaluatorScopeBadge } from "./EvaluatorScopeBadge";
 import { SearchInput } from "./SearchInput";
 import { EmptyState } from "./EmptyState";
 import { ErrorState } from "./ErrorState";
@@ -72,9 +73,11 @@ function safeUrl(value: string | null) {
 export function WorkspacePeople({
   organizationId,
   workspaceId,
+  workspaceName = "Workspace",
 }: {
   organizationId: string;
   workspaceId: string;
+  workspaceName?: string;
 }) {
   const [evaluatorId, setEvaluatorId] = useState<string>();
   const [search, setSearch] = useState("");
@@ -166,10 +169,10 @@ export function WorkspacePeople({
               <SelectContent>
                 {query.data?.evaluators.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
-                    {e.name}
+                    {e.name} <EvaluatorScopeBadge scope={e.scope} />
                     {e.scope === "GROUP"
                       ? ` · ${query.data.groups.find((g) => g.id === e.groupId)?.name ?? "Project"}`
-                      : ""}
+                      : ` · ${workspaceName}`}
                   </SelectItem>
                 ))}
               </SelectContent>

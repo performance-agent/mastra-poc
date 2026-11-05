@@ -13,6 +13,7 @@ import {
 import type { Setup, SetupStep } from "@/lib/experience";
 import type { Organization, Workspace, Group, Evaluator } from "@/lib/types";
 import { EvaluatorMark } from "./EvaluatorMark";
+import { EvaluatorScopeBadge } from "./EvaluatorScopeBadge";
 
 export function SetupTeam({
   draft,
@@ -227,6 +228,9 @@ export function SetupReview({
                   <EvaluatorMark name={evaluator.name} avatar={evaluator.avatar} size={36} />
                 )}
                 <span className="text-sm font-medium">{item.text}</span>
+                {item.target === "evaluator" && evaluator && (
+                  <EvaluatorScopeBadge scope={evaluator.scope} />
+                )}
               </div>
             </div>
             <Button
