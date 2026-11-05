@@ -11,12 +11,14 @@ import {
 import { weatherWorkflow } from './workflows/weather-workflow';
 import { weatherAgent } from './agents/weather-agent';
 import { groupReportAgent } from './agents/group-report-agent';
+import { peopleComparisonAgent } from './agents/people-comparison-agent';
 
 export const mastra = new Mastra({
   workflows: { weatherWorkflow },
   agents: {
     weatherAgent,
     groupReportAgent,
+    peopleComparisonAgent,
   },
   storage: new MastraCompositeStore({
     id: 'composite-storage',

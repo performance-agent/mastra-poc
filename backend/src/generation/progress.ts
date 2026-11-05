@@ -10,6 +10,13 @@ export type ReportProgress = (
   state?: 'started' | 'completed',
 ) => Promise<void>;
 
+export const peopleComparisonStages = [
+  'preparing',
+  'generating',
+  'validating',
+  'saving',
+] as const;
+
 export const evaluationStages = [
   'preparing',
   'rule_input',

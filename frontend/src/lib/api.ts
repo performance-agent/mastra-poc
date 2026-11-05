@@ -293,6 +293,11 @@ export const api = {
     request<WorkspacePeople>(
       `/workspaces/${encodeURIComponent(workspaceId)}/people${evaluatorId ? `?evaluatorId=${encodeURIComponent(evaluatorId)}` : ""}`,
     ),
+  generateWorkspacePeopleComparison: (workspaceId: string, evaluatorId: string) =>
+    request<{ jobId: string | null; status: string }>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/people/comparison`,
+      { method: "POST", body: JSON.stringify({ evaluatorId }) },
+    ),
   listOrgPluginInstallations: (id: string) =>
     request<PluginInstallation[]>(`/organizations/${id}/plugin-installations`),
   syncPluginInstallation: (id: string) =>

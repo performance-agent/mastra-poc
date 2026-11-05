@@ -1,3 +1,7 @@
+jest.mock('./people-comparison.service', () => ({
+  PeopleComparisonService: class {},
+}));
+import type { PeopleComparisonService } from './people-comparison.service';
 jest.mock('../prisma/prisma.service', () => ({ PrismaService: class {} }));
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -27,6 +31,9 @@ describe('WorkspacePeopleService', () => {
     service = new WorkspacePeopleService(
       prisma as unknown as PrismaService,
       access as unknown as AccessControlService,
+      {
+        read: jest.fn().mockResolvedValue({ comparison: null }),
+      } as unknown as PeopleComparisonService,
     );
     prisma.group.findMany.mockResolvedValueOnce([
       { id: 'visible-group', name: 'Platform' },

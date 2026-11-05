@@ -20,7 +20,10 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "docker:up": "docker compose up -d && npx prisma migrate dev"
+    "docker:up": "docker compose up -d && npx prisma migrate dev",
+    "test:people": "jest --runInBand workspaces mcp/performance-mcp.service.spec.ts reports/reports.service.spec.ts reports/reports-scheduler.spec.ts generation",
+    "test:people:integration": "node --env-file=.env test/people-comparison.integration.cjs",
+    "test:people:live": "node --env-file=.env test/people-comparison.live.cjs"
   },
   "dependencies": {
     "@mastra/core": "^1.31.0",

@@ -135,6 +135,7 @@ export interface PluginCatalogItem {
 }
 
 export interface WorkspacePerson {
+  personId?: string;
   displayName: string;
   assessment: GroupReportAssessment;
   contributionSummary: string;
@@ -145,7 +146,42 @@ export interface WorkspacePerson {
   evidence: GroupReportEvidence[];
 }
 
+export interface ComparativeConclusion {
+  assessment: GroupReportAssessment;
+  changeReason: string;
+  suggestions: string[];
+  evidenceIds: string[];
+}
+export interface WorkspaceComparison {
+  sourceReports: Array<{
+    groupId: string;
+    reportId: string | null;
+    contentHash: string;
+    period: { from: string; to: string } | null;
+  }>;
+  summary: string;
+  limitations: string[];
+  generatedAt: string;
+  stale: boolean;
+  version: string;
+  groups: Array<
+    ComparativeConclusion & {
+      groupId: string;
+      rank: number | null;
+      rankReason: string;
+      people: Array<ComparativeConclusion & { personId: string }>;
+    }
+  >;
+}
 export interface WorkspacePeople {
+  capabilities?: { canRead: boolean; canGenerate: boolean };
+  comparison?: WorkspaceComparison | null;
+  comparisonJob?: {
+    id: string;
+    status: string;
+    progress: { stage: string; completed: string[]; total: number } | null;
+    error: string | null;
+  } | null;
   evaluators: Array<{
     id: string;
     name: string;

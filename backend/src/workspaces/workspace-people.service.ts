@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PeopleComparisonService } from './people-comparison.service';
+import { reportFields } from './people-comparison.schema';
 import { z } from 'zod';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccessControlService } from '../access-control/access-control.service';
@@ -63,7 +65,7 @@ const envelope = z.object({
 
 /** Read adapter: older reports remain readable without generating or rewriting them. */
 export function readPeopleSummary(data: unknown) {
-  const parsed = envelope.safeParse(data);
+  const parsed = envelope.safeParse(reportFields(data));
   if (!parsed.success) return { people: [], period: null, evaluator: null };
   const evidence = parsed.data.evidence.flatMap((entry) => {
     const item =
@@ -73,12 +75,13 @@ export function readPeopleSummary(data: unknown) {
   return {
     period: parsed.data.period,
     evaluator: parsed.data.evaluator,
-    people: parsed.data.people.flatMap((entry) => {
+    people: parsed.data.people.flatMap((entry, sourceIndex) => {
       const item = person.safeParse(entry);
       return item.success
         ? [
             {
               ...item.data,
+              sourceIndex,
               evidence: evidence.filter(
                 (e) => e.subject === item.data.displayName,
               ),
@@ -94,6 +97,7 @@ export class WorkspacePeopleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: AccessControlService,
+    private readonly comparison: PeopleComparisonService,
   ) {}
 
   async list(
@@ -156,6 +160,13 @@ export class WorkspacePeopleService {
     return {
       evaluators,
       evaluatorId: selected.id,
+      ...(selected.scope === 'WORKSPACE'
+        ? await this.comparison.read(workspaceId, selected.id, userId)
+        : {
+            capabilities: { canRead: false, canGenerate: false },
+            comparison: null,
+            comparisonJob: null,
+          }),
       groups: rows.map(({ performanceReports, ...group }) => {
         const saved = performanceReports[0];
         return {
@@ -168,6 +179,12 @@ export class WorkspacePeopleService {
                 createdAt: saved.createdAt,
                 updatedAt: saved.updatedAt,
                 ...readPeopleSummary(saved.data),
+                people: readPeopleSummary(saved.data).people.map(
+                  ({ sourceIndex, ...person }) => ({
+                    ...person,
+                    personId: `${saved.id}:${sourceIndex}`,
+                  }),
+                ),
               }
             : null,
         };

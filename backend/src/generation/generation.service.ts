@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import {
   evaluationStages,
+  peopleComparisonStages,
   groupReportStages,
   synthesisStages,
   type GenerationProgress,
@@ -82,11 +83,13 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
             where: { id: jobId },
           });
           const stages =
-            job.kind === 'evaluation'
-              ? evaluationStages
-              : job.kind === 'group_report'
-                ? groupReportStages
-                : synthesisStages;
+            job.kind === 'people_comparison'
+              ? peopleComparisonStages
+              : job.kind === 'evaluation'
+                ? evaluationStages
+                : job.kind === 'group_report'
+                  ? groupReportStages
+                  : synthesisStages;
           const completed = new Set<string>();
           const reportProgress: ReportProgress = async (
             stage,
@@ -169,7 +172,10 @@ export class GenerationService implements OnModuleInit, OnModuleDestroy {
     });
     return jobs.flatMap((job) => {
       const input = job.input as { evaluatorId?: unknown };
-      if (typeof input?.evaluatorId !== 'string' || input.evaluatorId.length === 0)
+      if (
+        typeof input?.evaluatorId !== 'string' ||
+        input.evaluatorId.length === 0
+      )
         return [];
       return [
         {

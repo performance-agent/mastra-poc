@@ -1,3 +1,4 @@
+import { PeopleComparisonService } from '../workspaces/people-comparison.service';
 import { reportAgentTools } from './report-agent-tools';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import type { KnowledgeSnapshot } from '../knowledge/knowledge.types';
@@ -59,7 +60,26 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     private readonly runtime: PluginRuntimeService,
     private readonly jobs: GenerationService,
     private readonly knowledge: KnowledgeService,
+    private readonly comparisons: PeopleComparisonService,
   ) {}
+
+  private async peopleChanged(
+    groupId: string | null,
+    evaluatorId: string | null,
+  ) {
+    if (!groupId || !evaluatorId) return;
+    try {
+      const group = await this.prisma.group.findUnique({
+        where: { id: groupId },
+        select: { workspaceId: true },
+      });
+      if (group) this.comparisons.changed(group.workspaceId, evaluatorId);
+    } catch {
+      this.logger.warn(
+        'People comparison will be reconciled in the background',
+      );
+    }
+  }
 
   onModuleInit() {
     void this.checkSchedules();
@@ -967,6 +987,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
           notes: [],
         },
       });
+      await this.peopleChanged(saved.groupId, saved.evaluatorId);
       return saved;
     }
 
@@ -989,6 +1010,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         },
       });
     }
+    await this.peopleChanged(saved.groupId, saved.evaluatorId);
     return saved;
   }
 
@@ -1147,6 +1169,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('Report not found');
     }
     await this.prisma.performanceReport.delete({ where: { id } });
+    await this.peopleChanged(report.groupId, report.evaluatorId);
   }
 
   async rename(id: string, title: string | null) {

@@ -1,4 +1,5 @@
 model Evaluator {
+  peopleComparison PeopleComparison?
   id          String  @id @default(cuid())
   name        String
   description String?
