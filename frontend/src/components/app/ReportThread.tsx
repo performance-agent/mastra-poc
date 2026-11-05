@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/app/Avatar";
 import { GenerationProgressPanel } from "@/components/app/GenerationProgress";
 import { GroupReportRenderer } from "@/components/app/GroupReportRenderer";
+import { ReportPdfExportButton } from "@/components/app/ReportPdfExportButton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
@@ -20,8 +21,7 @@ function sameTops(current: Record<string, number>, next: Record<string, number>)
   const currentKeys = Object.keys(current);
   const nextKeys = Object.keys(next);
   return (
-    currentKeys.length === nextKeys.length &&
-    nextKeys.every((key) => current[key] === next[key])
+    currentKeys.length === nextKeys.length && nextKeys.every((key) => current[key] === next[key])
   );
 }
 
@@ -82,6 +82,7 @@ function versionLabel(createdAt: string) {
 export function ReportThread({
   groupId,
   report,
+  groupName = "Project",
   canEdit,
   onBack,
   onDelete,
@@ -89,6 +90,7 @@ export function ReportThread({
 }: {
   groupId: string;
   report: PerformanceReport<GroupReport>;
+  groupName?: string;
   canEdit: boolean;
   onBack?: () => void;
   onDelete?: () => void;
@@ -314,6 +316,7 @@ export function ReportThread({
     <div className="min-w-0 space-y-4">
       <div className="no-print space-y-3">
         <div className="flex flex-wrap items-center gap-2">
+          <ReportPdfExportButton report={displayed} groupName={groupName} />
           {revisions.length > 0 && (
             <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
               {revisions.map((revision, revisionIndex) => (
@@ -401,7 +404,9 @@ export function ReportThread({
                     width: box.width,
                     height: box.height,
                     backgroundColor:
-                      hoveredId === note.id ? "rgba(167, 139, 250, 0.55)" : "rgba(139, 92, 246, 0.32)",
+                      hoveredId === note.id
+                        ? "rgba(167, 139, 250, 0.55)"
+                        : "rgba(139, 92, 246, 0.32)",
                     boxShadow: "inset 0 -2px 0 rgba(109, 40, 217, 0.95)",
                   }}
                 />
@@ -413,9 +418,7 @@ export function ReportThread({
           <aside
             ref={marginRef}
             className={
-              wide
-                ? "no-print relative z-10 w-72 shrink-0"
-                : "no-print w-full shrink-0 space-y-3"
+              wide ? "no-print relative z-10 w-72 shrink-0" : "no-print w-full shrink-0 space-y-3"
             }
             aria-label="Comentarios"
           >
@@ -433,7 +436,9 @@ export function ReportThread({
                   } ${wide ? "absolute left-0 w-72" : ""}`}
                   style={wide ? { top: placed[note.id] ?? 0 } : undefined}
                   onMouseEnter={() => setHoveredId(note.id)}
-                  onMouseLeave={() => setHoveredId((current) => (current === note.id ? null : current))}
+                  onMouseLeave={() =>
+                    setHoveredId((current) => (current === note.id ? null : current))
+                  }
                 >
                   {canEdit && isLatest && !editing && (
                     <div
@@ -512,7 +517,9 @@ export function ReportThread({
                       </div>
                     </div>
                   ) : (
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{note.comment}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                      {note.comment}
+                    </p>
                   )}
                 </article>
               );

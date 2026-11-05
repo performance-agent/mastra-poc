@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { ReportKnowledgeSources } from "./KnowledgeSources";
-import { ArrowLeft, Download, ExternalLink, Trash2 } from "lucide-react";
+import { ArrowLeft, Printer, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type {
@@ -541,7 +541,7 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
               className="no-print"
               onClick={downloadPdf}
             >
-              <Download className="mr-1 h-3.5 w-3.5" /> Download PDF
+              <Printer className="mr-1 h-3.5 w-3.5" /> Print report
             </Button>
           </div>
         </Card>
@@ -647,7 +647,7 @@ export function GroupReportRenderer({ report, onBack, onDelete, canDelete, onRen
                 className="no-print"
                 onClick={downloadPdf}
               >
-                <Download className="mr-1 h-3.5 w-3.5" /> Download PDF
+                <Printer className="mr-1 h-3.5 w-3.5" /> Print report
               </Button>
             </div>
             {data.evaluator && (

@@ -19,6 +19,7 @@ import { GenerationProgressPanel } from "@/components/app/GenerationProgress";
 import { GroupGithubActivityReportRenderer } from "@/components/app/GroupGithubActivityReportRenderer";
 import { GroupGithubHistoryReportRenderer } from "@/components/app/GroupGithubHistoryReportRenderer";
 import { ReportThread } from "@/components/app/ReportThread";
+import { ReportPdfExportButton } from "@/components/app/ReportPdfExportButton";
 import { LoadingState } from "@/components/app/LoadingState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -433,6 +434,7 @@ export function ReportsPanel({
                   <ReportThread
                     groupId={groupId}
                     report={shown as PerformanceReport<GroupReport>}
+                    groupName={groupName}
                     canEdit={canDelete}
                     onBack={() => setOpenedReportId(null)}
                     onRename={canDelete ? (title) => void renameReport(title) : undefined}
@@ -440,6 +442,9 @@ export function ReportsPanel({
                   />
                 ) : (
                   <>
+                    <div className="flex justify-end">
+                      <ReportPdfExportButton report={shown} groupName={groupName} />
+                    </div>
                     <ReportHistoryBar
                       currentId={shown.id}
                       history={focusedReports}

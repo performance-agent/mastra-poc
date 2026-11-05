@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
+import { savedGroupReport } from "./fixtures/workspace-people.mjs";
 
 const base = process.env.EVALUATORS_TEST_BASE_URL ?? "http://127.0.0.1:5173";
 const root = "/organizations/org-a/workspaces/ws-a";
@@ -29,6 +30,8 @@ async function setup(
     role = "owner",
     empty = false,
     mobile = false,
+    reports = [],
+    revisions = [],
     path = root + "?tab=evaluators&evaluatorId=shared-ada",
   } = {},
 ) {
@@ -62,6 +65,8 @@ async function setup(
     reportBlocks: [{ id: "summary", kind: "SUMMARY" }],
   };
   const state = {
+    reports,
+    revisions,
     evaluators: empty
       ? []
       : [
@@ -290,6 +295,10 @@ async function setup(
               pluginInstallation: { id: "plugin", name: "GitHub", status: "ACTIVE" },
             },
           ];
+    } else if (path.endsWith("/reports")) {
+      data = state.reports;
+    } else if (path.endsWith("/revisions")) {
+      data = state.revisions;
     } else if (path.endsWith("/people")) {
       data = { evaluators: state.evaluators, evaluatorId: "shared-ada", groups: [] };
     }
@@ -299,6 +308,129 @@ async function setup(
   await page.goto(base + path);
   return { page, state };
 }
+
+test(
+  "merged dashboard opens saved reports and exports legacy PDFs",
+  { timeout: 60000 },
+  async (t) => {
+    const report = {
+      id: "legacy-report",
+      groupId: "group-a",
+      type: "GROUP_REPORT",
+      createdAt: "2026-11-05T12:00:00Z",
+      data: savedGroupReport,
+    };
+    const { page } = await setup(t, { path: project, reports: [report] });
+    await page.getByRole("heading", { name: "Project overview", exact: true }).waitFor();
+    await page.getByText("No numeric scores are available yet.", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "View full report", exact: true }).click();
+    await page.waitForURL("**tab=reports&reportId=legacy-report");
+    await page.getByText(savedGroupReport.summary, { exact: true }).waitFor();
+    const downloading = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export PDF", exact: true }).click();
+    const download = await downloading;
+    assert.equal(download.suggestedFilename(), "platform-team-group-report-2026-11-05.pdf");
+    const bytes = await readFile(await download.path());
+    assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
+    assert.ok(bytes.length > 1000);
+  },
+);
+
+test("merged dashboard and PDF support partial report blocks", { timeout: 60000 }, async (t) => {
+  const report = {
+    id: "block-report",
+    groupId: "group-a",
+    type: "GROUP_REPORT",
+    createdAt: "2026-11-05T12:00:00Z",
+    data: {
+      blocks: [
+        { id: "overall", kind: "OVERALL", overallAssessment: savedGroupReport.overallAssessment },
+        {
+          id: "custom",
+          kind: "CUSTOM",
+          title: "Release outlook",
+          summary: "Keep release checks visible.",
+          positiveSignals: [],
+          concerns: [],
+          limitations: [],
+        },
+        {
+          id: "questions",
+          kind: "QUESTIONS",
+          questionAnswers: [{ question: "What comes next?", answer: "Review the release checks." }],
+        },
+      ],
+      evidence: [],
+    },
+  };
+  const { page } = await setup(t, { path: project, reports: [report] });
+  await page.getByRole("heading", { name: "Project overview", exact: true }).waitFor();
+  await page.getByText("No people assessments are available.", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "View full report", exact: true }).click();
+  await page.getByText("Release outlook", { exact: true }).waitFor();
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export PDF", exact: true }).click();
+  const download = await downloading;
+  const bytes = await readFile(await download.path());
+  assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
+  assert.ok(bytes.length > 1000);
+});
+
+test(
+  "merged dashboard handles reports without overall assessment",
+  { timeout: 60000 },
+  async (t) => {
+    const { page, state } = await setup(t, {
+      path: project,
+      reports: [
+        {
+          id: "summary-only",
+          type: "GROUP_REPORT",
+          data: {
+            blocks: [{ id: "summary", kind: "SUMMARY", summary: "A short assessment." }],
+            evidence: [],
+          },
+        },
+      ],
+    });
+    await page.getByText("No dashboard data yet", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Open evaluators", exact: true }).first().click();
+    await page.waitForURL((url) => url.searchParams.get("tab") === "evaluation");
+    await page.getByRole("button", { name: /^Ada/ }).first().waitFor();
+    assert.equal(state.writes.filter((item) => item.path.endsWith("/reports")).length, 0);
+  },
+);
+
+test("merged PDF exports the selected report revision", { timeout: 60000 }, async (t) => {
+  const report = {
+    id: "revised-report",
+    type: "GROUP_REPORT",
+    createdAt: "2026-11-05T12:00:00Z",
+    data: savedGroupReport,
+  };
+  const original = { ...savedGroupReport, summary: "The original saved assessment." };
+  const { page } = await setup(t, {
+    path: project + "?tab=reports&reportId=revised-report",
+    reports: [report],
+    revisions: [
+      {
+        id: "revision-1",
+        position: 0,
+        createdAt: "2026-10-01T12:00:00Z",
+        data: original,
+        notes: [],
+      },
+      { id: "revision-2", position: 1, createdAt: report.createdAt, data: report.data, notes: [] },
+    ],
+  });
+  await page.getByRole("button", { name: "1", exact: true }).click();
+  await page.getByText(original.summary, { exact: true }).waitFor();
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export PDF", exact: true }).click();
+  const download = await downloading;
+  assert.equal(download.suggestedFilename(), "platform-team-group-report-2026-10-01.pdf");
+  assert.equal((await readFile(await download.path())).subarray(0, 5).toString(), "%PDF-");
+});
 
 test(
   "shared edits refresh cached project choices through SPA navigation",

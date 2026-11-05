@@ -23,6 +23,7 @@ import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
 import { RulesTab } from "@/components/app/RulesTab";
 import { ReportsPanel } from "@/components/app/ReportsPanel";
 import { KnowledgeResources } from "@/components/app/KnowledgeResources";
+import { GroupOverviewDashboard } from "@/components/app/GroupOverviewDashboard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -256,6 +257,14 @@ function GroupPage() {
                   <Sparkles aria-hidden="true" className="mr-1.5 h-4 w-4" /> Open evaluators
                 </Button>
               </Card>
+              <GroupOverviewDashboard
+                reports={reportsQ.data ?? []}
+                isLoading={reportsQ.isLoading}
+                errorMessage={reportsQ.error ? errorMessage(reportsQ.error) : undefined}
+                onCreate={() => setTab("evaluation")}
+                onRefresh={() => void reportsQ.refetch()}
+                onOpenReport={(reportId) => void navigate({ search: { tab: "reports", reportId } })}
+              />
               <div className="grid gap-3 sm:grid-cols-2">
                 <StatCard
                   icon={<Users className="h-4 w-4" />}
