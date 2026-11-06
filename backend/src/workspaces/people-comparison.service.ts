@@ -217,6 +217,68 @@ export class PeopleComparisonService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async externalContext(
+    workspaceId: string,
+    evaluatorId: string,
+    userId: string,
+  ) {
+    if (!(await this.capabilities(workspaceId, userId)).canRead)
+      throw new ForbiddenException('Workspace access required');
+    const snapshot = await this.snapshot(workspaceId, evaluatorId);
+    if (!snapshot.sources.some((source) => source.reportId))
+      throw new BadRequestException('No saved reports for this evaluator');
+    return snapshot;
+  }
+
+  async saveExternal(
+    workspaceId: string,
+    evaluatorId: string,
+    userId: string,
+    fingerprintValue: string,
+    result: unknown,
+  ) {
+    if (!(await this.capabilities(workspaceId, userId)).canGenerate)
+      throw new ForbiddenException(
+        'Only workspace owners and admins can generate comparisons',
+      );
+    const snapshot = await this.snapshot(workspaceId, evaluatorId);
+    if (snapshot.fingerprint !== fingerprintValue)
+      throw new BadRequestException(
+        'Saved reports changed. Request the comparison context again.',
+      );
+    const parsed = peopleComparisonSchema.parse(result);
+    validateComparison(parsed, snapshot.sources);
+    const generatedAt = new Date();
+    await this.prisma.peopleComparison.upsert({
+      where: { evaluatorId },
+      create: {
+        workspaceId,
+        evaluatorId,
+        fingerprint: snapshot.fingerprint,
+        snapshot: json(snapshot),
+        result: json(parsed),
+        generatedAt,
+      },
+      update: {
+        workspaceId,
+        fingerprint: snapshot.fingerprint,
+        snapshot: json(snapshot),
+        result: json(parsed),
+        generatedAt,
+        jobId: null,
+        leaseToken: null,
+        leaseUntil: null,
+        attemptedFingerprint: null,
+        retryAfter: null,
+      },
+    });
+    return {
+      evaluatorId,
+      fingerprint: snapshot.fingerprint,
+      generatedAt: generatedAt.toISOString(),
+    };
+  }
+
   async generate(workspaceId: string, evaluatorId: string, userId: string) {
     if (!(await this.capabilities(workspaceId, userId)).canGenerate)
       throw new ForbiddenException(

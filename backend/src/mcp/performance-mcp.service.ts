@@ -11,6 +11,10 @@ import { z } from 'zod';
 import { MembershipRole } from '../../generated/prisma/enums';
 import { AccessControlService } from '../access-control/access-control.service';
 import { GROUP_REPORT_INSTRUCTIONS } from '../mastra/group-report-instructions';
+import {
+  PEOPLE_COMPARISON_INSTRUCTIONS,
+  peopleComparisonSchema,
+} from '../workspaces/people-comparison.schema';
 import { EvaluatorsService } from '../evaluators/evaluators.service';
 import { groupReportContentSchema } from '../mastra/schemas/group-report.schema';
 import { PrismaService } from '../prisma/prisma.service';
@@ -340,34 +344,102 @@ export class PerformanceMcpService {
         };
       },
     });
-    const generateWorkspacePeopleComparison = createTool({
-      id: 'generate_workspace_people_comparison',
+    const getWorkspacePeopleComparisonContext = createTool({
+      id: 'get_workspace_people_comparison_context',
       description:
-        'Regenera la comparación de equipos y personas con los reportes guardados. Requiere OWNER/ADMIN del workspace. Devuelve un trabajo para consultar su progreso.',
+        'Devuelve los últimos reportes guardados, las instrucciones y el schema para que el cliente escriba la comparación de People. No llama a un modelo.',
       inputSchema: z.object({
         workspaceId: z.string().min(1),
         evaluatorId: z.string().min(1),
       }),
       outputSchema: z.object({
-        jobId: z.string().nullable(),
-        status: z.string(),
+        workspaceId: z.string(),
+        evaluatorId: z.string(),
+        fingerprint: z.string(),
+        instructions: z.string(),
+        schema: z.record(z.string(), z.unknown()),
+        input: z.unknown(),
+        nextStep: z.string(),
       }),
       mcp: {
         annotations: {
-          readOnlyHint: false,
+          title: 'Get workspace people comparison context',
+          readOnlyHint: true,
           destructiveHint: false,
-          idempotentHint: false,
-          openWorldHint: true,
+          openWorldHint: false,
         },
-        _meta: { securitySchemes: writeSecurity },
+        _meta: { securitySchemes: readSecurity },
       },
       execute: async ({ workspaceId, evaluatorId }, context) => {
-        const identity = mcpIdentity(context, 'reports:write');
-        mcpIdentity(context, 'reports:read');
-        return this.comparisons.generate(
+        const identity = mcpIdentity(context, 'reports:read');
+        if (
+          !(await this.accessControl.canViewResourceContext({
+            resource: 'workspace',
+            resourceId: workspaceId,
+            userId: identity.userId,
+            roles: ['OWNER', 'ADMIN', 'VIEWER'],
+          }))
+        )
+          throw new ForbiddenException('Workspace access required');
+        const snapshot = await this.comparisons.externalContext(
           workspaceId,
           evaluatorId,
           identity.userId,
+        );
+        return {
+          workspaceId,
+          evaluatorId,
+          fingerprint: snapshot.fingerprint,
+          instructions: PEOPLE_COMPARISON_INSTRUCTIONS,
+          schema: z.toJSONSchema(peopleComparisonSchema),
+          input: snapshot,
+          nextStep:
+            'Escribí la comparación con estos reportes y guardala con create_workspace_people_comparison usando el mismo workspaceId, evaluatorId y fingerprint. No pidas una generación en el servidor.',
+        };
+      },
+    });
+    const createWorkspacePeopleComparison = createTool({
+      id: 'create_workspace_people_comparison',
+      description:
+        'Valida y guarda una comparación de People escrita por el cliente. No llama a un modelo. Requiere OWNER/ADMIN del workspace.',
+      inputSchema: z.object({
+        workspaceId: z.string().min(1),
+        evaluatorId: z.string().min(1),
+        fingerprint: z
+          .string()
+          .min(1)
+          .describe(
+            'Fingerprint devuelto por get_workspace_people_comparison_context.',
+          ),
+        comparison: peopleComparisonSchema,
+      }),
+      outputSchema: z.object({
+        evaluatorId: z.string(),
+        fingerprint: z.string(),
+        generatedAt: z.string(),
+      }),
+      mcp: {
+        annotations: {
+          title: 'Create workspace people comparison',
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: writeSecurity },
+      },
+      execute: async (
+        { workspaceId, evaluatorId, fingerprint, comparison },
+        context,
+      ) => {
+        const identity = mcpIdentity(context, 'reports:write');
+        mcpIdentity(context, 'reports:read');
+        return this.comparisons.saveExternal(
+          workspaceId,
+          evaluatorId,
+          identity.userId,
+          fingerprint,
+          comparison,
         );
       },
     });
@@ -409,10 +481,12 @@ export class PerformanceMcpService {
       description:
         'Genera y persiste evaluaciones Project Report con los datos conectados a Performance Platform.',
       instructions:
-        'Primero llama list_groups y list_evaluators para el proyecto elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo proyecto, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
+        'Primero llama list_groups y list_evaluators para el proyecto elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo proyecto, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Para la comparación de People de un workspace, usa get_workspace_people_comparison_context y escribí vos la comparación. Guardala con create_workspace_people_comparison y el mismo fingerprint. No hay una generación de comparación en el servidor. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
       tools: {
         get_workspace_people: getWorkspacePeople,
-        generate_workspace_people_comparison: generateWorkspacePeopleComparison,
+        get_workspace_people_comparison_context:
+          getWorkspacePeopleComparisonContext,
+        create_workspace_people_comparison: createWorkspacePeopleComparison,
         get_workspace_people_comparison_job: getWorkspacePeopleComparisonJob,
         list_knowledge_sources: listKnowledgeSources,
         list_groups: listGroups,
