@@ -43,6 +43,7 @@ type ClientRegistrationRequest = {
   grantTypes?: unknown;
   responseTypes?: unknown;
   tokenEndpointAuthMethod?: unknown;
+  tokenEndpointAuthMethods?: unknown;
   applicationType?: unknown;
 };
 
@@ -216,16 +217,12 @@ export class McpOAuthService {
         'response_types must be ["code"]',
       );
     }
-    const tokenEndpointAuthMethod =
-      input.tokenEndpointAuthMethod === undefined
-        ? 'none'
-        : input.tokenEndpointAuthMethod;
-    if (tokenEndpointAuthMethod !== 'none') {
-      throw oauthError(
-        'invalid_client_metadata',
-        'Only public clients using token_endpoint_auth_method none are supported',
-      );
-    }
+    const tokenEndpointAuthMethod = publicClientAuthMethod(
+      input.tokenEndpointAuthMethod,
+      input.tokenEndpointAuthMethods,
+      'invalid_client_metadata',
+      'Only public clients using token_endpoint_auth_method none are supported',
+    );
     const applicationType = normalizeApplicationType(
       input.applicationType,
       redirectUris,
@@ -522,14 +519,12 @@ export class McpOAuthService {
         'Client metadata must include client_name',
       );
     }
-    const tokenEndpointAuthMethod =
-      clientMetadata.token_endpoint_auth_method ?? 'none';
-    if (tokenEndpointAuthMethod !== 'none') {
-      throw oauthError(
-        'invalid_client',
-        'Only public CIMD clients using token_endpoint_auth_method none are supported',
-      );
-    }
+    publicClientAuthMethod(
+      clientMetadata.token_endpoint_auth_method,
+      clientMetadata.token_endpoint_auth_methods_supported,
+      'invalid_client',
+      'Only public CIMD clients using token_endpoint_auth_method none are supported',
+    );
     const grantTypes = optionalStringArray(
       clientMetadata.grant_types,
       ['authorization_code'],
@@ -762,6 +757,35 @@ function requiredUrl(name: 'PUBLIC_API_URL' | 'FRONTEND_URL') {
     throw new Error(`${name} must use HTTP or HTTPS`);
   }
   return url.toString().replace(/\/$/, '');
+}
+
+function publicClientAuthMethod(
+  singular: unknown,
+  plural: unknown,
+  error: 'invalid_client' | 'invalid_client_metadata',
+  description: string,
+) {
+  const declared: string[] = [];
+  if (singular !== undefined) {
+    if (typeof singular !== 'string') {
+      throw oauthError(error, 'token_endpoint_auth_method must be a string');
+    }
+    declared.push(singular);
+  }
+  if (plural !== undefined) {
+    if (
+      !Array.isArray(plural) ||
+      plural.some((item) => typeof item !== 'string' || !item.trim())
+    ) {
+      throw oauthError(
+        error,
+        'token_endpoint_auth_methods_supported must be an array of strings',
+      );
+    }
+    declared.push(...plural);
+  }
+  if (declared.length === 0 || declared.includes('none')) return 'none';
+  throw oauthError(error, description);
 }
 
 function oauthError(error: string, description: string) {
