@@ -1,3 +1,7 @@
+jest.mock('../workspaces/people-comparison.service', () => ({
+  PeopleComparisonService: class {},
+}));
+import type { PeopleComparisonService } from '../workspaces/people-comparison.service';
 jest.mock('../mastra', () => ({ mastra: { getAgent: jest.fn() } }));
 jest.mock('./report-agent-tools', () => ({ reportAgentTools: jest.fn() }));
 
@@ -32,6 +36,7 @@ describe('report scheduler lifecycle', () => {
       {} as PluginRuntimeService,
       jobs as unknown as GenerationService,
       {} as KnowledgeService,
+      { changed: jest.fn() } as unknown as PeopleComparisonService,
     );
   });
 

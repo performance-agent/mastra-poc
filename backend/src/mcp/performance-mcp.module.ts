@@ -1,3 +1,4 @@
+import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { Module } from '@nestjs/common';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { ReportsModule } from '../reports/reports.module';
@@ -9,7 +10,12 @@ import { PerformanceMcpController } from './performance-mcp.controller';
 import { PerformanceMcpService } from './performance-mcp.service';
 
 @Module({
-  imports: [AccessControlModule, ReportsModule, EvaluatorsModule],
+  imports: [
+    AccessControlModule,
+    ReportsModule,
+    EvaluatorsModule,
+    WorkspacesModule,
+  ],
   controllers: [
     McpOAuthController,
     PerformanceMcpController,

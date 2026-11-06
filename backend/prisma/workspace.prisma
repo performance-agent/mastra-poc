@@ -1,4 +1,5 @@
 model Workspace {
+  peopleComparisons PeopleComparison[]
   knowledgeNodes KnowledgeNode[]
   knowledgeConnections KnowledgeConnection[]
   generationJobs GenerationJob[]

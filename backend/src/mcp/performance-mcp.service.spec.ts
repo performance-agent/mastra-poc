@@ -1,3 +1,11 @@
+jest.mock('../workspaces/people-comparison.service', () => ({
+  PeopleComparisonService: class {},
+}));
+jest.mock('../workspaces/workspace-people.service', () => ({
+  WorkspacePeopleService: class {},
+}));
+import type { PeopleComparisonService } from '../workspaces/people-comparison.service';
+import type { WorkspacePeopleService } from '../workspaces/workspace-people.service';
 jest.mock('@mastra/core/tools', () => ({
   createTool: (tool: unknown) => tool,
 }));
@@ -18,7 +26,12 @@ import type { ReportsService } from '../reports/reports.service';
 import type { EvaluatorsService } from '../evaluators/evaluators.service';
 
 describe('evaluator MCP tools', () => {
-  const access = { canAccessResource: jest.fn() };
+  const access = {
+    canAccessResource: jest.fn(),
+    canViewResourceContext: jest.fn(),
+  };
+  const people = { list: jest.fn() };
+  const comparisons = { generate: jest.fn(), jobStatus: jest.fn() };
   const reports = {
     prepareExternalGroupReport: jest.fn(),
     createGroupReportFromContent: jest.fn(),
@@ -37,11 +50,14 @@ describe('evaluator MCP tools', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     access.canAccessResource.mockResolvedValue(true);
+    access.canViewResourceContext.mockResolvedValue(true);
     const service = new PerformanceMcpService(
       {} as PrismaService,
       access as unknown as AccessControlService,
       reports as unknown as ReportsService,
       evaluators as unknown as EvaluatorsService,
+      people as unknown as WorkspacePeopleService,
+      comparisons as unknown as PeopleComparisonService,
     );
     tools = (service.server as unknown as { tools: typeof tools }).tools;
   });
@@ -129,5 +145,68 @@ describe('evaluator MCP tools', () => {
       ),
     ).rejects.toThrow(ForbiddenException);
     expect(reports.prepareExternalGroupReport).not.toHaveBeenCalled();
+  });
+  it('reads saved workspace people after checking context access, without generating', async () => {
+    people.list.mockResolvedValue({ comparison: null });
+    await expect(
+      tools.get_workspace_people.execute(
+        { workspaceId: 'ws', evaluatorId: 'e' },
+        context(['reports:read']),
+      ),
+    ).resolves.toEqual({ data: { comparison: null } });
+    expect(people.list).toHaveBeenCalledWith('ws', 'user', 'e');
+    expect(comparisons.generate).not.toHaveBeenCalled();
+    access.canViewResourceContext.mockResolvedValue(false);
+    await expect(
+      tools.get_workspace_people.execute(
+        { workspaceId: 'private', evaluatorId: 'e' },
+        context(['reports:read']),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+  it('requires both scopes and delegates comparison permissions to the shared service', async () => {
+    const input = { workspaceId: 'ws', evaluatorId: 'e' };
+    for (const scopes of [[], ['reports:read'], ['reports:write']]) {
+      await expect(
+        tools.generate_workspace_people_comparison.execute(
+          input,
+          context(scopes),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+    }
+    comparisons.generate.mockResolvedValue({ jobId: 'job', status: 'queued' });
+    await expect(
+      tools.generate_workspace_people_comparison.execute(
+        input,
+        context(['reports:read', 'reports:write']),
+      ),
+    ).resolves.toEqual({ jobId: 'job', status: 'queued' });
+    expect(comparisons.generate).toHaveBeenCalledWith('ws', 'e', 'user');
+    comparisons.generate.mockRejectedValue(new ForbiddenException());
+    await expect(
+      tools.generate_workspace_people_comparison.execute(
+        input,
+        context(['reports:read', 'reports:write']),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+  it('requires read scope to retrieve comparison job progress', async () => {
+    const input = { workspaceId: 'ws', evaluatorId: 'e', jobId: 'job' };
+    await expect(
+      tools.get_workspace_people_comparison_job.execute(input, context([])),
+    ).rejects.toThrow(UnauthorizedException);
+    comparisons.jobStatus.mockResolvedValue({ status: 'running' });
+    await expect(
+      tools.get_workspace_people_comparison_job.execute(
+        input,
+        context(['reports:read']),
+      ),
+    ).resolves.toEqual({ data: { status: 'running' } });
+    expect(comparisons.jobStatus).toHaveBeenCalledWith(
+      'ws',
+      'e',
+      'job',
+      'user',
+    );
   });
 });

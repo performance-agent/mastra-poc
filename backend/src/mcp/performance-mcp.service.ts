@@ -3,6 +3,8 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { WorkspacePeopleService } from '../workspaces/workspace-people.service';
+import { PeopleComparisonService } from '../workspaces/people-comparison.service';
 import { createTool } from '@mastra/core/tools';
 import { MCPServer } from '@mastra/mcp';
 import { z } from 'zod';
@@ -43,6 +45,8 @@ export class PerformanceMcpService {
     private readonly accessControl: AccessControlService,
     private readonly reports: ReportsService,
     private readonly evaluators: EvaluatorsService,
+    private readonly people: WorkspacePeopleService,
+    private readonly comparisons: PeopleComparisonService,
   ) {
     const listGroups = createTool({
       id: 'list_groups',
@@ -299,6 +303,105 @@ export class PerformanceMcpService {
       },
     });
 
+    const getWorkspacePeople = createTool({
+      id: 'get_workspace_people',
+      description:
+        'Consulta People y la comparación guardada para un evaluador de workspace. No genera contenido.',
+      inputSchema: z.object({
+        workspaceId: z.string().min(1),
+        evaluatorId: z.string().min(1),
+      }),
+      outputSchema: z.object({ data: z.unknown() }),
+      mcp: {
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: readSecurity },
+      },
+      execute: async ({ workspaceId, evaluatorId }, context) => {
+        const identity = mcpIdentity(context, 'reports:read');
+        if (
+          !(await this.accessControl.canViewResourceContext({
+            resource: 'workspace',
+            resourceId: workspaceId,
+            userId: identity.userId,
+            roles: ['OWNER', 'ADMIN', 'VIEWER'],
+          }))
+        )
+          throw new ForbiddenException('Workspace access required');
+        return {
+          data: await this.people.list(
+            workspaceId,
+            identity.userId,
+            evaluatorId,
+          ),
+        };
+      },
+    });
+    const generateWorkspacePeopleComparison = createTool({
+      id: 'generate_workspace_people_comparison',
+      description:
+        'Regenera la comparación de equipos y personas con los reportes guardados. Requiere OWNER/ADMIN del workspace. Devuelve un trabajo para consultar su progreso.',
+      inputSchema: z.object({
+        workspaceId: z.string().min(1),
+        evaluatorId: z.string().min(1),
+      }),
+      outputSchema: z.object({
+        jobId: z.string().nullable(),
+        status: z.string(),
+      }),
+      mcp: {
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+        _meta: { securitySchemes: writeSecurity },
+      },
+      execute: async ({ workspaceId, evaluatorId }, context) => {
+        const identity = mcpIdentity(context, 'reports:write');
+        mcpIdentity(context, 'reports:read');
+        return this.comparisons.generate(
+          workspaceId,
+          evaluatorId,
+          identity.userId,
+        );
+      },
+    });
+    const getWorkspacePeopleComparisonJob = createTool({
+      id: 'get_workspace_people_comparison_job',
+      description:
+        'Consulta el progreso del trabajo de comparación del workspace.',
+      inputSchema: z.object({
+        workspaceId: z.string().min(1),
+        evaluatorId: z.string().min(1),
+        jobId: z.string().min(1),
+      }),
+      outputSchema: z.object({ data: z.unknown() }),
+      mcp: {
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: readSecurity },
+      },
+      execute: async ({ workspaceId, evaluatorId, jobId }, context) => {
+        const identity = mcpIdentity(context, 'reports:read');
+        return {
+          data: await this.comparisons.jobStatus(
+            workspaceId,
+            evaluatorId,
+            jobId,
+            identity.userId,
+          ),
+        };
+      },
+    });
+
     this.server = new MCPServer({
       id: 'performance-platform',
       name: 'Performance Platform',
@@ -308,6 +411,9 @@ export class PerformanceMcpService {
       instructions:
         'Primero llama list_groups y list_evaluators para el proyecto elegido. Pide al usuario que elija evaluador. list_knowledge_sources permite consultar los documentos disponibles: todos los preparados se incluyen por defecto; knowledgeSelection permite deseleccionarlos, incluso todos con sourceIds vacío. Usa get_group_report_context con groupId, evaluatorId, período y selección opcionales. Aplica sus instrucciones y genera un reporte neutral en español sin inventar evidencia. Guarda con create_group_report usando el mismo proyecto, evaluador, período y knowledgeContextId devuelto; ese contexto conserva las versiones y fragmentos originales durante una hora. Sólo OWNER y ADMIN pueden guardar; VIEWER sólo puede consultar.',
       tools: {
+        get_workspace_people: getWorkspacePeople,
+        generate_workspace_people_comparison: generateWorkspacePeopleComparison,
+        get_workspace_people_comparison_job: getWorkspacePeopleComparisonJob,
         list_knowledge_sources: listKnowledgeSources,
         list_groups: listGroups,
         list_evaluators: listEvaluators,

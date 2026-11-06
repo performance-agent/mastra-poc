@@ -1,9 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronRight, ExternalLink, RefreshCw, Users } from "lucide-react";
 import { api, ApiError, errorMessage } from "@/lib/api";
-import type { WorkspacePeople as PeopleData, WorkspacePerson } from "@/lib/types";
+import type {
+  WorkspacePeople as PeopleData,
+  WorkspacePerson,
+  WorkspaceComparison,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -89,7 +93,24 @@ export function WorkspacePeople({
   const query = useQuery({
     queryKey: ["workspace", workspaceId, "people", evaluatorId],
     queryFn: () => api.getWorkspacePeople(workspaceId, evaluatorId),
+    refetchInterval: ({ state }) =>
+      ["queued", "running"].includes(state.data?.comparisonJob?.status ?? "") ||
+      (state.data?.capabilities?.canRead && (!state.data.comparison || state.data.comparison.stale))
+        ? 5000
+        : 30000,
   });
+  const generation = useMutation({
+    mutationFn: () => api.generateWorkspacePeopleComparison(workspaceId, query.data!.evaluatorId!),
+    onSuccess: () => {
+      void query.refetch();
+      setOpened(null);
+    },
+  });
+  const comparison = query.data?.comparison;
+  const comparisonActive = ["queued", "running"].includes(query.data?.comparisonJob?.status ?? "");
+  useEffect(() => {
+    setOpened(null);
+  }, [workspaceId, evaluatorId, comparison?.generatedAt, comparison?.stale]);
   const selected = query.data?.evaluators.find((e) => e.id === query.data?.evaluatorId);
   const groups = useMemo(() => {
     if (!query.data?.evaluatorId) return [];
@@ -97,20 +118,38 @@ export function WorkspacePeople({
     return (query.data?.groups ?? [])
       .map((group) => {
         const matchesGroup = group.name.toLocaleLowerCase().includes(needle);
-        const people = (group.report?.people ?? []).filter(
-          (p) =>
-            (matchesGroup || p.displayName.toLocaleLowerCase().includes(needle)) &&
-            (status === "all" || status === p.assessment.status),
-        );
+        const comparative = comparison?.groups.find((item) => item.groupId === group.id);
+        const people = (group.report?.people ?? [])
+          .map((person) => {
+            const reviewed = !comparison?.stale
+              ? comparative?.people.find((item) => item.personId === person.personId)
+              : undefined;
+            return reviewed
+              ? {
+                  ...person,
+                  assessment: reviewed.assessment,
+                  suggestions: reviewed.suggestions,
+                  originalAssessment: person.assessment,
+                  comparative: reviewed,
+                }
+              : person;
+          })
+          .filter(
+            (p) =>
+              (matchesGroup || p.displayName.toLocaleLowerCase().includes(needle)) &&
+              (status === "all" || status === p.assessment.status),
+          );
         return {
           ...group,
+          comparative,
           visiblePeople: people,
           visible:
             people.length > 0 || (matchesGroup && status === "all" && !group.report?.people.length),
         };
       })
-      .filter((group) => group.visible);
-  }, [query.data, search, status]);
+      .filter((group) => group.visible)
+      .sort((a, b) => (a.comparative?.rank ?? Infinity) - (b.comparative?.rank ?? Infinity));
+  }, [query.data, search, status, comparison]);
   const reportLink = (group: PeopleData["groups"][number], label: string, primary = false) => (
     <Button
       asChild
@@ -146,7 +185,7 @@ export function WorkspacePeople({
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">People</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            A quick view of each person, in the context of their project.
+            Evidence-based team comparisons and individual contributions across the workspace.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -160,6 +199,7 @@ export function WorkspacePeople({
               onValueChange={(value) => {
                 setEvaluatorId(value);
                 setOpened(null);
+                generation.reset();
               }}
               disabled={!query.data?.evaluators.length}
             >
@@ -190,6 +230,69 @@ export function WorkspacePeople({
           </Button>
         </div>
       </div>
+      {query.data?.capabilities?.canRead && selected?.scope === "WORKSPACE" && (
+        <section
+          className="space-y-3 rounded-2xl border bg-card p-5"
+          aria-label="Workspace comparison"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-semibold">Workspace comparison</h3>
+            {query.data.capabilities.canGenerate && (
+              <Button
+                size="sm"
+                disabled={
+                  generation.isPending ||
+                  comparisonActive ||
+                  !query.data.groups.some((group) => group.report)
+                }
+                onClick={() => generation.mutate()}
+              >
+                <RefreshCw
+                  className={`mr-2 size-4 ${comparisonActive || generation.isPending ? "animate-spin" : ""}`}
+                />
+                {comparisonActive
+                  ? "Comparing teams..."
+                  : comparison
+                    ? "Regenerate comparison"
+                    : "Generate comparison"}
+              </Button>
+            )}
+          </div>
+          <div role="status" aria-live="polite" className="space-y-2 text-sm">
+            {comparison ? (
+              <>
+                <p>{comparison.summary}</p>
+                <p className="text-xs text-muted-foreground">
+                  Compared {new Date(comparison.generatedAt).toLocaleString()}
+                </p>
+                {comparison.stale && (
+                  <p className="text-amber-700 dark:text-amber-300">
+                    Outdated comparison. Source reports or evaluator criteria changed. Individual
+                    rows show the saved report until a new comparison is ready.
+                  </p>
+                )}
+                <Facts title="Comparison limitations" items={comparison.limitations} />
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                Comparison pending. Current assessments come from each project's saved report.
+              </p>
+            )}
+            {comparisonActive && (
+              <p>
+                Comparing saved reports - {query.data.comparisonJob?.progress?.stage ?? "queued"}
+              </p>
+            )}
+          </div>
+          {(generation.error || query.data.comparisonJob?.status === "failed") && (
+            <p role="alert" className="text-sm text-destructive">
+              {generation.error
+                ? errorMessage(generation.error)
+                : (query.data.comparisonJob?.error ?? "Comparison failed. Try again.")}
+            </p>
+          )}
+        </section>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="sm:w-96">
           <SearchInput
@@ -246,6 +349,32 @@ export function WorkspacePeople({
             </div>
             {group.report && reportLink(group, "View report")}
           </div>
+          {group.comparative && (
+            <div
+              className="space-y-3 border-t bg-muted/20 px-5 py-4"
+              aria-label={`Comparison for ${group.name}`}
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm font-semibold">
+                  {group.comparative.rank === null
+                    ? "Not ranked"
+                    : `Team rank #${group.comparative.rank}`}
+                  {comparison?.stale ? " - Previous comparison" : ""}
+                </span>
+                <Status person={{ assessment: group.comparative.assessment } as WorkspacePerson} />
+                <span className="text-xs text-muted-foreground">
+                  Confidence: {group.comparative.assessment.confidence.toLowerCase()}
+                </span>
+              </div>
+              <p className="text-sm">{group.comparative.assessment.summary}</p>
+              <p className="text-sm text-muted-foreground">{group.comparative.rankReason}</p>
+              <Facts title="Assessment rationale" items={[group.comparative.changeReason]} />
+              <Facts title="Strengths" items={group.comparative.assessment.positiveSignals} />
+              <Facts title="Follow-up" items={group.comparative.assessment.concerns} />
+              <Facts title="Limitations" items={group.comparative.assessment.limitations} />
+              <Facts title="Next actions" items={group.comparative.suggestions} />
+            </div>
+          )}
           {group.visiblePeople.length ? (
             <>
               <div className="mx-5 hidden grid-cols-[minmax(140px,1fr)_minmax(180px,2fr)_minmax(140px,1fr)_160px_20px] gap-4 border-b pb-2 text-xs font-medium text-muted-foreground lg:grid">
@@ -306,8 +435,9 @@ export function WorkspacePeople({
         </section>
       ))}
       <p className="text-xs text-muted-foreground">
-        Metrics describe saved activity; they do not determine status. Each project retains its own
-        report period.
+        Team ranks compare available evidence, without forcing good or poor outcomes. Metrics alone
+        do not determine status. Each project retains its report period; people are not individually
+        ranked.
       </p>
       <Sheet
         open={!!opened}
@@ -353,6 +483,16 @@ export function WorkspacePeople({
                   <p className="text-sm text-muted-foreground">Metrics unavailable.</p>
                 )}
               </section>
+              {!comparison?.stale && (
+                <IndividualComparison
+                  comparison={comparison}
+                  person={opened.person}
+                  groupId={opened.group.id}
+                  original={query.data?.groups
+                    .find((group) => group.id === opened.group.id)
+                    ?.report?.people.find((person) => person.personId === opened.person.personId)}
+                />
+              )}
               <Facts
                 title="Contributions"
                 items={opened.person.contributionSummary ? [opened.person.contributionSummary] : []}
@@ -404,13 +544,46 @@ export function WorkspacePeople({
                 </section>
               )}
               <p className="text-xs text-muted-foreground">
-                Based on the saved report. No newer activity fetched.
+                Based on saved reports and the workspace comparison when available. No newer
+                activity fetched.
               </p>
               {opened.group.report && reportLink(opened.group, "Open full report", true)}
             </div>
           )}
         </SheetContent>
       </Sheet>
+    </section>
+  );
+}
+
+function IndividualComparison({
+  comparison,
+  person,
+  groupId,
+  original,
+}: {
+  comparison?: WorkspaceComparison | null;
+  person: WorkspacePerson;
+  groupId: string;
+  original?: WorkspacePerson;
+}) {
+  const review = comparison?.groups
+    .find((group) => group.groupId === groupId)
+    ?.people.find((item) => item.personId === person.personId);
+  if (!review || !original) return null;
+  return (
+    <section
+      className="space-y-3 rounded-xl border p-4"
+      aria-label="Individual comparison rationale"
+    >
+      <h3 className="font-semibold">Workspace assessment</h3>
+      <p className="text-sm">{review.changeReason}</p>
+      <p className="text-xs text-muted-foreground">
+        Confidence: {review.assessment.confidence.toLowerCase()}
+      </p>
+      <p className="text-sm font-medium">Original report assessment</p>
+      <Status person={original} />
+      <p className="text-sm text-muted-foreground">{original.assessment.summary}</p>
     </section>
   );
 }

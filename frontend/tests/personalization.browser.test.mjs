@@ -1448,3 +1448,181 @@ test(
     assert.equal(state.setup.groupId, "group-a");
   },
 );
+function comparedPeopleFixture({ stale = false, canGenerate = true } = {}) {
+  const data = workspacePeople();
+  data.capabilities = { canRead: true, canGenerate };
+  const source = data.groups[0].report;
+  source.people.forEach((person, index) => {
+    person.personId = `report-people:${index}`;
+  });
+  data.groups[1].report = {
+    ...structuredClone(source),
+    id: "report-research",
+    people: [
+      {
+        ...structuredClone(source.people[0]),
+        personId: "report-research:0",
+        displayName: "Mateo Silva",
+      },
+    ],
+  };
+  const conclusion = (person, status, changeReason) => ({
+    personId: person.personId,
+    assessment: {
+      ...person.assessment,
+      status,
+      summary: "Recalibrated using comparable delivery evidence.",
+    },
+    changeReason,
+    suggestions: ["Review delivery evidence."],
+    evidenceIds: [],
+  });
+  data.comparison = {
+    summary:
+      "Research shipped reviewed work; Platform needs delivery follow-up despite its favorable report.",
+    generatedAt: "2026-11-05T12:00:00Z",
+    stale,
+    version: "people-comparison-v1",
+    limitations: ["Periods differ by one week."],
+    groups: data.groups.map((group, index) => ({
+      groupId: group.id,
+      rank: index ? 1 : 2,
+      rankReason: index
+        ? "More complete reviewed delivery."
+        : "Less evidence of completed delivery.",
+      assessment: {
+        ...source.people[0].assessment,
+        status: index ? "GOOD" : "RISK",
+        summary: index
+          ? "Reviewed delivery is supported."
+          : "The original favorable status overlooked unfinished work.",
+      },
+      changeReason: "Compared delivered work rather than activity volume.",
+      suggestions: ["Check delivery outcomes."],
+      evidenceIds: [],
+      people: group.report.people.map((person, personIndex) =>
+        conclusion(
+          person,
+          personIndex ? "INSUFFICIENT_DATA" : index ? "GOOD" : "WATCH",
+          "Own contribution evidence supports a follow-up instead of the original favorable status.",
+        ),
+      ),
+    })),
+  };
+  data.comparisonJob = null;
+  return data;
+}
+
+test(
+  "people comparison ranks teams and explains recalibrated individual states",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await setup(t);
+    const data = comparedPeopleFixture();
+    await page.route("**/api/workspaces/ws-a/people**", (route) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(data) }),
+    );
+    await page.goto(base + "/organizations/org-a/workspaces/ws-a?tab=people");
+    await page.getByRole("region", { name: "Workspace comparison", exact: true }).waitFor();
+    await page.getByText("Team rank #1", { exact: true }).waitFor();
+    const panels = page.getByRole("region").filter({ has: page.getByText(/Team rank #/) });
+    assert.match(await panels.first().innerText(), /Research lab/);
+    const person = page.getByRole("button", { name: "View Lucía Fernández in Platform team" });
+    assert.match(await person.innerText(), /Follow-up/);
+    await person.click();
+    const detail = page.getByRole("region", { name: "Individual comparison rationale" });
+    await detail.waitFor();
+    assert.match(await detail.innerText(), /Original report assessment/);
+    assert.match(await detail.innerText(), /On track/);
+    assert.match(await detail.innerText(), /Own contribution evidence/);
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+  },
+);
+
+test(
+  "people comparison generates manually, shows progress and preserves stale results on failure",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await setup(t);
+    const data = comparedPeopleFixture({ stale: true });
+    let posts = 0;
+    await page.route("**/api/workspaces/ws-a/people**", async (route) => {
+      if (route.request().method() === "POST") {
+        assert.equal(route.request().postDataJSON().evaluatorId, "eva-a");
+        posts++;
+        data.comparisonJob = {
+          id: "comparison-job",
+          status: "running",
+          progress: { stage: "generating", completed: ["preparing"], total: 4 },
+          error: null,
+        };
+        return route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ jobId: "comparison-job", status: "queued" }),
+        });
+      }
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
+    });
+    await page.goto(base + "/organizations/org-a/workspaces/ws-a?tab=people");
+    await page.getByText(/Outdated comparison/).waitFor();
+    assert.match(
+      await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).innerText(),
+      /On track/,
+    );
+    await page.getByRole("button", { name: "Regenerate comparison" }).click();
+    await page.getByText("Comparing saved reports - generating").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Comparing teams..." }).isDisabled(), true);
+    assert.equal(posts, 1);
+    data.comparisonJob = {
+      ...data.comparisonJob,
+      status: "failed",
+      error: "Model temporarily unavailable",
+    };
+    await page.getByRole("button", { name: "Refresh people", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "Model temporarily unavailable" }).waitFor();
+    await page.getByText(data.comparison.summary, { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Regenerate comparison" }).click();
+    assert.equal(posts, 2);
+    data.comparisonJob.status = "succeeded";
+    data.comparison.stale = false;
+    await page.getByRole("button", { name: "Refresh people", exact: true }).click();
+    await page.getByText(/Outdated comparison/).waitFor({ state: "hidden" });
+    assert.match(
+      await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).innerText(),
+      /Follow-up/,
+    );
+  },
+);
+
+test(
+  "people comparison keeps viewers read-only and project-only access on original reports",
+  { timeout: 60000 },
+  async (t) => {
+    const { page } = await setup(t);
+    let data = comparedPeopleFixture({ canGenerate: false });
+    await page.route("**/api/workspaces/ws-a/people**", (route) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify(data) }),
+    );
+    await page.goto(base + "/organizations/org-a/workspaces/ws-a?tab=people");
+    await page.getByText("Team rank #1", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Regenerate comparison" }).count(), 0);
+    data = workspacePeople();
+    data.capabilities = { canRead: false, canGenerate: false };
+    data.comparison = null;
+    data.comparisonJob = null;
+    await page.getByRole("button", { name: "Refresh people", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Workspace comparison", exact: true })
+      .waitFor({ state: "hidden" });
+    assert.equal(await page.getByText("Team rank #1", { exact: true }).count(), 0);
+    assert.match(
+      await page.getByRole("button", { name: "View Lucía Fernández in Platform team" }).innerText(),
+      /On track/,
+    );
+  },
+);

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test:knowledge": "node --test tests/knowledge.browser.test.mjs",
-    "test:people-mcp": "node --test --test-name-pattern=\"people workspace|MCP catalog|MCP setup\" tests/personalization.browser.test.mjs",
+    "test:people-mcp": "node --test --test-name-pattern=\"people workspace|people comparison|MCP catalog|MCP setup\" tests/personalization.browser.test.mjs",
     "test:personalization": "node --test tests/personalization.browser.test.mjs",
     "test:progress": "node --test tests/evaluation-progress.browser.test.mjs",
     "test:evaluators": "node --test tests/workspace-evaluators.browser.test.mjs",

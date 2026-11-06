@@ -1,3 +1,7 @@
+jest.mock('../workspaces/people-comparison.service', () => ({
+  PeopleComparisonService: class {},
+}));
+import type { PeopleComparisonService } from '../workspaces/people-comparison.service';
 import { BadRequestException } from '@nestjs/common';
 import { GenerationService } from '../generation/generation.service';
 import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service';
@@ -150,6 +154,7 @@ describe('ReportsService', () => {
       runtime as unknown as PluginRuntimeService,
       {} as GenerationService,
       knowledge as unknown as KnowledgeService,
+      { changed: jest.fn() } as unknown as PeopleComparisonService,
     );
     prisma.group.findUnique.mockResolvedValue(baseGroup);
     prisma.group.findUniqueOrThrow.mockResolvedValue(baseGroup);
@@ -436,6 +441,7 @@ describe('ReportsService', () => {
       runtime as unknown as PluginRuntimeService,
       { enqueue } as unknown as GenerationService,
       knowledge as unknown as KnowledgeService,
+      { changed: jest.fn() } as unknown as PeopleComparisonService,
     );
     prisma.performanceReport.findUnique.mockResolvedValue({
       id: 'report-1',

@@ -1,0 +1,17 @@
+model PeopleComparison {
+  id String @id @default(cuid())
+  workspaceId String
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  evaluatorId String @unique
+  evaluator Evaluator @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+  fingerprint String?
+  snapshot Json?
+  result Json?
+  generatedAt DateTime? @db.Timestamptz(3)
+  jobId String?
+  leaseToken String?
+  leaseUntil DateTime? @db.Timestamptz(3)
+  attemptedFingerprint String?
+  retryAfter DateTime? @db.Timestamptz(3)
+  @@index([workspaceId])
+}

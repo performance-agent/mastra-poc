@@ -1,3 +1,7 @@
+jest.mock('./people-comparison.service', () => ({
+  PeopleComparisonService: class {},
+}));
+import { PeopleComparisonService } from './people-comparison.service';
 jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
@@ -24,6 +28,7 @@ describe('WorkspacesController', () => {
         { provide: ResourcesService, useValue: {} },
         { provide: InvitationsService, useValue: {} },
         { provide: WorkspacePeopleService, useValue: {} },
+        { provide: PeopleComparisonService, useValue: {} },
       ],
     }).compile();
 
