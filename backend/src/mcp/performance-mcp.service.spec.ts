@@ -31,7 +31,11 @@ describe('evaluator MCP tools', () => {
     canViewResourceContext: jest.fn(),
   };
   const people = { list: jest.fn() };
-  const comparisons = { generate: jest.fn(), jobStatus: jest.fn() };
+  const comparisons = {
+    externalContext: jest.fn(),
+    saveExternal: jest.fn(),
+    jobStatus: jest.fn(),
+  };
   const reports = {
     prepareExternalGroupReport: jest.fn(),
     createGroupReportFromContent: jest.fn(),
@@ -155,7 +159,8 @@ describe('evaluator MCP tools', () => {
       ),
     ).resolves.toEqual({ data: { comparison: null } });
     expect(people.list).toHaveBeenCalledWith('ws', 'user', 'e');
-    expect(comparisons.generate).not.toHaveBeenCalled();
+    expect(comparisons.externalContext).not.toHaveBeenCalled();
+    expect(comparisons.saveExternal).not.toHaveBeenCalled();
     access.canViewResourceContext.mockResolvedValue(false);
     await expect(
       tools.get_workspace_people.execute(
@@ -164,27 +169,64 @@ describe('evaluator MCP tools', () => {
       ),
     ).rejects.toThrow(ForbiddenException);
   });
-  it('requires both scopes and delegates comparison permissions to the shared service', async () => {
-    const input = { workspaceId: 'ws', evaluatorId: 'e' };
+  it('returns comparison context without starting a server generation', async () => {
+    comparisons.externalContext.mockResolvedValue({
+      fingerprint: 'abc',
+      sources: [],
+    });
+    await expect(
+      tools.get_workspace_people_comparison_context.execute(
+        { workspaceId: 'ws', evaluatorId: 'e' },
+        context(['reports:read']),
+      ),
+    ).resolves.toMatchObject({
+      workspaceId: 'ws',
+      evaluatorId: 'e',
+      fingerprint: 'abc',
+    });
+    expect(comparisons.externalContext).toHaveBeenCalledWith(
+      'ws',
+      'e',
+      'user',
+    );
+    expect(comparisons.saveExternal).not.toHaveBeenCalled();
+  });
+  it('requires both scopes and stores a client-written comparison', async () => {
+    const input = {
+      workspaceId: 'ws',
+      evaluatorId: 'e',
+      fingerprint: 'abc',
+      comparison: { summary: 'Listo' },
+    };
     for (const scopes of [[], ['reports:read'], ['reports:write']]) {
       await expect(
-        tools.generate_workspace_people_comparison.execute(
+        tools.create_workspace_people_comparison.execute(
           input,
           context(scopes),
         ),
       ).rejects.toThrow(UnauthorizedException);
     }
-    comparisons.generate.mockResolvedValue({ jobId: 'job', status: 'queued' });
+    comparisons.saveExternal.mockResolvedValue({
+      evaluatorId: 'e',
+      fingerprint: 'abc',
+      generatedAt: '2026-11-06T00:00:00.000Z',
+    });
     await expect(
-      tools.generate_workspace_people_comparison.execute(
+      tools.create_workspace_people_comparison.execute(
         input,
         context(['reports:read', 'reports:write']),
       ),
-    ).resolves.toEqual({ jobId: 'job', status: 'queued' });
-    expect(comparisons.generate).toHaveBeenCalledWith('ws', 'e', 'user');
-    comparisons.generate.mockRejectedValue(new ForbiddenException());
+    ).resolves.toMatchObject({ fingerprint: 'abc' });
+    expect(comparisons.saveExternal).toHaveBeenCalledWith(
+      'ws',
+      'e',
+      'user',
+      'abc',
+      input.comparison,
+    );
+    comparisons.saveExternal.mockRejectedValue(new ForbiddenException());
     await expect(
-      tools.generate_workspace_people_comparison.execute(
+      tools.create_workspace_people_comparison.execute(
         input,
         context(['reports:read', 'reports:write']),
       ),
