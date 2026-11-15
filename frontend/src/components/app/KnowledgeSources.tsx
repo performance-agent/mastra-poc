@@ -67,10 +67,12 @@ export function KnowledgeSourcePicker({
   groupId,
   workspaceId,
   onChange,
+  emptySelectionDescription = "No knowledge selected. This report will use the configured plugin resources only.",
 }: {
   groupId: string;
   workspaceId?: string;
   onChange: (sourceIds: string[] | null) => void;
+  emptySelectionDescription?: string;
 }) {
   const { firebaseUser } = useAuth();
   const group = useQuery({
@@ -271,9 +273,7 @@ export function KnowledgeSourcePicker({
       {selected.size === 0 && (
         <Alert>
           <Info className="h-4 w-4" />
-          <AlertDescription>
-            No knowledge selected. This report will use the configured plugin resources only.
-          </AlertDescription>
+          <AlertDescription>{emptySelectionDescription}</AlertDescription>
         </Alert>
       )}
       <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">

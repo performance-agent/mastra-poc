@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -136,6 +137,7 @@ export function RulesTab({
   const [historyReport, setHistoryReport] = useState<EvaluationReport | null>(null);
   const [editor, setEditor] = useState<RulePackage | "new" | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [reportsOpen, setReportsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [knowledgeIds, setKnowledgeIds] = useState<string[] | null>(null);
   const submitted = useRef<string | undefined>(undefined);
@@ -331,12 +333,11 @@ export function RulesTab({
               </div>
               <Button
                 onClick={() => {
-                  setKnowledgeIds(null);
-                  setSourcesOpen(true);
+                  setReportsOpen(true);
                 }}
                 disabled={running}
               >
-                {running ? "Running" : "Run"}
+                {running ? "Running" : "Analizar progreso"}
               </Button>
             </div>
             <EvaluationTree
@@ -382,10 +383,14 @@ export function RulesTab({
           });
         }}
       />
-      <Dialog open={sourcesOpen} onOpenChange={setSourcesOpen}>
-        <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto">
+      <Dialog open={reportsOpen} onOpenChange={setReportsOpen}>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Knowledge for this rule evaluation</DialogTitle>
+            <DialogTitle>Reportes del proyecto</DialogTitle>
+            <DialogDescription>
+              Elegí los reportes que querés comparar con las reglas de {selected?.name}. Después
+              podés sumar knowledge como contexto.
+            </DialogDescription>
           </DialogHeader>
           <ReportAnalysisSources
             workspaceId={workspaceId}
@@ -398,18 +403,54 @@ export function RulesTab({
             setModelKey={setModelKey}
             isRunning={running}
           />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReportsOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={running || !sourceReportIds.length}
+              onClick={() => {
+                setReportsOpen(false);
+                setKnowledgeIds(null);
+                setSourcesOpen(true);
+              }}
+            >
+              Continuar con knowledge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={sourcesOpen} onOpenChange={setSourcesOpen}>
+        <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Knowledge for this rule evaluation</DialogTitle>
+            <DialogDescription>
+              Vas a analizar {sourceReportIds.length} reportes del proyecto. El knowledge
+              seleccionado aporta contexto adicional a la comparación.
+            </DialogDescription>
+          </DialogHeader>
           <KnowledgeSourcePicker
             key={groupId}
             workspaceId={workspaceId}
             groupId={groupId}
             onChange={setKnowledgeIds}
+            emptySelectionDescription="Sin knowledge adicional. El análisis usa los reportes seleccionados como evidencia principal."
           />
           <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSourcesOpen(false);
+                setReportsOpen(true);
+              }}
+            >
+              Cambiar reportes
+            </Button>
             <Button
               onClick={() => void run()}
               disabled={knowledgeIds === null || running || !sourceReportIds.length}
             >
-              Run evaluation
+              Analizar progreso
             </Button>
           </DialogFooter>
         </DialogContent>
