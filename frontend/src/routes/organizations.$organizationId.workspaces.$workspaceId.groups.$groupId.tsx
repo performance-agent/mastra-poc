@@ -309,7 +309,12 @@ function GroupPage() {
           )}
 
           {tab === "rules" && (
-            <RulesTab workspaceId={workspaceId} groupId={groupId} canManage={canEvaluate} />
+            <RulesTab
+              key={groupId}
+              workspaceId={workspaceId}
+              groupId={groupId}
+              canManage={canEvaluate}
+            />
           )}
 
           {tab === "members" && (
