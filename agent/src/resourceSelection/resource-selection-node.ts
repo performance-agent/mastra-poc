@@ -1,3 +1,7 @@
+import {
+  isQuotaError,
+  QUOTA_MESSAGE,
+} from '../evaluationFlow/configuration.js';
 import { generationError } from '../generation.js';
 import { resourceSelectionAiOutputSchema } from './schemas.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
@@ -62,8 +66,10 @@ async function selectResources(
   } catch (error) {
     return failed(
       rule,
-      'selection_failed',
-      'Resource selection failed for this rule.',
+      isQuotaError(error) ? 'ai_quota_exhausted' : 'selection_failed',
+      isQuotaError(error)
+        ? QUOTA_MESSAGE
+        : 'Resource selection failed for this rule.',
     );
   }
 

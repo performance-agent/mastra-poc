@@ -1,0 +1,15 @@
+// Cache entries are scoped to the authorized group, resource and exact period.
+// Authorization is rechecked against the current catalog before every read.
+model EvaluationEvidenceCache {
+  id String @id
+  workspaceId String
+  groupId String
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  resourceId String
+  operationName String
+  data Json
+  fetchedAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@index([expiresAt])
+}

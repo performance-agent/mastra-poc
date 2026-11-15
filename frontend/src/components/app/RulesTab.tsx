@@ -1,3 +1,4 @@
+import { ReportAnalysisSources } from "./ReportAnalysisSources";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +26,7 @@ import { ApiError, api, errorMessage } from "@/lib/api";
 import type { LeafStatus } from "@/lib/tree-growth";
 import type {
   AssessmentVerdict,
+  ReportLength,
   EvaluationReport,
   GenerationJob,
   RuleAssessment,
@@ -115,6 +117,9 @@ export function RulesTab({
   groupId: string;
   canManage: boolean;
 }) {
+  const [sourceReportIds, setSourceReportIds] = useState<string[]>([]);
+  const [reportLength, setReportLength] = useState<ReportLength>("medium");
+  const [modelKey, setModelKey] = useState("balanced");
   const queryClient = useQueryClient();
   const packagesQ = useQuery({
     queryKey: ["workspace", workspaceId, "rule-packages"],
@@ -195,11 +200,14 @@ export function RulesTab({
   }
 
   const run = async () => {
-    if (!selected || running || knowledgeIds === null) return;
+    if (!selected || running || knowledgeIds === null || !sourceReportIds.length) return;
     setHistoryReport(null);
     try {
       const response = await api.startEvaluationWorkspace(workspaceId, {
         groupId,
+        sourceReportIds,
+        reportLength,
+        modelKey,
         knowledgeSelection: { sourceIds: knowledgeIds },
         rules: selected.rules.map((rule) => ({
           name: rule.name,
@@ -375,10 +383,21 @@ export function RulesTab({
         }}
       />
       <Dialog open={sourcesOpen} onOpenChange={setSourcesOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Knowledge for this rule evaluation</DialogTitle>
           </DialogHeader>
+          <ReportAnalysisSources
+            workspaceId={workspaceId}
+            groupId={groupId}
+            sourceReportIds={sourceReportIds}
+            setSourceReportIds={setSourceReportIds}
+            reportLength={reportLength}
+            setReportLength={setReportLength}
+            modelKey={modelKey}
+            setModelKey={setModelKey}
+            isRunning={running}
+          />
           <KnowledgeSourcePicker
             key={groupId}
             workspaceId={workspaceId}
@@ -386,7 +405,10 @@ export function RulesTab({
             onChange={setKnowledgeIds}
           />
           <DialogFooter>
-            <Button onClick={() => void run()} disabled={knowledgeIds === null || running}>
+            <Button
+              onClick={() => void run()}
+              disabled={knowledgeIds === null || running || !sourceReportIds.length}
+            >
               Run evaluation
             </Button>
           </DialogFooter>
@@ -442,6 +464,31 @@ function AssessmentCard({ assessment }: { assessment: RuleAssessment }) {
           {VERDICT_LABEL[assessment.verdict]}
         </span>
       </div>
+      {assessment.evolution ? (
+        <section className="mt-4 space-y-3 text-sm">
+          <p>{assessment.evolution.summary}</p>
+          {(
+            [
+              ["Mejoras", assessment.evolution.improvements],
+              ["Aspectos que se mantienen", assessment.evolution.unchanged],
+              ["Retrocesos", assessment.evolution.regressions],
+              ["Sin evidencia suficiente", assessment.evolution.unknowns],
+              ["Próximos pasos", assessment.evolution.recommendations],
+            ] as const
+          ).map(([label, items]) =>
+            items.length ? (
+              <div key={label}>
+                <h4 className="font-semibold">{label}</h4>
+                <ul className="list-disc pl-5">
+                  {items.map((text, i) => (
+                    <li key={i}>{text}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
+        </section>
+      ) : null}
       {assessment.criteria.length > 0 && (
         <ul className="mt-3 space-y-2">
           {assessment.criteria.map((criterion) => (

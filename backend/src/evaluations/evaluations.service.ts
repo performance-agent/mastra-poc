@@ -1,3 +1,4 @@
+import { ReportEvaluationsService } from './report-evaluations.service';
 import { randomUUID } from 'node:crypto';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import {
@@ -31,7 +32,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { ListEvaluationsDto } from './dto/list-evaluations.dto';
 
 type SavedEvaluationData = {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   rules: CreateEvaluationDto['rules'];
   period: EvaluationPeriod | null;
   report: ReturnType<typeof toReportResponse>;
@@ -51,6 +52,7 @@ export class EvaluationsService {
     private readonly jobs: GenerationService,
     private readonly insights: IndividualInsightsService = new IndividualInsightsService(),
     private readonly knowledge: KnowledgeService,
+    private readonly reportEvaluations?: ReportEvaluationsService,
   ) {}
 
   async enqueue(
@@ -135,6 +137,16 @@ export class EvaluationsService {
     capturedKnowledge?: KnowledgeReportSnapshot,
   ) {
     await progress?.('preparing');
+    if (dto.sourceReportIds !== undefined && this.reportEvaluations) {
+      await progress?.('rule_assessment');
+      return this.reportEvaluations.evaluate(
+        workspaceId,
+        dto,
+        view,
+        capturedKnowledge,
+        progress,
+      );
+    }
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },

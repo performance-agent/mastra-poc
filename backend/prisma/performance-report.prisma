@@ -14,6 +14,7 @@ model PerformanceReport {
   evaluator   Evaluator? @relation(fields: [evaluatorId], references: [id], onDelete: SetNull)
 
   type PerformanceReportType
+  evaluationVersion Int?
 
   title String?
 
@@ -30,6 +31,7 @@ model PerformanceReport {
   @@index([evaluatorId])
   @@index([type])
   @@index([createdAt])
+  @@unique([groupId, evaluationVersion])
 }
 
 model ReportRevision {

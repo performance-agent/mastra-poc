@@ -1,6 +1,11 @@
 import { generationError } from '../generation.js';
 import {
+  isQuotaError,
+  QUOTA_MESSAGE,
+} from '../evaluationFlow/configuration.js';
+import {
   ruleAssessmentAiOutputSchema,
+  configuredRuleAssessmentAiOutputSchema,
   type RuleAssessmentAiOutput,
 } from './schemas.js';
 import type {
@@ -61,12 +66,18 @@ async function assessRule(
   } catch (error) {
     return failed(
       request.rule.id,
-      'ai_generation_failed',
-      generationError(error),
+      isQuotaError(error) ? 'ai_quota_exhausted' : 'ai_generation_failed',
+      isQuotaError(error) ? QUOTA_MESSAGE : generationError(error),
     );
   }
 
-  const parsed = ruleAssessmentAiOutputSchema.safeParse(rawOutput);
+  const configured =
+    configuredRuleAssessmentAiOutputSchema.safeParse(rawOutput);
+  const schema =
+    rawOutput && typeof rawOutput === 'object' && 'workPerformed' in rawOutput
+      ? configuredRuleAssessmentAiOutputSchema
+      : ruleAssessmentAiOutputSchema;
+  const parsed = schema.safeParse(rawOutput);
   if (!parsed.success) {
     return failed(
       request.rule.id,
@@ -81,11 +92,18 @@ async function assessRule(
     value: {
       ruleName: request.rule.rule.name,
       ...expandAssessment(parsed.data),
+      ...(configured.success
+        ? {
+            workPerformed: configured.data.workPerformed,
+            addedValue: configured.data.addedValue,
+            qualitativeSummary: configured.data.qualitativeSummary,
+          }
+        : {}),
     },
   };
 }
 
-function expandAssessment(
+export function expandAssessment(
   compact: RuleAssessmentAiOutput,
 ): Omit<RuleAssessment, 'ruleName'> {
   const evidenceById = new Map(

@@ -88,6 +88,10 @@ async function setup(t, initialJob) {
     let body = [];
     let status = 200;
     if (url.pathname === "/api/knowledge") body = { canManage: true, nodes: [] };
+    else if (url.pathname.endsWith("/reports"))
+      body = [{ id: "snapshot-test", type: "GROUP_REPORT", data: { summary: "Snapshot" } }];
+    else if (url.pathname.endsWith("/evaluation-models"))
+      body = [{ key: "balanced", label: "Gemini", model: "test", recommended: true }];
     else if (url.pathname.endsWith("/rule-packages"))
       body = [
         {
@@ -137,6 +141,7 @@ async function setup(t, initialJob) {
           : Object.values(state.jobs).find((j) => j?.id === url.pathname.split("/").at(-1));
     } else if (url.pathname.endsWith("/evaluations") && request.method() === "POST") {
       state.posts++;
+      assert.deepEqual(request.postDataJSON().sourceReportIds, ["snapshot-test"]);
       const group = request.postDataJSON().groupId;
       state.jobs[group] = job(`evaluation-test-${state.posts}`);
       body = { jobId: state.jobs[group].id, status: "queued" };
@@ -168,6 +173,7 @@ test(
     const { page, state } = await setup(t);
     const generate = page.getByRole("button", { name: "Generate Evaluation Report" });
     await generate.waitFor();
+    await page.getByRole("checkbox", { name: "snapshot-test" }).check();
     await generate.click();
     await visible(page, "Queued — waiting to start");
     await screenshot(page, "01-queued-simulated");
@@ -247,6 +253,7 @@ test("a missing job allows a replacement evaluation", { timeout: 25000 }, async 
   await page.waitForTimeout(2500);
   assert.equal(state.pollCount, count);
   state.missing = false;
+  await page.getByRole("checkbox", { name: "snapshot-test" }).check();
   await generate.click();
   await visible(page, "Queued — waiting to start");
   assert.equal(state.posts, 1);

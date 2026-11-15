@@ -32,6 +32,8 @@ import type {
   EvaluationHistoryPage,
   RulePackage,
   RulePackageInput,
+  EvaluationModel,
+  AnyEvaluationReport,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
@@ -156,7 +158,7 @@ export const api = {
       `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
     ),
   getEvaluationJob: async (workspaceId: string, jobId: string, signal?: AbortSignal) => {
-    const job = await request<GenerationJob<EvaluationReport | { evaluationId: string }>>(
+    const job = await request<GenerationJob<AnyEvaluationReport | { evaluationId: string }>>(
       `/workspaces/${workspaceId}/evaluations/jobs/${jobId}`,
       { signal },
     );
@@ -354,7 +356,7 @@ export const api = {
   unassignWorkspaceResource: (workspaceId: string, resourceId: string) =>
     request<unknown>(`/workspaces/${workspaceId}/resources/${resourceId}`, { method: "DELETE" }),
   evaluateWorkspace: (workspaceId: string, body: EvaluationRequest, view: "report" | "full") =>
-    submitJob<EvaluationReport>(
+    submitJob<AnyEvaluationReport>(
       `/workspaces/${workspaceId}/evaluations?view=${view}`,
       { method: "POST", body: JSON.stringify(body) },
       `/workspaces/${workspaceId}/evaluations/jobs`,
@@ -365,7 +367,29 @@ export const api = {
     return request<EvaluationHistoryPage>(`/workspaces/${workspaceId}/evaluations?${query}`);
   },
   getEvaluation: (workspaceId: string, evaluationId: string) =>
-    request<SavedEvaluation>(`/workspaces/${workspaceId}/evaluations/${evaluationId}`),
+    request<SavedEvaluation>(`/workspaces/${workspaceId}/evaluations/${evaluationId}`).then(
+      (saved) => {
+        const report = saved.data.report;
+        if ("results" in report) {
+          report.assessments ??= Object.fromEntries(
+            report.results.flatMap((result) =>
+              Object.entries(result.report?.assessments ?? {}).map(([id, assessment]) => [
+                `${result.evaluator.id}:${id}`,
+                assessment,
+              ]),
+            ),
+          );
+          report.limitations ??= report.results.flatMap(
+            (result) => result.report?.limitations ?? [],
+          );
+          report.execution ??= null;
+          report.diagnostics ??= {};
+        }
+        return saved;
+      },
+    ),
+  listEvaluationModels: (workspaceId: string) =>
+    request<EvaluationModel[]>(`/workspaces/${workspaceId}/evaluation-models`),
   listRulePackages: (workspaceId: string) =>
     request<RulePackage[]>(`/workspaces/${workspaceId}/rule-packages`),
   createRulePackage: (workspaceId: string, body: RulePackageInput) =>

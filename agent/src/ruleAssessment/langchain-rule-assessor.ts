@@ -1,3 +1,10 @@
+import { initChatModel } from 'langchain/chat_models/universal';
+import {
+  configurationPrompt,
+  invokeWithEvaluationRuntime,
+  configuredModelOptions,
+  type ConfiguredEvaluationOptions,
+} from '../evaluationFlow/configuration.js';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { modelBudget } from '../generation.js';
 import {
@@ -12,7 +19,10 @@ import {
   serializePromptData,
   type PromptDataFormat,
 } from './prompt-data-serializer.js';
-import { ruleAssessmentAiOutputSchema } from './schemas.js';
+import {
+  ruleAssessmentAiOutputSchema,
+  configuredRuleAssessmentAiOutputSchema,
+} from './schemas.js';
 import type { RuleAssessmentRequest, RuleAssessor } from './types.js';
 
 const MODEL_ENVIRONMENT_VARIABLE = 'RULE_SUMMARY_MODEL';
@@ -96,7 +106,7 @@ export type RuleAssessmentEnvironment = Readonly<
   Record<string, string | undefined>
 >;
 
-export type RuleAssessmentPromptOptions = {
+export type RuleAssessmentPromptOptions = ConfiguredEvaluationOptions & {
   promptDataFormat?: PromptDataFormat;
 };
 
@@ -105,7 +115,9 @@ export function createLangChainRuleAssessor(
   options: RuleAssessmentPromptOptions = {},
 ): RuleAssessor {
   const structuredModel = model.withStructuredOutput(
-    ruleAssessmentAiOutputSchema,
+    options.configuration
+      ? configuredRuleAssessmentAiOutputSchema
+      : ruleAssessmentAiOutputSchema,
     modelIdentifier(model).startsWith('groq') ? { method: 'jsonSchema' } : {},
   );
   const promptDataFormat = options.promptDataFormat ?? 'auto';
@@ -113,7 +125,10 @@ export function createLangChainRuleAssessor(
     async assess(input) {
       let sample = 12;
       const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'system',
+          content: SYSTEM_PROMPT + configurationPrompt(options, true),
+        },
         {
           role: 'user',
           content: createUserPrompt(input, promptDataFormat, sample),
@@ -131,11 +146,10 @@ export function createLangChainRuleAssessor(
           sample,
         );
       }
-      return modelRequest(
-        modelIdentifier(model),
-        'assessment',
-        messages,
-        (signal) => structuredModel.invoke(messages, { signal }),
+      return invokeWithEvaluationRuntime(options.runtime, () =>
+        modelRequest(modelIdentifier(model), 'assessment', messages, (signal) =>
+          structuredModel.invoke(messages, { signal }),
+        ),
       );
     },
   };
@@ -143,6 +157,7 @@ export function createLangChainRuleAssessor(
 
 export async function createLangChainRuleAssessorFromEnv(
   environment: RuleAssessmentEnvironment = process.env,
+  options: RuleAssessmentPromptOptions = {},
 ): Promise<RuleAssessor> {
   const modelId =
     environment[MODEL_ENVIRONMENT_VARIABLE]?.trim() ||
@@ -155,6 +170,14 @@ export async function createLangChainRuleAssessorFromEnv(
   const promptDataFormat = parsePromptDataFormat(
     environment[PROMPT_DATA_FORMAT_ENVIRONMENT_VARIABLE],
   );
+  if (options.configuration)
+    return createLangChainRuleAssessor(
+      await initChatModel(
+        modelId,
+        configuredModelOptions(options, environment),
+      ),
+      { ...options, promptDataFormat },
+    );
   return {
     assess: (input) =>
       withConfiguredFallback(modelId, environment, (model) =>

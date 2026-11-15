@@ -193,6 +193,32 @@ Apply database migrations before running the updated API:
 npx prisma migrate deploy
 ```
 
+## Report analysis
+
+Workspace owners and admins select a rule package (or write rules directly) and
+previous team reports in the group's Evaluation tab. There are no configurable
+evaluators. The API accepts rules directly and applies fixed Spanish communication
+and evidence guidelines. Previous saved evaluator results remain readable.
+
+`GET /api/workspaces/:workspaceId/evaluation-models` lists the model choices.
+`POST /api/workspaces/:workspaceId/evaluations` accepts:
+
+```json
+{
+  "groupId": "GROUP_ID",
+  "sourceReportIds": ["REPORT_1", "REPORT_2"],
+  "rules": [{ "name": "Revisión colaborativa", "valuation": 8 }],
+  "reportLength": "medium",
+  "modelKey": "balanced"
+}
+```
+
+Rule weights express importance (1–10), never numeric performance grades.
+`reportLength` is `brief`, `medium` or `complete`; `modelKey` is `economical`,
+`balanced` or `advanced`. Optional `period` dates constrain complementary queries.
+Configure `GOOGLE_API_KEY` (or `GOOGLE_GENERATIVE_AI_API_KEY`) and the model IDs
+shown in `.env.example`. Apply Prisma migrations before starting the backend.
+
 ## Run the backend with Docker Compose
 
 The Compose stack builds the backend and agent packages, starts PostgreSQL,
@@ -260,3 +286,70 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Report-based Evaluations
+
+Apply migrations and rebuild the local agent package before starting the API:
+
+```bash
+npm --prefix ../agent run build
+npx prisma migrate deploy
+npx prisma generate
+npm run build
+```
+
+`POST /workspaces/:workspaceId/evaluations` now requires `groupId` and a nonempty,
+unique `sourceReportIds` array containing existing `GROUP_REPORT` IDs from that
+same group. Supply a nonempty `rules` array for the analysis. Model selection and
+report length are retained.
+The optional `period` constrains supplemental records only; it does not slice the
+selected reports or turn them into independent sprint reports.
+
+The analyzer compares complete, chronological snapshots of accumulated history.
+One snapshot yields a diagnosis with an explicit temporal limitation. It explains
+improvements, unchanged aspects, regressions and unknowns for every rule, with
+attributed member findings when evidence permits. Coverage changes, activity
+counts and missing identities do not establish better or worse collaboration.
+
+Rules are grouped into batches, rather than interpreting, selecting resources
+and assessing each rule through separate model calls. Each batch makes one Gemini
+call, or at most two if it requests missing evidence. Complements use authorized
+GitHub/Jira operations, check the database evidence cache first, and deduplicate
+identical operations across the entire execution, including failed operations.
+There are no automatic model retries or recursive evidence requests. A failed or
+oversized complement preserves valid preliminary findings and marks limitations.
+
+The new response retains the configured report shape and adds `group`,
+`analysisDates` (snapshot generation dates), `sourceReports`, `evaluationVersion`,
+per-rule `evolution`, and analysis `metrics`. Metrics distinguish model calls,
+batches, requested complements, fresh API results and database cache hits. Reused
+in-memory operations are not counted again as new API/cache accesses. Provider
+usage remains separate from the local input-token estimate; missing usage is
+shown as unavailable, never as a measured zero.
+
+New results use JSON `schemaVersion: 3` and retain immutable report contents and
+effective rule snapshots. The response retains a single fixed analysis entry in
+`results` for compatibility with previous history; it is not a configurable
+evaluator. No package origin is inferred from matching rule names. `V1`, `V2`, etc. number only new
+evaluations per group. An atomic counter increment and report insert occur in one
+transaction, backed by a unique group/version constraint. Historical formats 1
+and 2 remain readable without rewriting their contents. No model calls occur
+inside the version-allocation transaction.
+
+Budget defaults (override through environment variables):
+
+| Variable | Default | Behavior |
+| --- | ---: | --- |
+| `EVALUATION_MAX_INPUT_TOKENS` | 64000 | Conservative UTF-8 byte estimate / 3, including prompt and schema |
+| `EVALUATION_MAX_OUTPUT_TOKENS` | 16384 | Output cap; batching reserves 1000/1800/3000 tokens per rule for brief/medium/complete prose |
+| `EVALUATION_MAX_RULES_PER_BATCH` | 12 | Upper bound; token budgets can split earlier |
+| `EVALUATION_MAX_EVIDENCE_REQUESTS` | 8 | Maximum unique complementary operations per batch |
+| `EVALUATION_EVIDENCE_CACHE_TTL_SECONDS` | 3600 | Cache lifetime; zero expires immediately |
+
+If reports plus one rule exceed the input budget, the API rejects the request
+before consuming Gemini and asks for a smaller selection. Full reports are never
+silently truncated. Output caps can still truncate unusually large responses;
+those are reported as failures without paid retry. Supplement cache entries are
+scoped to group, resource, installation/configuration version and exact period;
+current authorization is checked before reading them, and deleting a group
+cascades to its cached evidence.

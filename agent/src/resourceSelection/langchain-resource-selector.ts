@@ -1,3 +1,10 @@
+import { initChatModel } from 'langchain/chat_models/universal';
+import {
+  configurationPrompt,
+  invokeWithEvaluationRuntime,
+  configuredModelOptions,
+  type ConfiguredEvaluationOptions,
+} from '../evaluationFlow/configuration.js';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   modelIdentifier,
@@ -28,6 +35,7 @@ export type ResourceSelectionEnvironment = Readonly<
 
 export function createLangChainResourceSelector(
   model: BaseChatModel,
+  options: ConfiguredEvaluationOptions = {},
 ): ResourceSelector {
   const structuredModel = model.withStructuredOutput(
     resourceSelectionAiOutputSchema,
@@ -36,14 +44,16 @@ export function createLangChainResourceSelector(
   return {
     async select(input) {
       const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'system',
+          content: SYSTEM_PROMPT + configurationPrompt(options),
+        },
         { role: 'user', content: createUserPrompt(input) },
       ];
-      return modelRequest(
-        modelIdentifier(model),
-        'selection',
-        messages,
-        (signal) => structuredModel.invoke(messages, { signal }),
+      return invokeWithEvaluationRuntime(options.runtime, () =>
+        modelRequest(modelIdentifier(model), 'selection', messages, (signal) =>
+          structuredModel.invoke(messages, { signal }),
+        ),
       );
     },
   };
@@ -51,6 +61,7 @@ export function createLangChainResourceSelector(
 
 export async function createLangChainResourceSelectorFromEnv(
   environment: ResourceSelectionEnvironment = process.env,
+  options: ConfiguredEvaluationOptions = {},
 ): Promise<ResourceSelector> {
   const modelId =
     environment[MODEL_ENVIRONMENT_VARIABLE]?.trim() ||
@@ -60,6 +71,14 @@ export async function createLangChainResourceSelectorFromEnv(
       `${MODEL_ENVIRONMENT_VARIABLE} must contain a LangChain provider:model identifier.`,
     );
   }
+  if (options.configuration)
+    return createLangChainResourceSelector(
+      await initChatModel(
+        modelId,
+        configuredModelOptions(options, environment),
+      ),
+      options,
+    );
   return {
     select: (input) =>
       withConfiguredFallback(modelId, environment, (model) =>

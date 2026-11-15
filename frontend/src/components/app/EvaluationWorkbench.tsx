@@ -1,3 +1,4 @@
+import { ReportAnalysisSources } from "./ReportAnalysisSources";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { GenerationProgressPanel } from "./GenerationProgress";
@@ -44,6 +45,9 @@ import type {
   AssessmentCriterion,
   AssessmentVerdict,
   EvaluationReport,
+  AnyEvaluationReport,
+  EvaluationAgentInput,
+  ReportLength,
   RulePackage,
   RulePackageInput,
   RuleAssessment,
@@ -61,6 +65,12 @@ import { SearchInput } from "@/components/app/SearchInput";
 
 type EvaluationRule = { id: string; name: string; description: string; valuation: number };
 type WorkbenchState = {
+  sourceReportIds: string[];
+  setSourceReportIds: Dispatch<SetStateAction<string[]>>;
+  reportLength: ReportLength;
+  setReportLength: Dispatch<SetStateAction<ReportLength>>;
+  modelKey: string;
+  setModelKey: Dispatch<SetStateAction<string>>;
   workspaceId: string;
   groupId: string;
   selectedEvaluationId?: string;
@@ -77,11 +87,11 @@ type WorkbenchState = {
   setFrom: (value: string) => void;
   to: string;
   setTo: (value: string) => void;
-  report?: EvaluationReport;
+  report?: AnyEvaluationReport;
   error?: string;
   isRunning: boolean;
   submitting: boolean;
-  job?: GenerationJob<EvaluationReport>;
+  job?: GenerationJob<AnyEvaluationReport>;
   reconnecting: boolean;
   trackingError?: string;
   retryTracking: () => void;
@@ -117,6 +127,9 @@ function EvaluationProvider({
   groupId: string;
   children: ReactNode;
 }) {
+  const [sourceReportIds, setSourceReportIds] = useState<string[]>([]);
+  const [reportLength, setReportLength] = useState<ReportLength>("medium");
+  const [modelKey, setModelKey] = useState("balanced");
   const queryClient = useQueryClient();
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>();
   const packagesQ = useQuery({
@@ -214,6 +227,10 @@ function EvaluationProvider({
   );
 
   const run = async () => {
+    if (!sourceReportIds.length) {
+      setError("Seleccioná al menos un reporte del grupo.");
+      return;
+    }
     if (knowledgeIds === null) {
       setError("Wait for knowledge sources to load before generating.");
       return;
@@ -230,6 +247,9 @@ function EvaluationProvider({
     setError(undefined);
     try {
       const response = await api.startEvaluationWorkspace(workspaceId, {
+        sourceReportIds,
+        reportLength,
+        modelKey,
         rules: rules.map(({ name, description, valuation }) => ({
           name: name.trim(),
           description: description.trim() || undefined,
@@ -257,6 +277,12 @@ function EvaluationProvider({
   };
 
   const value = {
+    sourceReportIds,
+    setSourceReportIds,
+    reportLength,
+    setReportLength,
+    modelKey,
+    setModelKey,
     workspaceId,
     groupId,
     selectedEvaluationId,
@@ -302,7 +328,10 @@ export function EvaluationWorkbench(props: {
       <div className="evaluation-workbench overflow-hidden rounded-[1.35rem] border border-slate-300/70 bg-[#f7f9fb] shadow-[0_22px_70px_-38px_rgba(15,50,75,0.45)] dark:border-slate-700 dark:bg-[#111a21]">
         <WorkbenchHeader groupName={props.groupName} />
         <div className="grid min-w-0 lg:grid-cols-[minmax(310px,0.82fr)_minmax(0,1.35fr)]">
-          <EvaluationSetup />
+          <div>
+            <ReportAnalysisSelection />
+            <EvaluationSetup />
+          </div>
           <EvaluationOutput />
         </div>
         <EvaluationHistory />
@@ -336,6 +365,160 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
       </div>
     </header>
   );
+}
+
+const evaluatorFields = [
+  ["language", "Idioma"],
+  ["tone", "Tono"],
+  ["communicationStyle", "Estilo de comunicación"],
+] as const;
+
+function EvaluatorSnapshot({ evaluator }: { evaluator: EvaluationAgentInput }) {
+  return (
+    <div className="mt-3 space-y-3 text-sm">
+      <dl className="space-y-2">
+        {evaluatorFields.map(([field, label]) => (
+          <div key={field}>
+            <dt className="font-medium">{label}</dt>
+            <dd className="whitespace-pre-wrap break-words text-muted-foreground">
+              {evaluator[field]}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <dl className="space-y-2">
+        <div>
+          <dt className="font-medium">Criterios concretos</dt>
+          <dd className="whitespace-pre-wrap break-words">{evaluator.criteria}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">Cómo resolver conclusiones</dt>
+          <dd className="whitespace-pre-wrap break-words">{evaluator.decisionGuidance}</dd>
+        </div>
+      </dl>
+      <ul className="space-y-2">
+        {evaluator.rules.map((rule, index) => (
+          <li key={index}>
+            <span className="font-medium">{rule.name}</span> · Ponderación {rule.valuation}/10
+            {rule.description ? (
+              <p className="whitespace-pre-wrap break-words">{rule.description}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EvaluationReportDisplay({ report }: { report: AnyEvaluationReport }) {
+  if (!("results" in report)) return <ReportView report={report} />;
+  return (
+    <div className="space-y-6">
+      {report.group ? (
+        <div className="space-y-2 rounded-xl border p-4 text-sm">
+          <p className="font-semibold">
+            {report.group.name}
+            {report.evaluationVersion ? ` · V${report.evaluationVersion}` : ""}
+          </p>
+          {report.analysisDates ? (
+            <p>
+              Snapshots analizados: {new Date(report.analysisDates.from).toLocaleString()} –{" "}
+              {new Date(report.analysisDates.to).toLocaleString()}
+            </p>
+          ) : null}
+          <details>
+            <summary className="cursor-pointer">
+              Reportes utilizados ({report.sourceReports?.length ?? 0})
+            </summary>
+            <ul className="mt-2 space-y-1">
+              {report.sourceReports?.map((source) => (
+                <li key={source.id}>
+                  {new Date(source.createdAt).toLocaleString()} ·{" "}
+                  <span className="break-all font-mono text-xs">{source.id}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      ) : null}
+      <p className="text-sm text-muted-foreground">
+        {report.model.label} · {report.model.model} · Extensión{" "}
+        {report.reportLength === "brief"
+          ? "breve"
+          : report.reportLength === "complete"
+            ? "completa"
+            : "media"}
+      </p>
+      {report.results.map((result) => (
+        <section key={result.evaluator.id} className="space-y-4 rounded-xl border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-lg font-semibold">{result.evaluator.name}</h4>
+            <Badge variant="outline">
+              {
+                {
+                  completed: "Completado",
+                  partial: "Parcial",
+                  failed: "Falló",
+                  not_executed: "No ejecutado",
+                }[result.status]
+              }
+            </Badge>
+          </div>
+          <p className="whitespace-pre-wrap break-words text-sm">{result.evaluator.criteria}</p>
+          {result.evaluator.id === "custom" ? (
+            <details className="text-sm">
+              <summary className="cursor-pointer">Reglas utilizadas</summary>
+              <ul className="mt-2 space-y-2">
+                {result.evaluator.rules.map((rule, index) => (
+                  <li key={index}>
+                    <span className="font-medium">{rule.name}</span> · Ponderación {rule.valuation}
+                    /10
+                    {rule.description ? (
+                      <p className="whitespace-pre-wrap">{rule.description}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : (
+            <details className="text-sm">
+              <summary className="cursor-pointer">Configuración histórica utilizada</summary>
+              <EvaluatorSnapshot evaluator={result.evaluator} />
+            </details>
+          )}
+          {result.metrics ? (
+            <p className="text-xs text-muted-foreground">
+              Gemini: {result.metrics.llmCalls} llamadas · {result.metrics.batches} lotes · Tokens
+              informados:{" "}
+              {result.usage.length
+                ? result.usage
+                    .reduce(
+                      (sum, entry) =>
+                        sum +
+                        (entry.totalTokens ?? (entry.inputTokens ?? 0) + (entry.outputTokens ?? 0)),
+                      0,
+                    )
+                    .toLocaleString()
+                : "no disponibles"}{" "}
+              · Complementos: {result.metrics.databaseHits} desde base de datos,{" "}
+              {result.metrics.apiCalls} desde APIs
+            </p>
+          ) : null}
+          {result.error ? (
+            <p role="alert" className="rounded-md border border-amber-400 p-3 text-sm">
+              {result.error.message}
+            </p>
+          ) : null}
+          {result.report ? <ReportView report={result.report} /> : null}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ReportAnalysisSelection() {
+  const props = useWorkbench();
+  return <ReportAnalysisSources {...props} />;
 }
 
 function EvaluationSetup() {
@@ -1043,7 +1226,7 @@ function EvaluationOutput() {
               : "No period specified"}
           </p>
           <ul className="mt-3 space-y-2">
-            {saved.data.rules.map((rule, index) => (
+            {("rules" in saved.data ? saved.data.rules : []).map((rule, index) => (
               <li key={index}>
                 <span className="font-medium">{rule.name}</span> · Importance {rule.valuation}/10
                 {rule.description ? (
@@ -1070,7 +1253,7 @@ function EvaluationOutput() {
           You can leave this project and return to follow the evaluation.
         </p>
       ) : report ? (
-        <ReportView report={report} />
+        <EvaluationReportDisplay report={report} />
       ) : (
         <ReportEmpty />
       )}

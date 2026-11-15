@@ -80,6 +80,7 @@ export function FormModal({
             onChangeCapture={() => setTouched(true)}
             onSubmit={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               void (async () => {
                 setUploading(true);
                 try {

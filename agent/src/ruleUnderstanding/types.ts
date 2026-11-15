@@ -27,7 +27,9 @@ export type RuleClarificationRequest = PreparedRuleInput & {
 };
 
 export type FailedRuleUnderstandingCode =
-  'ai_generation_failed' | 'invalid_ai_output';
+  | 'ai_generation_failed'
+  | 'invalid_ai_output'
+  | 'ai_quota_exhausted';
 
 export type FailedRuleUnderstanding = PreparedRuleInput & {
   code: FailedRuleUnderstandingCode;
@@ -35,7 +37,10 @@ export type FailedRuleUnderstanding = PreparedRuleInput & {
 };
 
 export type RuleUnderstandingNodeStatus =
-  'ready' | 'needs_clarification' | 'partial' | 'failed';
+  | 'ready'
+  | 'needs_clarification'
+  | 'partial'
+  | 'failed';
 
 export type RuleUnderstandingNodeResult = {
   status: RuleUnderstandingNodeStatus;
