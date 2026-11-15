@@ -9,7 +9,10 @@ import type {
 } from '../resourceExecution/types.js';
 
 export type RuleAssessmentVerdict =
-  'supported' | 'partially_supported' | 'not_supported' | 'not_evaluable';
+  | 'supported'
+  | 'partially_supported'
+  | 'not_supported'
+  | 'not_evaluable';
 
 export type RuleAssessmentEvidence = {
   source: string;
@@ -18,7 +21,10 @@ export type RuleAssessmentEvidence = {
 };
 
 export type RuleAssessmentCriterionStatus =
-  'met' | 'partially_met' | 'not_met' | 'unknown';
+  | 'met'
+  | 'partially_met'
+  | 'not_met'
+  | 'unknown';
 
 export type RuleAssessmentCriterion = {
   criterion: string;
@@ -43,6 +49,18 @@ export type MemberRuleAssessment = {
 
 export type RuleAssessment = {
   ruleName: string;
+  evolution?: {
+    summary: string;
+    improvements: string[];
+    unchanged: string[];
+    regressions: string[];
+    unknowns: string[];
+    sourceReportIds: string[];
+    recommendations: string[];
+  };
+  workPerformed?: string;
+  addedValue?: string;
+  qualitativeSummary?: string;
   overview: string;
   evidence: RuleAssessmentEvidence[];
   memberAssessments: MemberRuleAssessment[];
@@ -65,7 +83,9 @@ export type RuleAssessor = {
 };
 
 export type RuleAssessmentErrorCode =
-  'ai_generation_failed' | 'invalid_ai_output';
+  | 'ai_generation_failed'
+  | 'invalid_ai_output'
+  | 'ai_quota_exhausted';
 
 export type RuleAssessmentError = {
   ruleId: string;

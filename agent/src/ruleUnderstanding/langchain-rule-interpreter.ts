@@ -1,3 +1,10 @@
+import { initChatModel } from 'langchain/chat_models/universal';
+import {
+  configurationPrompt,
+  invokeWithEvaluationRuntime,
+  configuredModelOptions,
+  type ConfiguredEvaluationOptions,
+} from '../evaluationFlow/configuration.js';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   modelIdentifier,
@@ -49,6 +56,7 @@ export type RuleUnderstandingEnvironment = Readonly<
 
 export function createLangChainRuleInterpreter(
   model: BaseChatModel,
+  options: ConfiguredEvaluationOptions = {},
 ): RuleInterpreter {
   const structuredModel = model.withStructuredOutput(
     ruleUnderstandingProviderOutputSchema,
@@ -58,14 +66,19 @@ export function createLangChainRuleInterpreter(
   return {
     async interpret(input) {
       const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        {
+          role: 'system',
+          content: SYSTEM_PROMPT + configurationPrompt(options),
+        },
         { role: 'user', content: createUserPrompt(input) },
       ];
-      const output = await modelRequest(
-        modelIdentifier(model),
-        'understanding',
-        messages,
-        (signal) => structuredModel.invoke(messages, { signal }),
+      const output = await invokeWithEvaluationRuntime(options.runtime, () =>
+        modelRequest(
+          modelIdentifier(model),
+          'understanding',
+          messages,
+          (signal) => structuredModel.invoke(messages, { signal }),
+        ),
       );
       return normalizeProviderOutput(output);
     },
@@ -74,6 +87,7 @@ export function createLangChainRuleInterpreter(
 
 export async function createLangChainRuleInterpreterFromEnv(
   environment: RuleUnderstandingEnvironment = process.env,
+  options: ConfiguredEvaluationOptions = {},
 ): Promise<RuleInterpreter> {
   const modelId =
     environment[MODEL_ENVIRONMENT_VARIABLE]?.trim() ||
@@ -84,6 +98,14 @@ export async function createLangChainRuleInterpreterFromEnv(
     );
   }
 
+  if (options.configuration)
+    return createLangChainRuleInterpreter(
+      await initChatModel(
+        modelId,
+        configuredModelOptions(options, environment),
+      ),
+      options,
+    );
   return {
     interpret: (input) =>
       withConfiguredFallback(modelId, environment, (model) =>

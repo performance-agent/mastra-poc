@@ -1,3 +1,7 @@
+import {
+  isQuotaError,
+  QUOTA_MESSAGE,
+} from '../evaluationFlow/configuration.js';
 import { generationError } from '../generation.js';
 import type { PreparedRuleInput } from '../ruleInput/types.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
@@ -62,8 +66,8 @@ async function interpretRule(
     }
     return failedOutcome(
       preparedRule,
-      'ai_generation_failed',
-      generationError(error),
+      isQuotaError(error) ? 'ai_quota_exhausted' : 'ai_generation_failed',
+      isQuotaError(error) ? QUOTA_MESSAGE : generationError(error),
     );
   }
 
