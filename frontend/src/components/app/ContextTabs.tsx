@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+﻿import { cn } from "@/lib/utils";
 
 export interface TabItem {
   value: string;
@@ -24,10 +24,13 @@ export function ContextTabs({
             <button
               key={t.value}
               type="button"
+              aria-current={active ? "page" : undefined}
               onClick={() => onChange(t.value)}
               className={cn(
                 "relative flex shrink-0 items-center whitespace-nowrap px-3 py-2.5 text-sm font-medium transition-colors",
-                active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                active
+                  ? "text-[var(--brand-ink)] bg-[var(--brand-soft)] rounded-t-xl"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <span className="inline-flex items-center gap-1.5">
@@ -39,7 +42,7 @@ export function ContextTabs({
                 )}
               </span>
               {active && (
-                <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground" />
+                <span className="absolute inset-x-2 -bottom-px h-1 rounded-full bg-[var(--brand)]" />
               )}
             </button>
           );

@@ -3,6 +3,7 @@ model Organization {
   name        String
   description String?
   photoUrl    String?
+  appearance Json?
 
   workspaces Workspace[]
 

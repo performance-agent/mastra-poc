@@ -1,0 +1,13 @@
+{
+  "type": "Real PostgreSQL and Firebase Storage integration; no simulated storage or memberships",
+  "run": "956c4de8-2ef8-4891-81bd-c43574e00487",
+  "checks": [
+    "Private Firebase upload, processing, immutable version, authorized preview and original download",
+    "Nested folder expansion deduplicates documents and captured versions survive metadata changes",
+    "Project folder exclusions do not alter the shared workspace library",
+    "Real database memberships enforce viewer, inherited-edit and sibling-project boundaries; cyclic moves rejected",
+    "Actual PDF and DOCX text extraction with real parsers",
+    "Soft deletion removes sources from the library while preserving captured report text",
+    "Real memberships: other admins/viewers read and download published Drive copies and select them for reports, but cannot browse or manage the private connection; lost owner permissions pause sync without removing copies"
+  ]
+}

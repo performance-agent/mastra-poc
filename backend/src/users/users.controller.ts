@@ -1,3 +1,6 @@
+import { ForbiddenException } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/user.decorator';
+import type { User } from '../auth/types/user.type';
 import { Controller, Get, Body, Patch, Param, Delete } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -17,7 +20,13 @@ export class UsersController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateUserDto: UpdateUserDto,
+    @CurrentUser() user: User,
+  ) {
+    if (user.id !== id)
+      throw new ForbiddenException('You can only edit your own profile');
     return this.usersService.update(id, updateUserDto);
   }
 

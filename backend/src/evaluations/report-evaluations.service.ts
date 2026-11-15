@@ -1,3 +1,5 @@
+import type { KnowledgeReportSnapshot } from '../knowledge/knowledge-prompt';
+import type { ReportProgress } from '../generation/progress';
 import {
   BadRequestException,
   Inject,
@@ -88,6 +90,8 @@ export class ReportEvaluationsService {
     workspaceId: string,
     dto: CreateEvaluationDto,
     view = EvaluationView.REPORT,
+    knowledge?: KnowledgeReportSnapshot,
+    progress?: ReportProgress,
   ) {
     if (
       !dto.groupId ||
@@ -191,6 +195,16 @@ export class ReportEvaluationsService {
         createdAt: row.createdAt.toISOString(),
         data: row.data,
       })),
+      ...(knowledge
+        ? {
+            knowledge: {
+              snapshot: knowledge,
+              references: knowledge.sources.flatMap((source) =>
+                source.excerpts.map((excerpt) => excerpt.reference),
+              ),
+            },
+          }
+        : {}),
       rules: [],
       resources: catalog.resources.filter((resource) =>
         ['github', 'jira'].includes(resource.pluginId),
@@ -329,6 +343,15 @@ export class ReportEvaluationsService {
       to: sourceReports[sourceReports.length - 1].createdAt,
     };
     const report = {
+      ...(knowledge ? { knowledgeSources: knowledge } : {}),
+      assessments: results[0]?.report?.assessments ?? {},
+      limitations: results[0]?.report?.limitations ?? limitations,
+      execution: results[0]?.report?.execution ?? {
+        total: 0,
+        successful: 0,
+        failed: 0,
+      },
+      diagnostics: results[0]?.report?.diagnostics ?? {},
       status,
       model,
       reportLength,
@@ -346,6 +369,7 @@ export class ReportEvaluationsService {
       createdAt: Date;
       evaluationVersion: number | null;
     };
+    await progress?.('saving');
     try {
       saved = await this.prisma.$transaction(async (tx) => {
         const counter = await tx.group.update({
@@ -363,6 +387,7 @@ export class ReportEvaluationsService {
             data: JSON.parse(
               JSON.stringify({
                 schemaVersion: 3,
+                rules: dto.rules,
                 period: period ?? null,
                 report: {
                   ...report,

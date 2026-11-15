@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Base de conocimiento · Mockups para validar</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.6 Inter,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: #1b1d29;
+        background: #f8f9fb;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      a:focus-visible {
+        outline: 3px solid #7262d9;
+        outline-offset: 5px;
+      }
+      header {
+        border-bottom: 1px solid #e1e4eb;
+        background: white;
+      }
+      header > div {
+        max-width: 1360px;
+        padding: 20px 32px;
+        margin: auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .brand img:first-child {
+        width: 28px;
+        height: 28px;
+      }
+      .brand img:last-child {
+        height: 28px;
+      }
+      .label {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: #7262d9;
+        font-weight: 650;
+      }
+      .wrap {
+        max-width: 1360px;
+        padding: 48px 32px;
+        margin: auto;
+      }
+      .intro {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 30px;
+        margin-bottom: 28px;
+      }
+      .intro h1 {
+        font-size: 36px;
+        letter-spacing: -0.045em;
+        line-height: 1.2;
+        margin: 10px 0 14px;
+        font-weight: 650;
+      }
+      .intro p {
+        color: #69717f;
+        font-size: 14px;
+        max-width: 750px;
+        margin: 0;
+      }
+      .primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #1b1d29;
+        color: white;
+        padding: 12px 19px;
+        border-radius: 10px;
+        white-space: nowrap;
+        font-size: 12px;
+        font-weight: 550;
+      }
+      .decisions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        margin-bottom: 36px;
+      }
+      .decisions span {
+        border: 1px solid #e1dafa;
+        border-radius: 7px;
+        background: #f0edfc;
+        color: #514580;
+        font-size: 11px;
+        padding: 6px 10px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 22px;
+      }
+      .card {
+        border: 1px solid #e1e4eb;
+        border-radius: 15px;
+        overflow: hidden;
+        background: white;
+        transition: box-shadow 0.15s;
+      }
+      .card:hover {
+        box-shadow: 0 5px 20px #1d254510;
+      }
+      .image {
+        display: block;
+        background: #eeeff5;
+        border-bottom: 1px solid #e1e4eb;
+        overflow: hidden;
+        height: 240px;
+      }
+      .image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center 43%;
+        display: block;
+      }
+      .mobile .image {
+        background: linear-gradient(140deg, #e7e3f6, #f4f3fa);
+        height: 300px;
+        display: flex;
+        justify-content: center;
+        padding: 15px 0 0;
+      }
+      .mobile .image img {
+        width: 160px;
+        height: 100%;
+        object-fit: cover;
+        object-position: top;
+        border: 1px solid #d5cfe7;
+        border-bottom: 0;
+        border-radius: 12px 12px 0 0;
+      }
+      .info {
+        padding: 17px 19px 18px;
+      }
+      .title-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+      }
+      .title-row h3 {
+        font-size: 14px;
+        font-weight: 620;
+        letter-spacing: -0.015em;
+        margin: 0;
+      }
+      .number {
+        font-size: 10px;
+        color: #8d849c;
+        margin-bottom: 5px;
+      }
+      .info p {
+        color: #69717f;
+        font-size: 11px;
+        line-height: 1.7;
+        margin: 7px 0 12px;
+      }
+      .links {
+        display: flex;
+        justify-content: space-between;
+        font-size: 10px;
+        color: #594b92;
+      }
+      .links a:hover {
+        text-decoration: underline;
+      }
+      h2 {
+        font-size: 22px;
+        letter-spacing: -0.03em;
+        font-weight: 620;
+        margin: 40px 0 17px;
+      }
+      .section-note {
+        font-size: 12px;
+        color: #69717f;
+        margin: -8px 0 22px;
+      }
+      .note {
+        margin-top: 32px;
+        padding: 18px 22px;
+        background: #fff6d7;
+        border: 1px solid #f0e4ba;
+        border-radius: 12px;
+        color: #826a2c;
+        font-size: 12px;
+      }
+      .instructions {
+        border-top: 1px solid #e1e4eb;
+        margin-top: 40px;
+        padding-top: 25px;
+        color: #69717f;
+        font-size: 12px;
+      }
+      .instructions p {
+        margin: 6px 0;
+      }
+      .instructions code {
+        font-size: 11px;
+        background: #eeeff4;
+        padding: 2px 5px;
+        border-radius: 4px;
+      }
+      footer {
+        text-align: center;
+        color: #8c8998;
+        font-size: 10px;
+        padding: 16px;
+        border-top: 1px solid #e1e4eb;
+      }
+      @media (max-width: 1000px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .intro {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .intro h1 {
+          font-size: 31px;
+        }
+      }
+      @media (max-width: 600px) {
+        header > div {
+          padding: 16px 20px;
+        }
+        .wrap {
+          padding: 28px 20px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+          gap: 18px;
+        }
+        .intro h1 {
+          font-size: 29px;
+        }
+        .intro p {
+          font-size: 12px;
+        }
+        .image {
+          height: 225px;
+        }
+        .label {
+          font-size: 9px;
+        }
+        .brand img:last-child {
+          height: 24px;
+        }
+        .decisions {
+          margin-bottom: 25px;
+        }
+        .decisions span {
+          font-size: 10px;
+        }
+        h2 {
+          margin-top: 30px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <a href="index.html" class="brand"
+          ><img
+            src="../../../frontend/src/assets/brand/isotipo.svg"
+            alt="" /><img
+            src="../../../frontend/src/assets/brand/logotipo.svg"
+            alt="Platformance" /></a
+        ><span class="label">MOCKUPS · V1</span>
+      </div>
+    </header>
+    <main class="wrap">
+      <div class="intro">
+        <div>
+          <span class="label">RESOURCES / KNOWLEDGE BASE</span>
+          <h1>El contexto detrás de cada reporte.</h1>
+          <p>
+            Una base de conocimiento para organizar documentos, conectar Google
+            Drive y elegir qué fuentes acompañan cada análisis. Propuesta visual
+            para validar antes de implementar.
+          </p>
+        </div>
+        <a class="primary" href="index.html">Recorrer el prototipo ↗</a>
+      </div>
+      <div class="decisions">
+        <span>Dentro de Resources</span><span>Separado de plugins</span
+        ><span>Workspace → proyectos</span><span>Contexto + evidencia</span
+        ><span>Fuentes seleccionadas por defecto</span
+        ><span>Drive con sincronización automática</span>
+      </div>
+      <div class="grid" id="main-grid"></div>
+      <h2>Estados y recorridos adicionales</h2>
+      <p class="section-note">
+        Carpetas parcialmente seleccionadas, errores recuperables y reportes sin
+        documentos de conocimiento.
+      </p>
+      <div class="grid" id="states-grid"></div>
+      <h2>La misma propuesta, en móvil</h2>
+      <p class="section-note">
+        Pantallas a 390 px: navegación de carpetas, selección de fuentes y
+        acciones de carga o conexión.
+      </p>
+      <div class="grid mobile" id="mobile-grid"></div>
+      <div class="note">
+        Todos los datos son ficticios. La carga de archivos, la autorización y
+        sincronización de Drive y la generación de reportes son simuladas. Las
+        interacciones viven en memoria y se reinician al recargar.
+      </div>
+      <div class="instructions">
+        <p>
+          <strong>Para revisar:</strong> abrí una pantalla con “Interactuar” o
+          recorré el prototipo usando el selector superior. Podés crear
+          carpetas, buscar, excluir documentos para un proyecto, seleccionar
+          fuentes y abrir sus referencias en un reporte de ejemplo.
+        </p>
+        <p>
+          <strong>Para abrir localmente:</strong> basta abrir
+          <code>index.html</code> o esta galería en el navegador. No requiere
+          servidor ni iniciar sesión. Conservá la ubicación dentro del
+          repositorio para cargar los logotipos.
+        </p>
+        <p>
+          <strong>Verificación:</strong>
+          <a href="verification.json">resultados del recorrido automatizado</a>.
+          Para regenerar capturas desde la raíz del repositorio:
+          <code>node artifacts/knowledge-base-mockups/v1/capture.cjs</code>. Usa
+          Playwright de frontend y Chrome instalado.
+        </p>
+      </div>
+    </main>
+    <footer>
+      Platformance · Base de conocimiento · 21 capturas de diseño · Datos de
+      demostración
+    </footer>
+    <script>
+      const cards = [
+        [
+          "01",
+          "workspace",
+          "01-workspace",
+          "Base del workspace",
+          "Carpetas, documentos, origen y estado. El conocimiento compartido queda disponible en sus proyectos.",
+        ],
+        [
+          "02",
+          "project",
+          "02-project",
+          "Base del proyecto",
+          "Fuentes propias y heredadas. Excluir una fuente aquí no modifica el documento del workspace.",
+        ],
+        [
+          "03",
+          "upload",
+          "03-upload",
+          "Carga directa de archivos",
+          "Destino y uso del documento, progreso por archivo y reintento ante una carga fallida.",
+        ],
+        [
+          "04",
+          "drive",
+          "04-google-drive",
+          "Conectar Google Drive",
+          "Elegir archivos o carpetas y mantener sus cambios y subcarpetas sincronizados.",
+        ],
+        [
+          "05",
+          "detail",
+          "05-document-detail",
+          "Detalle del documento",
+          "Vista previa, versión, procedencia y configuración como contexto, evidencia o ambos.",
+        ],
+        [
+          "06",
+          "connections",
+          "06-connections",
+          "Administrar conexiones",
+          "Última sincronización, actualización manual, autorización vencida y acceso perdido.",
+        ],
+        [
+          "07",
+          "sources",
+          "07-report-sources",
+          "Fuentes para el reporte",
+          "Todas las fuentes listas aparecen marcadas. Desmarcar documentos o carpetas ajusta el resumen.",
+        ],
+        [
+          "08",
+          "report",
+          "08-saved-report",
+          "Referencias del reporte",
+          "Documentos utilizados con su versión y uso, separados de la evidencia de plugins.",
+        ],
+        [
+          "09",
+          "empty",
+          "09-empty-state",
+          "Primer uso",
+          "Invitación a subir archivos, conectar Drive o empezar creando una carpeta.",
+        ],
+      ];
+      const states = [
+        [
+          "10",
+          "plugins",
+          "10-plugin-resources",
+          "Recursos de plugins",
+          "GitHub y Jira conservan su espacio dentro de Resources. Drive se administra en Knowledge base.",
+        ],
+        [
+          "11",
+          "sources-partial",
+          "11-partial-selection",
+          "Selección parcial",
+          "El estado intermedio de las carpetas refleja la selección de sus archivos y subcarpetas.",
+        ],
+        [
+          "12",
+          "sources-none",
+          "12-no-knowledge",
+          "Sin documentos seleccionados",
+          "Se puede continuar con los recursos de plugins. La pantalla explica qué fuentes se utilizarán.",
+        ],
+        [
+          "13",
+          "drive-expired",
+          "13-reconnect-drive",
+          "Reconectar una cuenta",
+          "La autorización vencida pausa la selección de nuevos elementos hasta reconectar la cuenta.",
+        ],
+        [
+          "14",
+          "upload-done",
+          "14-upload-result",
+          "Resultado de la carga",
+          "Archivos listos, documentos en procesamiento y reintento individual sin perder los demás.",
+        ],
+        [
+          "15",
+          "detail-unavailable",
+          "15-unavailable-source",
+          "Documento sin acceso",
+          "El material sin permisos no puede seleccionarse. Los reportes guardados conservan sus referencias.",
+        ],
+      ];
+      const mobile = [
+        [
+          "16",
+          "workspace",
+          "16-mobile-library",
+          "Biblioteca móvil",
+          "Navegación horizontal de carpetas y tabla adaptada a pantallas pequeñas.",
+        ],
+        [
+          "17",
+          "sources",
+          "17-mobile-sources",
+          "Selección en móvil",
+          "Fuentes con casillas, carpetas anidadas y resumen de lo incluido en el reporte.",
+        ],
+        [
+          "18",
+          "upload",
+          "18-mobile-upload",
+          "Cargas en móvil",
+          "Destino, clasificación y estados por archivo en una sola columna.",
+        ],
+        [
+          "19",
+          "drive",
+          "19-mobile-drive",
+          "Google Drive en móvil",
+          "Cuenta, selección de elementos y destino de los documentos conectados.",
+        ],
+        [
+          "20",
+          "connections",
+          "20-mobile-connections",
+          "Conexiones en móvil",
+          "Estados y acciones de sincronización sin desbordamiento horizontal.",
+        ],
+        [
+          "21",
+          "report",
+          "21-mobile-report",
+          "Reporte en móvil",
+          "Contenido de ejemplo y documentos utilizados con sus revisiones guardadas.",
+        ],
+      ];
+      function card([number, hash, file, title, description]) {
+        return `<article class="card"><a class="image" href="screenshots/${file}.png" aria-label="Ampliar ${title}"><img src="screenshots/${file}.png" alt="${title}" loading="lazy"/></a><div class="info"><div class="number">PANTALLA ${number}</div><div class="title-row"><h3>${title}</h3><span style="color:#9b91ad">↗</span></div><p>${description}</p><div class="links"><a href="index.html#${hash}">Interactuar →</a><a href="screenshots/${file}.png">Ver captura completa</a></div></div></article>`;
+      }
+      document.getElementById("main-grid").innerHTML = cards.map(card).join("");
+      document.getElementById("states-grid").innerHTML = states
+        .map(card)
+        .join("");
+      document.getElementById("mobile-grid").innerHTML = mobile
+        .map(card)
+        .join("");
+    </script>
+  </body>
+</html>

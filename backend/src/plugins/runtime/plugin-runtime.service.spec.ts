@@ -28,7 +28,17 @@ describe('PluginRuntimeService', () => {
       resourceProviders,
     };
     const registry = { get: jest.fn().mockResolvedValue(plugin) };
-    return { service: new PluginRuntimeService(registry as any), registry };
+    const store = {
+      read: jest.fn(async (_resource, _operation, _period, fetch) => ({
+        records: await fetch(_period ? { period: _period } : {}),
+        limitations: [],
+      })),
+    };
+    return {
+      service: new PluginRuntimeService(registry as any, store as any),
+      registry,
+      store,
+    };
   }
 
   it('discovers and flattens resources from every resource provider', async () => {
@@ -187,6 +197,7 @@ describe('PluginRuntimeService', () => {
       { period: { from: '2026-06-10', to: '2026-06-20' } },
     );
     expect(result).toEqual({
+      sourceNamespace: 'test:installation-a',
       dataType: 'test.selected',
       records: [
         { id: 'from', createdAt: '2026-06-10T00:00:00.000Z' },
@@ -226,5 +237,34 @@ describe('PluginRuntimeService', () => {
     expect(result.records).toHaveLength(1000);
     expect(result.count).toBe(1001);
     expect(result.truncated).toBe(true);
+  });
+  it('applies both period boundaries to report evidence before counting', async () => {
+    const provider = {
+      dataType: { key: 'test.commit' },
+      provide: jest.fn().mockResolvedValue([
+        { id: 'before', updatedAt: '2026-10-01T00:00:00Z' },
+        { id: 'start', updatedAt: '2026-10-10T00:00:00Z' },
+        { id: 'end', updatedAt: '2026-10-20T23:59:59Z' },
+        { id: 'after', updatedAt: '2026-10-21T00:00:00Z' },
+      ]),
+    };
+    const { service, store } = createService([provider]);
+    const period = { from: '2026-10-10', to: '2026-10-20' };
+    const result = await service.provide(
+      [makeResource('a')],
+      'history',
+      undefined,
+      period,
+    );
+    expect(store.read).toHaveBeenCalledWith(
+      expect.anything(),
+      'test.commit',
+      period,
+      expect.any(Function),
+    );
+    expect(
+      result.resources[0].datasets[0].records.map((item: any) => item.id),
+    ).toEqual(['start', 'end']);
+    expect(result.resources[0].datasets[0].count).toBe(2);
   });
 });

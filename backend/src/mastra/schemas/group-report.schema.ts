@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AVATAR_COUNT } from '../../evaluators/default-evaluators';
 import { EVALUATION_EMPHASIS_VALUES } from '../evaluation-guidelines';
 
 const reportStatusSchema = z
@@ -207,6 +208,64 @@ export const groupReportContentSchema = z.object({
       action: z.string(),
     }),
   ),
+
+  questionAnswers: z
+    .array(
+      z.object({
+        question: z
+          .string()
+          .describe('Texto exacto de una pregunta del evaluador.'),
+        answer: z
+          .string()
+          .describe(
+            'Respuesta breve basada solo en la evidencia. Si no alcanza, decirlo.',
+          ),
+      }),
+    )
+    .describe(
+      'Una entrada por cada pregunta suministrada, en el mismo orden. Array vacío si no hay preguntas.',
+    ),
+});
+
+const evidenceCountSchema = z.object({
+  kept: z.number().int().nonnegative(),
+  omitted: z.number().int().nonnegative(),
+});
+
+const evidenceReceiptSchema = z.object({
+  budgetBytes: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative(),
+  counts: z.array(
+    z.object({
+      type: z.string(),
+      stored: z.number().int().nonnegative(),
+      initial: z.number().int().nonnegative(),
+      final: z.number().int().nonnegative(),
+    }),
+  ),
+  includedIds: z.array(
+    z.object({
+      type: z.string(),
+      ids: z.array(z.string()),
+    }),
+  ),
+  nested: z.object({
+    comments: evidenceCountSchema,
+    reviews: evidenceCountSchema,
+    files: evidenceCountSchema,
+  }),
+  operations: z.array(
+    z.object({
+      action: z.enum(['shorten_text', 'reduce_list', 'drop_records']),
+      reason: z.string(),
+    }),
+  ),
+  tokens: z
+    .object({
+      input: z.number().int().nonnegative().nullable(),
+      output: z.number().int().nonnegative().nullable(),
+    })
+    .nullable(),
 });
 
 const coverageSchema = z.object({
@@ -216,6 +275,7 @@ const coverageSchema = z.object({
   firstActivityAt: z.string().nullable(),
   lastActivityAt: z.string().nullable(),
   limitations: z.array(z.string()),
+  evidenceReceipt: evidenceReceiptSchema.optional(),
 });
 
 const evaluationGuidelinesSnapshotSchema = z.object({
@@ -223,9 +283,32 @@ const evaluationGuidelinesSnapshotSchema = z.object({
   notes: z.string().nullable(),
 });
 
+const evaluatorSnapshotSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  scope: z.enum(['WORKSPACE', 'GROUP']),
+  effort: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+  avatar: z
+    .number()
+    .int()
+    .min(0)
+    .max(AVATAR_COUNT - 1),
+  personality: z.string(),
+  guidelines: evaluationGuidelinesSnapshotSchema,
+  rules: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string().nullable(),
+      valuation: z.number().int(),
+    }),
+  ),
+  questions: z.array(z.string()),
+});
+
 export const groupReportSchema = groupReportContentSchema.extend({
   coverage: coverageSchema,
   evaluationGuidelines: evaluationGuidelinesSnapshotSchema.nullable(),
+  evaluator: evaluatorSnapshotSchema.nullable(),
 });
 
 export type GroupReportContent = z.infer<typeof groupReportContentSchema>;

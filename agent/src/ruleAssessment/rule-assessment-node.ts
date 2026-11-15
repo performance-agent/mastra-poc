@@ -1,3 +1,4 @@
+import { generationError } from '../generation.js';
 import {
   isQuotaError,
   QUOTA_MESSAGE,
@@ -18,7 +19,7 @@ import type {
   RuleAssessmentRequest,
 } from './types.js';
 
-const DEFAULT_MAX_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 1;
 
 type AssessmentOutcome =
   | { kind: 'assessed'; ruleId: string; value: RuleAssessment }
@@ -66,9 +67,7 @@ async function assessRule(
     return failed(
       request.rule.id,
       isQuotaError(error) ? 'ai_quota_exhausted' : 'ai_generation_failed',
-      isQuotaError(error)
-        ? QUOTA_MESSAGE
-        : 'The AI model could not assess this rule.',
+      isQuotaError(error) ? QUOTA_MESSAGE : generationError(error),
     );
   }
 

@@ -1,0 +1,30 @@
+{
+    "recordedAt":  "2026-10-31T20:58:26.8416504-03:00",
+    "backendTests":  {
+                         "passed":  31,
+                         "suites":  3
+                     },
+    "personalizationBrowserTests":  {
+                                        "runtimeErrors":  0,
+                                        "data":  "simulated",
+                                        "passed":  6
+                                    },
+    "existingProgressBrowserTests":  {
+                                         "passed":  6,
+                                         "data":  "simulated"
+                                     },
+    "frontendBuild":  "passed (Vite warns about a bundle larger than 500 kB)",
+    "backendBuild":  "passed",
+    "frontendTypes":  "passed",
+    "changedFrontendAndBackendProductionFilesLint":  "passed",
+    "prismaSchema":  "validated",
+    "evaluatorFiles":  "unchanged",
+    "migrationApplied":  false,
+    "migrationBlocker":  "Local PostgreSQL and Docker engine unavailable",
+    "firebaseStorage":  "Configured frontend bucket existence check returned false; backend FIREBASE_STORAGE_BUCKET is unset",
+    "liveStorageRoundTrip":  "not performed",
+    "cloudResourcesChanged":  false,
+    "baselineProgressScreenshots":  "artifacts/evaluation-progress/ui-tests",
+    "newProgressScreenshots":  "artifacts/personalization/regression",
+    "newExperienceScreenshots":  "artifacts/personalization/simulated"
+}

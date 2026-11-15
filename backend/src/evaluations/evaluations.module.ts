@@ -1,3 +1,5 @@
+import { TaskAnalysisService } from './task-analysis.service';
+import { IndividualInsightsService } from './individual-insights.service';
 import { Module } from '@nestjs/common';
 import { PluginRegistryService } from '../plugins/plugin-registry.service';
 import { RESOURCE_EXECUTION_NODE } from '../plugins/runtime/plugin-resource-executor.service';
@@ -12,6 +14,8 @@ import {
 import { EvaluationsService } from './evaluations.service';
 import { RulePackagesController } from './rule-packages.controller';
 import { RulePackagesService } from './rule-packages.service';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
+
 import { EvaluationModelsController } from './evaluation-models.controller';
 import { ReportEvaluationsService } from './report-evaluations.service';
 import { ReportEvidenceService } from './report-evidence.service';
@@ -22,7 +26,7 @@ import {
 } from './report-evaluation.provider';
 
 @Module({
-  imports: [PluginsModule, ResourcesModule],
+  imports: [PluginsModule, ResourcesModule, KnowledgeModule],
   controllers: [
     EvaluationsController,
     RulePackagesController,
@@ -33,6 +37,8 @@ import {
     ReportEvidenceService,
     { provide: REPORT_BATCH_FACTORY, useValue: createReportBatchFactory },
     { provide: REPORT_ANALYSIS_ENGINE, useFactory: () => import('@pa/agent') },
+    IndividualInsightsService,
+    TaskAnalysisService,
     EvaluationsService,
     RulePackagesService,
     {

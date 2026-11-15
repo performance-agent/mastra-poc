@@ -1,3 +1,6 @@
+import { jest as esmJest } from '@jest/globals';
+import { GenerationService } from '../generation/generation.service';
+import { KnowledgeService } from '../knowledge/knowledge.service';
 import type {
   BatchLimits,
   ConfiguredEvaluationOptions,
@@ -198,6 +201,17 @@ function setup() {
 }
 
 describe('report-based evaluations', () => {
+  const originalRunnerId = process.env.LANGSMITH_RUNNER_ID;
+
+  beforeEach(() => {
+    process.env.LANGSMITH_RUNNER_ID = 'local';
+  });
+
+  afterAll(() => {
+    if (originalRunnerId === undefined) delete process.env.LANGSMITH_RUNNER_ID;
+    else process.env.LANGSMITH_RUNNER_ID = originalRunnerId;
+  });
+
   it('routes production evaluation calls into report analysis', async () => {
     const { db } = setup();
     const reportAnalyzer = {
@@ -207,6 +221,9 @@ describe('report-based evaluations', () => {
     const service = new EvaluationsService(
       legacyFactory,
       db as unknown as PrismaService,
+      {} as GenerationService,
+      undefined,
+      {} as KnowledgeService,
       reportAnalyzer as unknown as ReportEvaluationsService,
     );
     await service.evaluate(
@@ -304,3 +321,12 @@ describe('report-based evaluations', () => {
     ).toThrow();
   });
 });
+
+// Isolate service behavior from the ESM agent tracing runtime.
+esmJest.unstable_mockModule('@pa/agent', () => ({
+  generationStage: (
+    _stage: string,
+    _input: unknown,
+    run: () => Promise<unknown>,
+  ) => run(),
+}));

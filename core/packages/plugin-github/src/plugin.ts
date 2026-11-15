@@ -10,12 +10,24 @@ import {
   secret,
 } from "@pa/sdk";
 import { octokitGitHubClientFactory } from "./octokit.js";
-import type { GitHubClientFactory, GitHubPluginOptions, GitHubSecrets } from "./types.js";
+import type {
+  GitHubClientFactory,
+  GitHubPluginOptions,
+  GitHubSecrets,
+} from "./types.js";
 
 export const githubSecrets = defineSecrets([
   secret({ key: "appId", label: "GitHub App ID", sensitive: false }),
-  secret({ key: "privateKey", label: "GitHub App private key", sensitive: true }),
-  secret({ key: "installationId", label: "GitHub installation ID", sensitive: false }),
+  secret({
+    key: "privateKey",
+    label: "GitHub App private key",
+    sensitive: true,
+  }),
+  secret({
+    key: "installationId",
+    label: "GitHub installation ID",
+    sensitive: false,
+  }),
   secret({
     key: "baseUrl",
     label: "GitHub API base URL",
@@ -26,42 +38,97 @@ export const githubSecrets = defineSecrets([
 ]);
 
 export const githubIssueSchema = schema.object({
-  id: schema.string(), repository: schema.string(), number: schema.integer({ minimum: 1 }), title: schema.string(),
-  body: schema.optional(schema.string()), state: schema.enum(["open", "closed"]), url: schema.optional(schema.string({ format: "uri" })),
-  author: schema.optional(schema.string()), comments: schema.optional(schema.integer({ minimum: 0 })),
-  labels: schema.array(schema.string()), assignees: schema.array(schema.string()), createdAt: schema.string({ format: "date-time" }), updatedAt: schema.string({ format: "date-time" }),
+  issueComments: schema.optional(
+    schema.array(
+      schema.object({
+        id: schema.string(),
+        author: schema.optional(schema.string()),
+        body: schema.string(),
+        createdAt: schema.string(),
+        updatedAt: schema.string(),
+      }),
+    ),
+  ),
+  id: schema.string(),
+  repository: schema.string(),
+  number: schema.integer({ minimum: 1 }),
+  title: schema.string(),
+  body: schema.optional(schema.string()),
+  state: schema.enum(["open", "closed"]),
+  url: schema.optional(schema.string({ format: "uri" })),
+  author: schema.optional(schema.string()),
+  comments: schema.optional(schema.integer({ minimum: 0 })),
+  labels: schema.array(schema.string()),
+  assignees: schema.array(schema.string()),
+  createdAt: schema.string({ format: "date-time" }),
+  updatedAt: schema.string({ format: "date-time" }),
   closedAt: schema.optional(schema.string({ format: "date-time" })),
 });
 
 export const githubPullRequestSchema = schema.object({
-  id: schema.string(), repository: schema.string(), number: schema.integer({ minimum: 1 }), title: schema.string(),
+  id: schema.string(),
+  repository: schema.string(),
+  number: schema.integer({ minimum: 1 }),
+  title: schema.string(),
   body: schema.optional(schema.string()),
-  state: schema.enum(["open", "closed", "merged", "draft"]), author: schema.optional(schema.string()), url: schema.optional(schema.string({ format: "uri" })),
-  labels: schema.array(schema.string()), baseBranch: schema.optional(schema.string()), headBranch: schema.optional(schema.string()),
-  comments: schema.optional(schema.integer({ minimum: 0 })), reviewComments: schema.optional(schema.integer({ minimum: 0 })),
-  additions: schema.optional(schema.integer({ minimum: 0 })), deletions: schema.optional(schema.integer({ minimum: 0 })), changedFiles: schema.optional(schema.integer({ minimum: 0 })),
-  files: schema.array(schema.object({
-    filename: schema.string(), status: schema.string(), additions: schema.integer({ minimum: 0 }),
-    deletions: schema.integer({ minimum: 0 }), changes: schema.integer({ minimum: 0 }), patch: schema.optional(schema.string()),
-  })),
-  issueComments: schema.array(schema.object({
-    author: schema.optional(schema.string()), body: schema.string(), createdAt: schema.string({ format: "date-time" }),
-  })),
-  reviewCommentsData: schema.array(schema.object({
-    author: schema.optional(schema.string()), body: schema.string(), path: schema.string(),
-    line: schema.optional(schema.integer({ minimum: 1 })), createdAt: schema.string({ format: "date-time" }),
-  })),
-  reviews: schema.array(schema.object({
-    author: schema.optional(schema.string()), state: schema.string(), body: schema.string(),
-    submittedAt: schema.optional(schema.string({ format: "date-time" })),
-  })),
-  createdAt: schema.string({ format: "date-time" }), updatedAt: schema.string({ format: "date-time" }),
-  closedAt: schema.optional(schema.string({ format: "date-time" })), mergedAt: schema.optional(schema.string({ format: "date-time" })),
+  state: schema.enum(["open", "closed", "merged", "draft"]),
+  author: schema.optional(schema.string()),
+  url: schema.optional(schema.string({ format: "uri" })),
+  labels: schema.array(schema.string()),
+  baseBranch: schema.optional(schema.string()),
+  headBranch: schema.optional(schema.string()),
+  comments: schema.optional(schema.integer({ minimum: 0 })),
+  reviewComments: schema.optional(schema.integer({ minimum: 0 })),
+  additions: schema.optional(schema.integer({ minimum: 0 })),
+  deletions: schema.optional(schema.integer({ minimum: 0 })),
+  changedFiles: schema.optional(schema.integer({ minimum: 0 })),
+  files: schema.array(
+    schema.object({
+      filename: schema.string(),
+      status: schema.string(),
+      additions: schema.integer({ minimum: 0 }),
+      deletions: schema.integer({ minimum: 0 }),
+      changes: schema.integer({ minimum: 0 }),
+      patch: schema.optional(schema.string()),
+    }),
+  ),
+  issueComments: schema.array(
+    schema.object({
+      author: schema.optional(schema.string()),
+      body: schema.string(),
+      createdAt: schema.string({ format: "date-time" }),
+    }),
+  ),
+  reviewCommentsData: schema.array(
+    schema.object({
+      author: schema.optional(schema.string()),
+      body: schema.string(),
+      path: schema.string(),
+      line: schema.optional(schema.integer({ minimum: 1 })),
+      createdAt: schema.string({ format: "date-time" }),
+    }),
+  ),
+  reviews: schema.array(
+    schema.object({
+      author: schema.optional(schema.string()),
+      state: schema.string(),
+      body: schema.string(),
+      submittedAt: schema.optional(schema.string({ format: "date-time" })),
+    }),
+  ),
+  createdAt: schema.string({ format: "date-time" }),
+  updatedAt: schema.string({ format: "date-time" }),
+  closedAt: schema.optional(schema.string({ format: "date-time" })),
+  mergedAt: schema.optional(schema.string({ format: "date-time" })),
 });
 
 export const githubCommitSchema = schema.object({
-  sha: schema.string(), repository: schema.string(), message: schema.string(), author: schema.optional(schema.string()),
-  authoredAt: schema.optional(schema.string({ format: "date-time" })), committedAt: schema.optional(schema.string({ format: "date-time" })),
+  sha: schema.string(),
+  repository: schema.string(),
+  message: schema.string(),
+  author: schema.optional(schema.string()),
+  authoredAt: schema.optional(schema.string({ format: "date-time" })),
+  committedAt: schema.optional(schema.string({ format: "date-time" })),
   url: schema.optional(schema.string({ format: "uri" })),
 });
 
@@ -77,22 +144,37 @@ export const githubParticipationSchema = schema.object({
   owner: schema.array(schema.integer({ minimum: 0 })),
 });
 
-export const githubIssue = dataType({ key: "github.issue", schema: githubIssueSchema });
+export const githubIssue = dataType({
+  key: "github.issue",
+  schema: githubIssueSchema,
+});
 export const githubPullRequest = dataType({
   key: "github.pullRequest",
   schema: githubPullRequestSchema,
-  description: "Pull requests selected by their latest update, with lifecycle timestamps and guaranteed additions, deletions, and changedFiles totals. With a period, comments and reviews are restricted to that period; totals describe the current pull request, not period-only activity.",
+  description:
+    "Pull requests selected by their latest update, with lifecycle timestamps and guaranteed additions, deletions, and changedFiles totals. With a period, comments and reviews are restricted to that period; totals describe the current pull request, not period-only activity.",
   freshness: "realtime",
-  limitations: ["Pull request activity is not equivalent to commit activity.", "Pull request totals and current state are not historical snapshots or period-only counts."],
+  limitations: [
+    "Pull request activity is not equivalent to commit activity.",
+    "Pull request totals and current state are not historical snapshots or period-only counts.",
+  ],
 });
-export const githubCommit = dataType({ key: "github.commit", schema: githubCommitSchema });
+export const githubCommit = dataType({
+  key: "github.commit",
+  schema: githubCommitSchema,
+});
 export const githubParticipation = dataType({
   key: "github.participation",
   schema: githubParticipationSchema,
-  description: "Weekly commit counts for all contributors and the repository owner; arrays run from oldest to newest in UTC.",
+  description:
+    "Weekly commit counts for all contributors and the repository owner; arrays run from oldest to newest in UTC.",
   freshness: "realtime",
-  timeCoverage: "Rolling last 52 weeks, including the latest seven-day UTC bucket.",
-  limitations: ["Counts commits, not pull requests.", "GitHub repository statistics exclude merge commits."],
+  timeCoverage:
+    "Rolling last 52 weeks, including the latest seven-day UTC bucket.",
+  limitations: [
+    "Counts commits, not pull requests.",
+    "GitHub repository statistics exclude merge commits.",
+  ],
 });
 
 const githubRepository = resourceType({
@@ -136,7 +218,10 @@ export function createGitHubPlugin(options: GitHubPluginOptions = {}) {
       providesData(githubParticipation, {
         secrets: githubSecrets,
         async provide(context, resource, options) {
-          if (options?.period) throw new Error("github.participation cannot evaluate a date period: weekly aggregates do not represent the requested range. Use github.commit instead.");
+          if (options?.period)
+            throw new Error(
+              "github.participation cannot evaluate a date period: weekly aggregates do not represent the requested range. Use github.commit instead.",
+            );
           const client = await clients.create(await readSecrets(context));
           return [await client.getParticipation(resource.externalId, options)];
         },
@@ -153,16 +238,22 @@ function createRepositoryProvider(clients: GitHubClientFactory) {
       return (await client.listRepositories()).map((repository) => ({
         name: repository.name,
         externalId: repository.fullName,
-        ...(repository.description === undefined ? {} : { description: repository.description }),
+        ...(repository.description === undefined
+          ? {}
+          : { description: repository.description }),
       }));
     },
   });
 }
 
-async function readSecrets(context: PluginExecutionContext<GitHubSecrets>): Promise<GitHubSecrets> {
+async function readSecrets(
+  context: PluginExecutionContext<GitHubSecrets>,
+): Promise<GitHubSecrets> {
   const [appId, privateKey, installationId, baseUrl] = await Promise.all([
-    context.secrets.get("appId"), context.secrets.get("privateKey"),
-    context.secrets.get("installationId"), context.secrets.get("baseUrl"),
+    context.secrets.get("appId"),
+    context.secrets.get("privateKey"),
+    context.secrets.get("installationId"),
+    context.secrets.get("baseUrl"),
   ]);
   return { appId, privateKey, installationId, baseUrl };
 }

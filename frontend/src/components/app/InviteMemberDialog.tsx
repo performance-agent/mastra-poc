@@ -1,3 +1,4 @@
+import { useUnsavedDialog } from "./use-unsaved-dialog";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -41,73 +42,82 @@ export function InviteMemberDialog({
     setRole("VIEWER");
   }, [open, setRole]);
 
+  const guard = useUnsavedDialog(
+    open,
+    !inviteUrl && (!!email || role !== "VIEWER"),
+    onOpenChange,
+    submitting,
+  );
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{inviteUrl ? "Invitation created" : "Invite member"}</DialogTitle>
-        </DialogHeader>
-        {inviteUrl ? (
-          <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">
-              Share this link with {email || "the invited user"}. They can sign in or create an
-              account to join.
-            </p>
-            <Input readOnly value={inviteUrl} />
-          </div>
-        ) : (
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">Email</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                autoComplete="email"
-                placeholder="name@company.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Role</Label>
-              <RoleSelect value={role} allowedRoles={allowedRoles} onChange={setRole} />
-            </div>
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {inviteUrl ? "Done" : "Cancel"}
-          </Button>
+    <>
+      <Dialog open={open} onOpenChange={guard.changeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{inviteUrl ? "Invitation created" : "Invite member"}</DialogTitle>
+          </DialogHeader>
           {inviteUrl ? (
-            <Button
-              onClick={async () => {
-                await navigator.clipboard.writeText(inviteUrl);
-                toast.success("Invite link copied");
-              }}
-            >
-              Copy link
-            </Button>
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-muted-foreground">
+                Share this link with {email || "the invited user"}. They can sign in or create an
+                account to join.
+              </p>
+              <Input readOnly value={inviteUrl} />
+            </div>
           ) : (
-            <Button
-              disabled={!email.trim() || submitting}
-              onClick={async () => {
-                setSubmitting(true);
-                try {
-                  const invitation = await onInvite(email.trim(), role);
-                  setInviteUrl(invitation.inviteUrl);
-                  toast.success("Invitation created");
-                } catch (e) {
-                  toast.error(errorMessage(e));
-                } finally {
-                  setSubmitting(false);
-                }
-              }}
-            >
-              Send invite
-            </Button>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Email</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="name@company.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <RoleSelect value={role} allowedRoles={allowedRoles} onChange={setRole} />
+              </div>
+            </div>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => guard.changeOpen(false)}>
+              {inviteUrl ? "Done" : "Cancel"}
+            </Button>
+            {inviteUrl ? (
+              <Button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(inviteUrl);
+                  toast.success("Invite link copied");
+                }}
+              >
+                Copy link
+              </Button>
+            ) : (
+              <Button
+                disabled={!email.trim() || submitting}
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    const invitation = await onInvite(email.trim(), role);
+                    setInviteUrl(invitation.inviteUrl);
+                    toast.success("Invitation created");
+                  } catch (e) {
+                    toast.error(errorMessage(e));
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+              >
+                Send invite
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {guard.confirmation}
+    </>
   );
 }

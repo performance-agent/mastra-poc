@@ -157,6 +157,76 @@ test('runs the complete graph and produces a ready plan', async () => {
   );
 });
 
+test('reports real node boundaries and isolates concurrent invocations of the shared graph', async () => {
+  const flow = makeFlow();
+  const first: string[] = [];
+  const second: string[] = [];
+  const observer =
+    (events: string[]) => async (stage: string, state: string) => {
+      await Promise.resolve();
+      events.push(`${stage}:${state}`);
+    };
+  await Promise.all([
+    flow.invoke(input, {
+      configurable: { onEvaluationProgress: observer(first) },
+    }),
+    flow.invoke(input, {
+      configurable: { onEvaluationProgress: observer(second) },
+    }),
+  ]);
+  const stages = [
+    'rule_input',
+    'resource_catalog',
+    'rule_understanding',
+    'resource_selection',
+    'resource_operation_deduplication',
+    'evaluation_plan',
+    'resource_execution',
+    'rule_assessment',
+  ];
+  const expected = stages.flatMap((stage) => [
+    `${stage}:started`,
+    `${stage}:completed`,
+  ]);
+  assert.deepEqual(first, expected);
+  assert.deepEqual(second, expected);
+});
+
+test('does not report stages that were skipped by an early termination', async () => {
+  const events: string[] = [];
+  await makeFlow().invoke(
+    { ...input, rules: [] },
+    {
+      configurable: {
+        onEvaluationProgress: async (stage: string, state: string) => {
+          events.push(`${stage}:${state}`);
+        },
+      },
+    },
+  );
+  assert.deepEqual(events, ['rule_input:started', 'rule_input:completed']);
+});
+
+test('stops the graph when its progress observer rejects an expired job', async () => {
+  let catalogLoaded = false;
+  await assert.rejects(
+    makeFlow({
+      loadCatalog: async () => {
+        catalogLoaded = true;
+        return catalog;
+      },
+    }).invoke(input, {
+      configurable: {
+        onEvaluationProgress: async () => {
+          throw new Error('Job expired');
+        },
+      },
+    }),
+    /Job expired/,
+  );
+  assert.equal(catalogLoaded, false);
+});
+
 test('preserves the requested period through planning, execution and assessment', async () => {
   const period = { from: '2026-06-10', to: '2026-06-20' };
   const executedPeriods: unknown[] = [];

@@ -1,11 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { Fragment } from "react";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export interface Crumb {
   label: string;
   to?: string;
+  onClick?: () => void;
 }
 
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
@@ -27,7 +29,16 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
                 <li className="flex min-w-0 shrink-0 items-center">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      {c.to && !isLast ? (
+                      {c.onClick ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={c.onClick}
+                          className={`${crumbClass} h-auto py-1`}
+                        >
+                          {c.label}
+                        </Button>
+                      ) : c.to && !isLast ? (
                         <Link to={c.to} className={crumbClass}>
                           {c.label}
                         </Link>

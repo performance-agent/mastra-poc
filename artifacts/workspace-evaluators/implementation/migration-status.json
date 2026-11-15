@@ -1,0 +1,9 @@
+{
+  "checkedOn": "2026-11-05",
+  "command": "npx prisma migrate status",
+  "database": "local PostgreSQL on localhost:5432",
+  "migrationsFound": 36,
+  "status": "Database schema is up to date",
+  "featureRequiresNewMigration": false,
+  "reason": "Existing evaluator migrations already define WORKSPACE and GROUP scope, workspaceId, nullable groupId, and the scope/group constraint. This feature changes APIs and UI without changing the Prisma schema."
+}

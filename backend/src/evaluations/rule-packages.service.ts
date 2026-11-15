@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -62,8 +61,9 @@ export class RulePackagesService {
     packageId: string,
     dto: UpdateRulePackageDto,
   ) {
-    await this.assertEditable(workspaceId, ownerId, packageId);
+    const existing = await this.assertEditable(workspaceId, ownerId, packageId);
     const rules = dto.rules ? this.normalizeRules(dto.rules) : undefined;
+    const claim = existing.scope === RulePackageScope.PUBLIC;
 
     return this.prisma.rulePackage.update({
       where: { id: packageId },
@@ -72,15 +72,21 @@ export class RulePackagesService {
         ...(dto.evaluates !== undefined
           ? { evaluates: dto.evaluates.trim() }
           : {}),
-        ...(dto.scope !== undefined
+        ...(claim
           ? {
-              scope: dto.scope,
-              workspaceId:
-                dto.scope === RulePackageWriteScope.WORKSPACE
-                  ? workspaceId
-                  : null,
+              scope: RulePackageScope.WORKSPACE,
+              ownerId,
+              workspaceId,
             }
-          : {}),
+          : dto.scope !== undefined
+            ? {
+                scope: dto.scope,
+                workspaceId:
+                  dto.scope === RulePackageWriteScope.WORKSPACE
+                    ? workspaceId
+                    : null,
+              }
+            : {}),
         ...(rules
           ? {
               rules: {
@@ -109,11 +115,7 @@ export class RulePackagesService {
       select: { ownerId: true, scope: true, workspaceId: true },
     });
     if (!value) throw new NotFoundException('Rule package not found');
-    if (value.scope === RulePackageScope.PUBLIC) {
-      throw new ForbiddenException(
-        'Public rule packages are immutable; create a private copy instead',
-      );
-    }
+    if (value.scope === RulePackageScope.PUBLIC) return value;
     if (value.ownerId !== ownerId) {
       throw new NotFoundException('Rule package not found');
     }
@@ -123,6 +125,7 @@ export class RulePackagesService {
     ) {
       throw new NotFoundException('Rule package not found');
     }
+    return value;
   }
 
   private normalizeRules(rules: RulePackageRuleDto[]) {

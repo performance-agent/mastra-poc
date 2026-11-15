@@ -1,6 +1,16 @@
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useLocation } from "@tanstack/react-router";
+import { useExperience } from "@/lib/experience-context";
+import { useImageSource } from "@/lib/media";
+import { EntityShortcut } from "./EntityShortcut";
 import { Avatar } from "./Avatar";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, MoreHorizontal } from "lucide-react";
 
 export function EntityHeader({
   name,
@@ -17,12 +27,26 @@ export function EntityHeader({
   onDelete?: () => void;
   meta?: React.ReactNode;
 }) {
+  const experience = useExperience();
+  const { pathname } = useLocation();
+  const cover = useImageSource(
+    /^\/organizations\/[^/]+\/?$/.test(pathname) ? experience.appearance.cover : undefined,
+  );
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="experience-entity-header relative isolate flex flex-row items-start justify-between gap-4 overflow-hidden">
+      {cover && (
+        <>
+          <img src={cover} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover" />
+          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-card/95 to-card/60" />
+        </>
+      )}
       <div className="flex min-w-0 items-start gap-4">
         <Avatar name={name} src={photoUrl} size="xl" />
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{name}</h1>
+            <EntityShortcut name={name} />
+          </div>
           {description && (
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>
           )}
@@ -30,20 +54,27 @@ export function EntityHeader({
         </div>
       </div>
       {(onEdit || onDelete) && (
-        <div className="flex shrink-0 flex-wrap gap-2">
-          {onEdit && (
-            <Button variant="outline" size="sm" onClick={onEdit}>
-              <Pencil className="mr-1.5 h-3.5 w-3.5" />
-              Edit
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" aria-label="More options">
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
-          )}
-          {onDelete && (
-            <Button variant="outline" size="sm" onClick={onDelete}>
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-              Delete
-            </Button>
-          )}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {onEdit && (
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit details
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   );

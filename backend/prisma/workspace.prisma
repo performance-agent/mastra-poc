@@ -1,4 +1,10 @@
 model Workspace {
+  peopleComparisons PeopleComparison[]
+  knowledgeNodes KnowledgeNode[]
+  knowledgeConnections KnowledgeConnection[]
+  generationJobs GenerationJob[]
+  taskAnalyses TaskAnalysis[]
+  gradingSettings Json?
   id          String  @id @default(cuid())
   name        String
   description String?
@@ -16,6 +22,8 @@ model Workspace {
   performanceReports  PerformanceReport[]
   invitations         Invitation[]
   rulePackages        RulePackage[]
+  evaluators          Evaluator[]
+  voices              EvaluatorVoice[]
 
   @@index([organizationId])
 }

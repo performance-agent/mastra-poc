@@ -1,3 +1,4 @@
+import { jest as esmJest, expect as esmExpect } from '@jest/globals';
 import {
   BadRequestException,
   NotFoundException,
@@ -10,6 +11,23 @@ import { EvaluationsService } from './evaluations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import type { CreateEvaluationDto } from './dto/create-evaluation.dto';
+import type { GenerationService } from '../generation/generation.service';
+import type { KnowledgeService } from '../knowledge/knowledge.service';
+const emptyKnowledge = {
+  snapshot: () =>
+    Promise.resolve({
+      capturedAt: '2026-11-03T00:00:00Z',
+      sources: [],
+      unavailable: 0,
+    }),
+  workspaceSnapshot: () =>
+    Promise.resolve({
+      capturedAt: '2026-11-03T00:00:00Z',
+      sources: [],
+      unavailable: 0,
+    }),
+  snapshotText: () => Promise.resolve([]),
+} as unknown as KnowledgeService;
 
 type StoredData = {
   schemaVersion: number;
@@ -19,7 +37,9 @@ type StoredData = {
 };
 
 function mockPrisma() {
-  return {
+  const db = {
+    generationJob: { create: jest.fn().mockResolvedValue({}) },
+    $transaction: jest.fn(),
     workspace: {
       findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1' }),
     },
@@ -38,6 +58,10 @@ function mockPrisma() {
       findMany: jest.fn().mockResolvedValue([]),
     },
   };
+  db.$transaction.mockImplementation(
+    (run: (tx: typeof db) => Promise<unknown>) => run(db),
+  );
+  return db;
 }
 
 function flowResult(): EvaluationFlowResult {
@@ -104,6 +128,9 @@ function setup(result = flowResult()) {
     service: new EvaluationsService(
       factory,
       prisma as unknown as PrismaService,
+      { schedule: jest.fn() } as unknown as GenerationService,
+      undefined,
+      emptyKnowledge,
     ),
     prisma,
     factory,
@@ -144,10 +171,14 @@ describe('EvaluationsService', () => {
       {
         runName: 'group-evaluation-flow',
         tags: ['runner:local'],
-        metadata: { workspaceId: 'workspace-1', view: EvaluationView.REPORT },
+        metadata: {
+          evaluationId: esmExpect.any(String),
+          workspaceId: 'workspace-1',
+          view: EvaluationView.REPORT,
+        },
       },
     );
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       evaluationId: 'evaluation-1',
       createdAt: new Date('2026-10-03T12:00:00Z'),
       status: 'partial',
@@ -176,13 +207,14 @@ describe('EvaluationsService', () => {
       ),
     ).resolves.toEqual({
       ...result,
+      individualInsightsJobId: esmExpect.any(String),
       evaluationId: 'evaluation-1',
       createdAt: new Date('2026-10-03T12:00:00Z'),
     });
     expect(
       prisma.performanceReport.create.mock.calls[0][0].data.data,
     ).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       rules: [{ name: 'Delivery', valuation: 8 }],
       period: null,
       report: { status: 'partial' },
@@ -221,6 +253,9 @@ describe('EvaluationsService', () => {
     const service = new EvaluationsService(
       factory as EvaluationFlowFactory,
       prisma as unknown as PrismaService,
+      { schedule: jest.fn() } as unknown as GenerationService,
+      undefined,
+      emptyKnowledge,
     );
 
     await expect(
@@ -254,7 +289,7 @@ describe('EvaluationsService', () => {
         groupId: 'group-1',
         type: 'AGENT_EVALUATION',
         data: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           rules,
           period,
           report: { status: response.status },
@@ -327,7 +362,7 @@ describe('EvaluationsService', () => {
     const saved = {
       id: 'evaluation-1',
       data: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         rules: [],
         period: null,
         report: { status: 'partial' },
@@ -347,7 +382,7 @@ describe('EvaluationsService', () => {
       createdAt,
       groupId: 'group-1',
       data: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         period: null,
         rules: [],
         report: { status: 'partial' },
@@ -404,3 +439,12 @@ describe('EvaluationsService', () => {
     expect(prisma.performanceReport.findMany).not.toHaveBeenCalled();
   });
 });
+
+// Isolate service behavior from the ESM agent tracing runtime.
+esmJest.unstable_mockModule('@pa/agent', () => ({
+  generationStage: (
+    _stage: string,
+    _input: unknown,
+    run: () => Promise<unknown>,
+  ) => run(),
+}));

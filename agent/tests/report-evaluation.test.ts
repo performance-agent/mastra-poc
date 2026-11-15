@@ -421,3 +421,47 @@ test('Gemini accepts the batch schema locally without making an API call', async
   });
   assert.doesNotThrow(() => createReportBatchModel(model, options(), limits));
 });
+
+test('selected knowledge excerpts remain valid evidence across supplemental passes', async () => {
+  const batch = input(1);
+  batch.knowledge = {
+    snapshot: { sources: [] },
+    references: ['knowledge:v1:0'],
+  };
+  let calls = 0;
+  const result = await analyzeReportBatches(
+    batch,
+    options(),
+    limits,
+    {
+      analyze: async () => {
+        calls++;
+        const response = output(batch);
+        response.assessments[0]!.assessment.evidence[0]!.recordReferences = [
+          'knowledge:v1:0',
+        ];
+        return {
+          ...response,
+          evidenceRequests:
+            calls === 1
+              ? [
+                  {
+                    resourceId: 'repo',
+                    operationName: 'reviews',
+                    reason: 'Contrastar',
+                  },
+                ]
+              : [],
+        };
+      },
+    },
+    async () => ({
+      reference: 'supplement:repo:reviews',
+      source: 'api',
+      data: {},
+    }),
+  );
+  assert.equal(calls, 2);
+  assert.equal(Object.keys(result.assessments).length, 1);
+  assert.deepEqual(result.diagnostics, []);
+});

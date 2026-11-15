@@ -5,13 +5,15 @@ export type PendingGithubSetup = {
   provider: "GITHUB";
   organizationId: string;
   startedAt: number;
+  returnTo?: string;
 };
 
-export function savePendingGithubSetup(organizationId: string) {
+export function savePendingGithubSetup(organizationId: string, returnTo?: string) {
   const pending: PendingGithubSetup = {
     provider: "GITHUB",
     organizationId,
     startedAt: Date.now(),
+    returnTo: validGithubReturn(organizationId, returnTo),
   };
   sessionStorage.setItem(GITHUB_SETUP_STORAGE_KEY, JSON.stringify(pending));
 }
@@ -35,7 +37,10 @@ export function readPendingGithubSetup() {
       return null;
     }
 
-    return pending as PendingGithubSetup;
+    return {
+      ...pending,
+      returnTo: validGithubReturn(pending.organizationId, pending.returnTo),
+    } as PendingGithubSetup;
   } catch {
     return null;
   }
@@ -43,4 +48,9 @@ export function readPendingGithubSetup() {
 
 export function clearPendingGithubSetup() {
   sessionStorage.removeItem(GITHUB_SETUP_STORAGE_KEY);
+}
+
+export function validGithubReturn(org: string, path?: string) {
+  const expected = "/organizations/" + encodeURIComponent(org) + "/setup/plugins";
+  return path === expected ? expected : undefined;
 }

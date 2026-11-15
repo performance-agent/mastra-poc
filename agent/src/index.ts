@@ -17,3 +17,18 @@ export * from './evaluationFlow/index.js';
 
 export * from './evaluationFlow/configuration.js';
 export * from './reportEvaluation/index.js';
+export {
+  configuredModel,
+  withConfiguredFallback,
+  modelBudget,
+  modelIdentifier,
+  modelRequest,
+  generationStage,
+  type ModelRequestOptions,
+  generationError,
+  generationErrorDetails,
+  projectEvidence,
+  packEvidence,
+  type EvidenceReceipt,
+  type EvidenceTrimAction,
+} from './generation.js';

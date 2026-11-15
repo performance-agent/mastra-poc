@@ -2,6 +2,7 @@ import {
   isQuotaError,
   QUOTA_MESSAGE,
 } from '../evaluationFlow/configuration.js';
+import { generationError } from '../generation.js';
 import type { PreparedRuleInput } from '../ruleInput/types.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 import { ZodError } from 'zod';
@@ -21,7 +22,7 @@ import type {
   UnderstoodRule,
 } from './types.js';
 
-const DEFAULT_MAX_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 1;
 
 type RuleOutcome =
   | { kind: 'understood'; value: UnderstoodRule }
@@ -66,9 +67,7 @@ async function interpretRule(
     return failedOutcome(
       preparedRule,
       isQuotaError(error) ? 'ai_quota_exhausted' : 'ai_generation_failed',
-      isQuotaError(error)
-        ? QUOTA_MESSAGE
-        : 'The AI model could not interpret this rule.',
+      isQuotaError(error) ? QUOTA_MESSAGE : generationError(error),
     );
   }
 

@@ -30,7 +30,7 @@ export function EntityCard({
   onDelete,
 }: EntityCardProps) {
   return (
-    <div className="group relative flex flex-col rounded-xl border border-border bg-card p-4 shadow-card transition-all hover:border-border-strong hover:shadow-card-hover">
+    <div className="group relative flex flex-col rounded-2xl border border-border bg-card p-5 shadow-card transition-all hover:border-border-strong hover:shadow-card-hover">
       <Link to={to} params={params} className="flex items-start gap-3" aria-label={`Open ${name}`}>
         <Avatar name={name} src={photoUrl} size="lg" />
         <div className="min-w-0 flex-1">
@@ -48,7 +48,7 @@ export function EntityCard({
           <DropdownMenu>
             <DropdownMenuTrigger
               onClick={(e) => e.stopPropagation()}
-              className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+              className="rounded-md p-1 text-muted-foreground opacity-100 sm:opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100"
               aria-label="More actions"
             >
               <MoreHorizontal className="h-4 w-4" />

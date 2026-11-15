@@ -1,6 +1,6 @@
 import { Outlet, createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Plus, Users, Layers, Boxes, Check } from "lucide-react";
@@ -20,6 +20,9 @@ import { MemberList } from "@/components/app/MemberList";
 import { InviteMemberDialog } from "@/components/app/InviteMemberDialog";
 import { PendingInvitationList } from "@/components/app/PendingInvitationList";
 import { SearchInput } from "@/components/app/SearchInput";
+import { WorkspacePeople } from "@/components/app/WorkspacePeople";
+import { EvaluatorsTab } from "@/components/app/EvaluatorsTab";
+import { KnowledgeResources } from "@/components/app/KnowledgeResources";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -36,8 +39,20 @@ import type { Group, Role } from "@/lib/types";
 
 const tabSchema = z.object({
   tab: z.string().optional(),
+  knowledgeView: z.string().optional(),
+  driveConnection: z.string().optional(),
+  driveError: z.string().optional(),
+  knowledgeNode: z.string().optional(),
+  evaluatorId: z.string().optional(),
 });
-const workspaceTabs = ["overview", "groups", "members", "resources"] as const;
+const workspaceTabs = [
+  "overview",
+  "groups",
+  "people",
+  "members",
+  "resources",
+  "evaluators",
+] as const;
 type WorkspaceTab = (typeof workspaceTabs)[number];
 
 export const Route = createFileRoute("/organizations/$organizationId/workspaces/$workspaceId")({
@@ -45,7 +60,10 @@ export const Route = createFileRoute("/organizations/$organizationId/workspaces/
   head: () => ({
     meta: [
       { title: "Workspace — Performance Agent" },
-      { name: "description", content: "Manage groups, members, and resources for this workspace." },
+      {
+        name: "description",
+        content: "Manage projects, members, and resources for this workspace.",
+      },
     ],
   }),
   component: WorkspacePage,
@@ -67,6 +85,13 @@ function WorkspacePage() {
     navigate({ search: { tab: v === "overview" ? undefined : (v as never) } });
 
   const qc = useQueryClient();
+  const { firebaseUser } = useAuth();
+  const selectEvaluator = useCallback(
+    (evaluatorId: string | undefined) => {
+      void navigate({ search: { tab: "evaluators", evaluatorId }, replace: true });
+    },
+    [navigate],
+  );
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -90,6 +115,22 @@ function WorkspacePage() {
     queryKey: ["workspace", workspaceId, "resources"],
     queryFn: () => api.listWorkspaceResources(workspaceId),
   });
+  const orgMembersQ = useQuery({
+    queryKey: ["organization", organizationId, "members"],
+    queryFn: () => api.listOrgMembers(organizationId),
+  });
+  const evaluatorsQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluators"],
+    queryFn: () => api.listWorkspaceEvaluators(workspaceId),
+    enabled: !isNestedRoute,
+  });
+  const identity = { uid: firebaseUser?.uid, email: firebaseUser?.email };
+  const canManageWorkspace = canManageMemberRoles(
+    highestRole([
+      findCurrentMembership(membersQ.data ?? [], identity)?.role,
+      findCurrentMembership(orgMembersQ.data ?? [], identity)?.role,
+    ]),
+  );
 
   const ws = wsQ.data;
   const org = orgQ.data;
@@ -125,18 +166,38 @@ function WorkspacePage() {
             onChange={setTab}
             items={[
               { value: "overview", label: "Overview" },
-              { value: "groups", label: "Groups", count: groupsQ.data?.length },
+              { value: "groups", label: "Projects", count: groupsQ.data?.length },
               { value: "members", label: "Members", count: membersQ.data?.length },
               { value: "resources", label: "Resources" },
+              { value: "people", label: "People" },
+              { value: "evaluators", label: "Evaluators", count: evaluatorsQ.data?.length },
             ]}
           />
 
+          {tab === "people" && (
+            <WorkspacePeople
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              workspaceName={ws.name}
+            />
+          )}
+          {tab === "evaluators" && (
+            <EvaluatorsTab
+              key={workspaceId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              workspaceName={ws.name}
+              canManageWorkspace={canManageWorkspace}
+              evaluatorId={search.evaluatorId}
+              onSelect={selectEvaluator}
+            />
+          )}
           {tab === "overview" && (
             <div className="space-y-6">
               <div className="grid gap-3 sm:grid-cols-3">
                 <StatCard
                   icon={<Layers className="h-4 w-4" />}
-                  label="Groups"
+                  label="Projects"
                   value={groupsQ.data?.length ?? 0}
                 />
                 <StatCard
@@ -172,12 +233,23 @@ function WorkspacePage() {
             <WorkspaceMembersTab organizationId={organizationId} workspaceId={workspaceId} />
           )}
           {tab === "resources" && (
-            <WorkspaceResourcesTab organizationId={organizationId} workspaceId={workspaceId} />
+            <KnowledgeResources
+              key={workspaceId}
+              organizationId={organizationId}
+              workspaceId={workspaceId}
+              initialView={search.knowledgeView}
+              initialConnectionId={search.driveConnection}
+              initialError={search.driveError}
+              initialNodeId={search.knowledgeNode}
+            >
+              <WorkspaceResourcesTab organizationId={organizationId} workspaceId={workspaceId} />
+            </KnowledgeResources>
           )}
         </div>
       )}
 
       <EntityFormDialog
+        scope="workspace"
         open={editOpen}
         onOpenChange={setEditOpen}
         title="Edit workspace"
@@ -257,7 +329,7 @@ function GroupsTab({
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> New group
+          <Plus className="mr-1.5 h-4 w-4" /> New project
         </Button>
       </div>
       {q.isLoading ? (
@@ -267,9 +339,9 @@ function GroupsTab({
       ) : (q.data ?? []).length === 0 ? (
         <EmptyState
           icon={<Layers className="h-4 w-4" />}
-          title="No groups yet"
-          description="Groups let you organize members and resource assignments."
-          actionLabel="New group"
+          title="No projects yet"
+          description="Projects let you organize members and resource assignments."
+          actionLabel="New project"
           onAction={() => setCreateOpen(true)}
         />
       ) : (
@@ -289,14 +361,15 @@ function GroupsTab({
         </div>
       )}
       <EntityFormDialog
+        scope="group"
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="New group"
+        title="New project"
         submitLabel="Create"
         onSubmit={async (v) => {
           try {
             await api.createGroup(workspaceId, v);
-            toast.success("Group created");
+            toast.success("Project created");
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
@@ -304,15 +377,16 @@ function GroupsTab({
         }}
       />
       <EntityFormDialog
+        scope="group"
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
-        title="Edit group"
+        title="Edit project"
         initial={toFormInitial(editing)}
         onSubmit={async (v) => {
           if (!editing) return;
           try {
             await api.updateGroup(editing.id, v);
-            toast.success("Group updated");
+            toast.success("Project updated");
             refresh();
           } catch (e) {
             toast.error(errorMessage(e));
@@ -329,7 +403,7 @@ function GroupsTab({
           if (!deleting) return;
           try {
             await api.deleteGroup(deleting.id);
-            toast.success("Group deleted");
+            toast.success("Project deleted");
             setDeleting(null);
             refresh();
           } catch (e) {

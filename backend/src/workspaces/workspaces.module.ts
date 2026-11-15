@@ -6,10 +6,12 @@ import { MembersModule } from '../members/members.module';
 import { ResourcesModule } from '../resources/resources.module';
 import { AccessControlModule } from '../access-control/access-control.module';
 import { InvitationsModule } from '../invitations/invitations.module';
+import { PeopleComparisonModule } from './people-comparison.module';
+import { WorkspacePeopleService } from './workspace-people.service';
 
 @Module({
   imports: [
-    WorkspacesModule,
+    PeopleComparisonModule,
     GroupsModule,
     MembersModule,
     ResourcesModule,
@@ -17,7 +19,7 @@ import { InvitationsModule } from '../invitations/invitations.module';
     InvitationsModule,
   ],
   controllers: [WorkspacesController],
-  providers: [WorkspacesService],
-  exports: [WorkspacesService],
+  providers: [WorkspacesService, WorkspacePeopleService],
+  exports: [WorkspacesService, WorkspacePeopleService, PeopleComparisonModule],
 })
 export class WorkspacesModule {}

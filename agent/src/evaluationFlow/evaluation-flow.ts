@@ -1,3 +1,4 @@
+import { observeEvaluationNode } from './progress.js';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import { runRuleInputNode } from '../ruleInput/rule-input-node.js';
 import type {
@@ -29,130 +30,156 @@ const FlowState = Annotation.Root({
 
 export function createEvaluationFlow(deps: EvaluationFlowDependencies) {
   return new StateGraph(FlowState)
-    .addNode('rule_input', (state) => {
-      const result = runRuleInputNode({ rules: state.rules });
-      return {
-        ruleInputResult: result,
-        ...(result.status === 'invalid' ? { status: 'invalid' as const } : {}),
-      };
-    })
-    .addNode('resource_catalog', async (state) => {
-      try {
-        const catalog =
-          await deps.resourceCatalogAdapter.getCatalogForWorkspace(
-            state.context.workspaceId,
-          );
-        return { resourceCatalog: catalog };
-      } catch {
+    .addNode(
+      'rule_input',
+      observeEvaluationNode('rule_input', (state) => {
+        const result = runRuleInputNode({ rules: state.rules });
         return {
-          status: 'failed' as const,
-          flowErrors: [
-            {
-              stage: 'resource_catalog' as const,
-              code: 'resource_catalog_failed' as const,
-              message: 'The resource catalog could not be loaded.',
-            },
-          ],
+          ruleInputResult: result,
+          ...(result.status === 'invalid'
+            ? { status: 'invalid' as const }
+            : {}),
         };
-      }
-    })
-    .addNode('rule_understanding', async (state) => {
-      const result = await deps.ruleUnderstandingNode.run({
-        runnableRules: state.ruleInputResult?.runnableRules ?? [],
-        resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
-      });
-      return {
-        ruleUnderstandingResult: result,
-        ...(result.understoodRules.length === 0
-          ? {
-              status:
-                result.clarificationRequests.length > 0
-                  ? ('needs_clarification' as const)
-                  : ('failed' as const),
-            }
-          : {}),
-      };
-    })
-    .addNode('resource_selection', async (state) => {
-      const result = await deps.resourceSelectionNode.run({
-        understoodRules: state.ruleUnderstandingResult?.understoodRules ?? [],
-        resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
-      });
-      return {
-        resourceSelectionResult: result,
-        ...(result.selectedRules.length === 0
-          ? { status: 'failed' as const }
-          : {}),
-      };
-    })
-    .addNode('resource_operation_deduplication', (state) => {
-      const result = deps.resourceOperationDeduplicationNode.run({
-        selectedRules: state.resourceSelectionResult?.selectedRules ?? [],
-      });
-      return { resourceOperationDeduplicationResult: result };
-    })
-    .addNode('evaluation_plan', (state) => {
-      const result = deps.evaluationPlanNode.run({
-        context: state.context,
-        selectedRules: state.resourceSelectionResult?.selectedRules ?? [],
-        deduplicatedOperations: required(
-          state.resourceOperationDeduplicationResult,
-          'resource operation deduplication result',
-        ).operations,
-        resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
-      });
-      if (result.status === 'invalid')
+      }),
+    )
+    .addNode(
+      'resource_catalog',
+      observeEvaluationNode('resource_catalog', async (state) => {
+        try {
+          const catalog =
+            await deps.resourceCatalogAdapter.getCatalogForWorkspace(
+              state.context.workspaceId,
+            );
+          return { resourceCatalog: catalog };
+        } catch {
+          return {
+            status: 'failed' as const,
+            flowErrors: [
+              {
+                stage: 'resource_catalog' as const,
+                code: 'resource_catalog_failed' as const,
+                message: 'The resource catalog could not be loaded.',
+              },
+            ],
+          };
+        }
+      }),
+    )
+    .addNode(
+      'rule_understanding',
+      observeEvaluationNode('rule_understanding', async (state) => {
+        const result = await deps.ruleUnderstandingNode.run({
+          runnableRules: state.ruleInputResult?.runnableRules ?? [],
+          resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
+        });
+        return {
+          ruleUnderstandingResult: result,
+          ...(result.understoodRules.length === 0
+            ? {
+                status:
+                  result.clarificationRequests.length > 0
+                    ? ('needs_clarification' as const)
+                    : ('failed' as const),
+              }
+            : {}),
+        };
+      }),
+    )
+    .addNode(
+      'resource_selection',
+      observeEvaluationNode('resource_selection', async (state) => {
+        const result = await deps.resourceSelectionNode.run({
+          understoodRules: state.ruleUnderstandingResult?.understoodRules ?? [],
+          resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
+        });
+        return {
+          resourceSelectionResult: result,
+          ...(result.selectedRules.length === 0
+            ? { status: 'failed' as const }
+            : {}),
+        };
+      }),
+    )
+    .addNode(
+      'resource_operation_deduplication',
+      observeEvaluationNode('resource_operation_deduplication', (state) => {
+        const result = deps.resourceOperationDeduplicationNode.run({
+          selectedRules: state.resourceSelectionResult?.selectedRules ?? [],
+        });
+        return { resourceOperationDeduplicationResult: result };
+      }),
+    )
+    .addNode(
+      'evaluation_plan',
+      observeEvaluationNode('evaluation_plan', (state) => {
+        const result = deps.evaluationPlanNode.run({
+          context: state.context,
+          selectedRules: state.resourceSelectionResult?.selectedRules ?? [],
+          deduplicatedOperations: required(
+            state.resourceOperationDeduplicationResult,
+            'resource operation deduplication result',
+          ).operations,
+          resourceCatalog: required(state.resourceCatalog, 'resource catalog'),
+        });
+        if (result.status === 'invalid')
+          return {
+            evaluationPlanResult: result,
+            status: 'invalid_plan' as const,
+          };
         return {
           evaluationPlanResult: result,
-          status: 'invalid_plan' as const,
+          status: hasRuleDiagnostics(state)
+            ? ('partial' as const)
+            : result.status,
         };
-      return {
-        evaluationPlanResult: result,
-        status: hasRuleDiagnostics(state)
-          ? ('partial' as const)
-          : result.status,
-      };
-    })
-    .addNode('resource_execution', async (state) => {
-      const planResult = required(
-        state.evaluationPlanResult,
-        'evaluation plan result',
-      );
-      if (planResult.status === 'invalid') {
-        throw new Error(
-          'Evaluation flow invariant violated: an invalid plan reached resource execution.',
+      }),
+    )
+    .addNode(
+      'resource_execution',
+      observeEvaluationNode('resource_execution', async (state) => {
+        const planResult = required(
+          state.evaluationPlanResult,
+          'evaluation plan result',
         );
-      }
-      const result = await deps.resourceExecutionNode.run({
-        plan: planResult.plan,
-      });
-      return {
-        resourceExecutionResult: result,
-        status: resolveExecutionFlowStatus(state.status, result.status),
-      };
-    })
-    .addNode('rule_assessment', async (state) => {
-      const planResult = required(
-        state.evaluationPlanResult,
-        'evaluation plan result',
-      );
-      if (planResult.status === 'invalid') {
-        throw new Error(
-          'Evaluation flow invariant violated: an invalid plan reached rule assessment.',
+        if (planResult.status === 'invalid') {
+          throw new Error(
+            'Evaluation flow invariant violated: an invalid plan reached resource execution.',
+          );
+        }
+        const result = await deps.resourceExecutionNode.run({
+          plan: planResult.plan,
+        });
+        return {
+          resourceExecutionResult: result,
+          status: resolveExecutionFlowStatus(state.status, result.status),
+        };
+      }),
+    )
+    .addNode(
+      'rule_assessment',
+      observeEvaluationNode('rule_assessment', async (state) => {
+        const planResult = required(
+          state.evaluationPlanResult,
+          'evaluation plan result',
         );
-      }
-      const result = await deps.ruleAssessmentNode.run({
-        plan: planResult.plan,
-        executionResult: required(
-          state.resourceExecutionResult,
-          'resource execution result',
-        ),
-      });
-      return {
-        ruleAssessmentResult: result,
-        status: resolveAssessmentFlowStatus(state.status, result.status),
-      };
-    })
+        if (planResult.status === 'invalid') {
+          throw new Error(
+            'Evaluation flow invariant violated: an invalid plan reached rule assessment.',
+          );
+        }
+        const result = await deps.ruleAssessmentNode.run({
+          plan: planResult.plan,
+          executionResult: required(
+            state.resourceExecutionResult,
+            'resource execution result',
+          ),
+        });
+        return {
+          ruleAssessmentResult: result,
+          status: resolveAssessmentFlowStatus(state.status, result.status),
+        };
+      }),
+    )
     .addEdge(START, 'rule_input')
     .addConditionalEdges('rule_input', (state) =>
       state.ruleInputResult?.status === 'ready' ? 'resource_catalog' : END,

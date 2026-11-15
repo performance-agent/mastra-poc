@@ -50,3 +50,26 @@ function requiredEnvironmentValue(variable: string): string {
   if (!value) throw new Error(`${variable} is required`);
   return value;
 }
+
+export function groupReportModels(): string[] {
+  const primary = resolveModelFromEnvironment('GROUP_REPORT_MODEL');
+  if (typeof primary !== 'string') throw new Error('Expected model identifier');
+  const fallback = (process.env.FREE_TIER_FALLBACK_MODELS ?? '')
+    .split(',')
+    .map((value) =>
+      value
+        .trim()
+        .replace(/^google-genai:/, 'google/')
+        .replace(/^groq:/, 'groq/')
+        .replace(/^google:/, 'google/'),
+    )
+    .filter(Boolean);
+  for (const model of fallback) {
+    if (!/^(google|groq)\//.test(model) || !MODEL_ID_PATTERN.test(model))
+      throw new Error(
+        'Fallback must explicitly name Gemini or Groq free-tier service',
+      );
+    requiredEnvironmentValue(PROVIDER_CREDENTIALS[model.split('/')[0]]);
+  }
+  return [...new Set([primary, ...fallback])];
+}

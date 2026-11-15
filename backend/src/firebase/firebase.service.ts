@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { App, applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getAuth, Auth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
+import { ServiceUnavailableException } from '@nestjs/common';
 
 @Injectable()
 export class FirebaseService {
@@ -21,5 +23,14 @@ export class FirebaseService {
       this.CHECK_REVOKED,
     );
     return decodedToken;
+  }
+
+  storageBucket() {
+    const bucket = process.env.FIREBASE_STORAGE_BUCKET;
+    if (!bucket)
+      throw new ServiceUnavailableException(
+        'Image uploads are not configured yet',
+      );
+    return getStorage(this.app).bucket(bucket);
   }
 }

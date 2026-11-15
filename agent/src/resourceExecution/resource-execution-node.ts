@@ -13,7 +13,7 @@ import type {
   SuccessfulResourceCall,
 } from './types.js';
 
-const DEFAULT_MAX_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 1;
 
 export function createResourceExecutionNode(
   options: ResourceExecutionNodeOptions,

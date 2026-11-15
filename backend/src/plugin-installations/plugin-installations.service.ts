@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { SetupGithubDto } from './dto/setup-github.dto';
@@ -9,7 +10,8 @@ import { PluginRuntimeService } from '../plugins/runtime/plugin-runtime.service'
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePluginInstallationDto } from './dto/update-plugin-installation.dto';
 import { SetupJiraDto } from './dto/setup-jira.dto';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { syncError } from '../plugins/runtime/sync-error';
 import {
   decryptConfiguration,
   encryptConfiguration,
@@ -22,6 +24,7 @@ import {
 
 @Injectable()
 export class PluginInstallationsService {
+  private readonly logger = new Logger(PluginInstallationsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly runtime: PluginRuntimeService,
@@ -204,13 +207,25 @@ export class PluginInstallationsService {
   }
 
   async sync(id: string) {
+    const started = Date.now();
+    const context = { syncId: randomUUID(), installationId: id };
+    let stage = 'discovery';
     const installation = await this.prisma.pluginInstallation.findUnique({
       where: { id },
     });
     if (!installation || !['PENDING', 'ACTIVE'].includes(installation.status))
       throw new NotFoundException('Active plugin installation not found');
     try {
+      this.logger.log({ ...context, stage, event: 'sync.started' });
       const resources = await this.runtime.discover(installation);
+      this.logger.log({
+        ...context,
+        stage,
+        event: 'sync.discovered',
+        count: resources.length,
+        durationMs: Date.now() - started,
+      });
+      stage = 'persistence';
       const seenAt = new Date();
       const externalIds = resources.map((resource) => resource.externalId);
       const result = await this.prisma.$transaction(async (tx) => {
@@ -249,9 +264,25 @@ export class PluginInstallationsService {
           },
         });
       });
-      return this.toPublicInstallation(result);
+      const publicInstallation = await this.toPublicInstallation(result);
+      this.logger.log({
+        ...context,
+        stage,
+        event: 'sync.succeeded',
+        count: resources.length,
+        durationMs: Date.now() - started,
+      });
+      return publicInstallation;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const details = syncError(error);
+      const message = details.message;
+      this.logger.error({
+        ...context,
+        stage,
+        event: 'sync.failed',
+        durationMs: Date.now() - started,
+        ...details,
+      });
       await this.prisma.pluginInstallation.update({
         where: { id },
         data: { lastSyncError: message },

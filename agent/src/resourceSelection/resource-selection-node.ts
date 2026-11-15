@@ -2,6 +2,7 @@ import {
   isQuotaError,
   QUOTA_MESSAGE,
 } from '../evaluationFlow/configuration.js';
+import { generationError } from '../generation.js';
 import { resourceSelectionAiOutputSchema } from './schemas.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 import type { UnderstoodRule } from '../ruleUnderstanding/types.js';

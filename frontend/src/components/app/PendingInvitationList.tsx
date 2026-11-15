@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Copy, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { RoleBadge } from "@/components/app/RoleBadge";
+import { ConfirmDialog } from "@/components/app/ConfirmDialog";
 import type { Invitation } from "@/lib/types";
 
 export function PendingInvitationList({
@@ -9,8 +11,10 @@ export function PendingInvitationList({
   onRevoke,
 }: {
   invitations: Invitation[];
-  onRevoke?: (invitationId: string) => void;
+  onRevoke?: (invitationId: string) => void | Promise<void>;
 }) {
+  const [revokeId, setRevokeId] = useState<string | null>(null);
+  const pending = invitations.find((invitation) => invitation.id === revokeId);
   if (invitations.length === 0) return null;
 
   return (
@@ -46,7 +50,7 @@ export function PendingInvitationList({
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
                   aria-label="Revoke invitation"
-                  onClick={() => onRevoke(invitation.id)}
+                  onClick={() => setRevokeId(invitation.id)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -55,6 +59,23 @@ export function PendingInvitationList({
           ))}
         </ul>
       </div>
+      <ConfirmDialog
+        open={!!pending && !!onRevoke}
+        onOpenChange={(open) => {
+          if (!open) setRevokeId(null);
+        }}
+        title="Revoke invitation?"
+        description={
+          pending
+            ? `This will cancel the invitation for ${pending.email}. The invite link will no longer work.`
+            : undefined
+        }
+        confirmLabel="Revoke invitation"
+        destructive
+        onConfirm={() => {
+          if (pending) return onRevoke?.(pending.id);
+        }}
+      />
     </div>
   );
 }

@@ -1,0 +1,13 @@
+{
+  "type": "Real PostgreSQL and Firebase Storage integration; no simulated storage or memberships",
+  "run": "13530788-1bb8-492a-9273-3efc0372b0bb",
+  "checks": [
+    "Private Firebase upload, processing, immutable version, authorized preview and original download",
+    "Nested folder expansion deduplicates documents and captured versions survive metadata changes",
+    "Project folder exclusions do not alter the shared workspace library",
+    "Real database memberships enforce viewer, inherited-edit and sibling-project boundaries; cyclic moves rejected",
+    "Actual PDF and DOCX text extraction with real parsers",
+    "Actual configured-model generation and persisted knowledge-only report with the uploaded document’s exact version and excerpts",
+    "Soft deletion removes sources from the library while preserving captured report text"
+  ]
+}

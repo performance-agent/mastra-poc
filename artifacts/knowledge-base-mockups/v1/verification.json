@@ -1,0 +1,18 @@
+{
+  "type": "Simulated UI prototype verification; not production integration evidence",
+  "screenshots": 21,
+  "checks": [
+    "15 desktop screens render without horizontal overflow",
+    "Default selection, unavailable files, nested and partial folder state, select all, deselect all and plugin-only report",
+    "Report preserves exact selected source set and versioned references",
+    "Project exclusion removes source from report choices without changing workspace",
+    "Folder creation and library search",
+    "Per-file upload retry and local filename-only upload simulation",
+    "Drive selection, empty selection, simulated connection, sync and expired authorization recovery",
+    "Six mobile screens at 390 px without horizontal overflow",
+    "Review gallery contains all 21 captures with no missing images",
+    "No browser errors and no HTTP/API requests"
+  ],
+  "errors": [],
+  "externalRequests": []
+}

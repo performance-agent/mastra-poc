@@ -1,0 +1,108 @@
+// Documents are separate from plugin resources. Removing a source is a soft delete:
+// immutable versions remain available to reports that already reference them.
+model KnowledgeNode {
+  id String @id @default(cuid())
+  workspaceId String
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  groupId String?
+  group Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  parentId String?
+  parent KnowledgeNode? @relation("KnowledgeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children KnowledgeNode[] @relation("KnowledgeTree")
+  connectionId String?
+  connection KnowledgeConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  externalId String?
+  name String
+  kind String
+  origin String @default("UPLOAD")
+  usage String @default("CONTEXT")
+  status String @default("PROCESSING")
+  mimeType String?
+  bytes Int @default(0)
+  sourceUrl String?
+  sourceRevision String?
+  pendingObjectPath String?
+  processingLeaseUntil DateTime? @db.Timestamptz(3)
+  error String?
+  syncedAt DateTime? @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  versions KnowledgeVersion[]
+  exclusions KnowledgeExclusion[]
+  @@unique([connectionId, externalId])
+  @@index([workspaceId, groupId, deletedAt])
+  @@index([parentId])
+  @@index([status, processingLeaseUntil])
+}
+
+model KnowledgeVersion {
+  id String @id @default(cuid())
+  nodeId String
+  node KnowledgeNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  revision String
+  digest String
+  text String
+  objectPath String
+  mimeType String
+  bytes Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([nodeId, revision])
+  @@index([nodeId, createdAt])
+}
+
+model KnowledgeExclusion {
+  groupId String
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  nodeId String
+  node KnowledgeNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  @@id([groupId, nodeId])
+}
+
+model KnowledgeConnection {
+  id String @id @default(cuid())
+  workspaceId String
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  groupId String?
+  group Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  ownerId String
+  email String
+  accountId String
+  credentials Json
+  rootIds String[] @default([])
+  destinationId String?
+  usage String @default("CONTEXT")
+  status String @default("CONNECTED")
+  lastSyncedAt DateTime? @db.Timestamptz(3)
+  nextSyncAt DateTime @default(now()) @db.Timestamptz(3)
+  leaseUntil DateTime? @db.Timestamptz(3)
+  error String?
+  nodes KnowledgeNode[]
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@index([workspaceId, groupId])
+  @@index([status, nextSyncAt])
+}
+
+model KnowledgeOAuthState {
+  id String @id
+  userId String
+  workspaceId String
+  groupId String?
+  connectionId String?
+  verifier String
+  expiresAt DateTime @db.Timestamptz(3)
+}
+
+// MCP assistants save with the exact versions and evaluator settings returned
+// when collecting context, rather than silently collecting a different snapshot.
+model KnowledgeReportContext {
+  id String @id @default(cuid())
+  userId String
+  groupId String
+  evaluatorId String
+  snapshot Json
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([expiresAt])
+}

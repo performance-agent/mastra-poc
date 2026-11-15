@@ -87,6 +87,7 @@ export class McpOAuthController {
       grantTypes: body.grant_types,
       responseTypes: body.response_types,
       tokenEndpointAuthMethod: body.token_endpoint_auth_method,
+      tokenEndpointAuthMethods: body.token_endpoint_auth_methods_supported,
       applicationType: body.application_type,
     });
   }

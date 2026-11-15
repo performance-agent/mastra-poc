@@ -7,6 +7,7 @@ import {
   Delete,
   Put,
   Post,
+  Query,
 } from '@nestjs/common';
 import { WorkspacesService } from './workspaces.service';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
@@ -20,6 +21,15 @@ import { CurrentUser } from '../auth/decorators/user.decorator';
 import { type User } from '../auth/types/user.type';
 import { InvitationsService } from '../invitations/invitations.service';
 import { CreateInvitationDto } from '../invitations/dto/create-invitation.dto';
+import { IsString, IsNotEmpty } from 'class-validator';
+import { PeopleComparisonService } from './people-comparison.service';
+import { WorkspacePeopleService } from './workspace-people.service';
+
+class GeneratePeopleComparisonDto {
+  @IsString()
+  @IsNotEmpty()
+  evaluatorId: string;
+}
 
 @Controller('workspaces')
 export class WorkspacesController {
@@ -29,7 +39,53 @@ export class WorkspacesController {
     private readonly membersService: MembersService,
     private readonly resourcesService: ResourcesService,
     private readonly invitationsService: InvitationsService,
+    private readonly people: WorkspacePeopleService,
+    private readonly comparison: PeopleComparisonService,
   ) {}
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+    mode: 'context',
+  })
+  @Get(':id/people')
+  listPeople(
+    @CurrentUser() user: User,
+    @Param('id') workspaceId: string,
+    @Query('evaluatorId') evaluatorId?: string,
+  ) {
+    return this.people.list(workspaceId, user.id, evaluatorId);
+  }
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN'],
+  })
+  @Post(':id/people/comparison')
+  generatePeopleComparison(
+    @CurrentUser() user: User,
+    @Param('id') workspaceId: string,
+    @Body() dto: GeneratePeopleComparisonDto,
+  ) {
+    return this.comparison.generate(workspaceId, dto.evaluatorId, user.id);
+  }
+
+  @RequireMembership({
+    resource: 'workspace',
+    param: 'id',
+    roles: ['OWNER', 'ADMIN', 'VIEWER'],
+  })
+  @Get(':id/people/comparison/:evaluatorId/jobs/:jobId')
+  peopleComparisonJob(
+    @CurrentUser() user: User,
+    @Param('id') workspaceId: string,
+    @Param('evaluatorId') evaluatorId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.comparison.jobStatus(workspaceId, evaluatorId, jobId, user.id);
+  }
 
   @RequireMembership({
     resource: 'workspace',

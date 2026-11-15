@@ -17,5 +17,8 @@
         "supportEmail": "pedroramirezneira@gmail.com"
       }
     }
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
