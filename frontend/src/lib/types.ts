@@ -146,10 +146,58 @@ export interface DataType {
 export type PerformanceReportType = "GROUP_REPORT" | "GITHUB_ACTIVITY" | "GITHUB_HISTORY";
 
 export interface EvaluationRequest {
+  sourceReportIds?: string[];
+  reportLength?: ReportLength;
+  modelKey?: string;
   rules: Array<{ name: string; description?: string; valuation: number }>;
   period?: { from: string; to: string };
   groupId?: string;
 }
+
+export type ReportLength = "brief" | "medium" | "complete";
+export interface EvaluationAgentInput {
+  name: string;
+  language: string;
+  tone: string;
+  communicationStyle: string;
+  criteria: string;
+  decisionGuidance: string;
+  rules: EvaluationRequest["rules"];
+}
+export interface EvaluationModel {
+  key: string;
+  label: string;
+  model: string;
+  recommended: boolean;
+}
+export interface ConfiguredEvaluationReport {
+  evaluationVersion?: number;
+  group?: { id: string; name: string };
+  analysisDates?: { from: string; to: string };
+  sourceReports?: Array<{ id: string; createdAt: string }>;
+  evaluationId?: string;
+  createdAt?: string;
+  status: string;
+  model: EvaluationModel;
+  reportLength: ReportLength;
+  results: Array<{
+    evaluator: EvaluationAgentInput & { id: string; updatedAt: string };
+    status: "completed" | "partial" | "failed" | "not_executed";
+    report: EvaluationReport | null;
+    error: { code: string; message: string } | null;
+    durationMs: number;
+    metrics?: {
+      llmCalls: number;
+      batches: number;
+      supplementalRequests: number;
+      databaseHits: number;
+      apiCalls: number;
+      estimatedInputTokens: number;
+    };
+    usage: Array<{ inputTokens?: number; outputTokens?: number; totalTokens?: number }>;
+  }>;
+}
+export type AnyEvaluationReport = EvaluationReport | ConfiguredEvaluationReport;
 
 export type RulePackageScope = "PUBLIC" | "WORKSPACE" | "ALL_WORKSPACES";
 
@@ -200,12 +248,18 @@ export interface SavedEvaluation {
   workspaceId: string;
   groupId: string | null;
   createdAt: string;
-  data: {
-    schemaVersion: 1;
-    rules: EvaluationRequest["rules"];
-    period: EvaluationRequest["period"] | null;
-    report: EvaluationReport;
-  };
+  data:
+    | {
+        schemaVersion: 1;
+        rules: EvaluationRequest["rules"];
+        period: EvaluationRequest["period"] | null;
+        report: EvaluationReport;
+      }
+    | {
+        schemaVersion: 2 | 3;
+        period: EvaluationRequest["period"] | null;
+        report: ConfiguredEvaluationReport;
+      };
 }
 
 export interface EvaluationHistoryPage {
@@ -215,6 +269,7 @@ export interface EvaluationHistoryPage {
     createdAt: string;
     period: EvaluationRequest["period"] | null;
     status: string;
+    evaluationVersion?: number | null;
   }>;
   nextCursor: string | null;
 }
@@ -251,7 +306,19 @@ export interface MemberAssessment {
 }
 
 export interface RuleAssessment {
+  evolution?: {
+    summary: string;
+    improvements: string[];
+    unchanged: string[];
+    regressions: string[];
+    unknowns: string[];
+    sourceReportIds: string[];
+    recommendations: string[];
+  };
   ruleName: string;
+  workPerformed?: string;
+  addedValue?: string;
+  qualitativeSummary?: string;
   overview: string;
   evidence: AssessmentEvidence[];
   memberAssessments: MemberAssessment[];

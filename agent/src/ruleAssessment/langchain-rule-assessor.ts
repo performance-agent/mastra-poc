@@ -1,3 +1,9 @@
+import {
+  configurationPrompt,
+  invokeWithEvaluationRuntime,
+  configuredModelOptions,
+  type ConfiguredEvaluationOptions,
+} from '../evaluationFlow/configuration.js';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { initChatModel } from 'langchain/chat_models/universal';
 import {
@@ -5,7 +11,10 @@ import {
   serializePromptData,
   type PromptDataFormat,
 } from './prompt-data-serializer.js';
-import { ruleAssessmentAiOutputSchema } from './schemas.js';
+import {
+  ruleAssessmentAiOutputSchema,
+  configuredRuleAssessmentAiOutputSchema,
+} from './schemas.js';
 import type { RuleAssessmentRequest, RuleAssessor } from './types.js';
 
 const MODEL_ENVIRONMENT_VARIABLE = 'RULE_SUMMARY_MODEL';
@@ -88,7 +97,7 @@ export type RuleAssessmentEnvironment = Readonly<
   Record<string, string | undefined>
 >;
 
-export type RuleAssessmentPromptOptions = {
+export type RuleAssessmentPromptOptions = ConfiguredEvaluationOptions & {
   promptDataFormat?: PromptDataFormat;
 };
 
@@ -97,24 +106,32 @@ export function createLangChainRuleAssessor(
   options: RuleAssessmentPromptOptions = {},
 ): RuleAssessor {
   const structuredModel = model.withStructuredOutput(
-    ruleAssessmentAiOutputSchema,
+    options.configuration
+      ? configuredRuleAssessmentAiOutputSchema
+      : ruleAssessmentAiOutputSchema,
   );
   const promptDataFormat = options.promptDataFormat ?? 'auto';
   return {
     async assess(input) {
-      return structuredModel.invoke([
-        { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: createUserPrompt(input, promptDataFormat),
-        },
-      ]);
+      return invokeWithEvaluationRuntime(options.runtime, () =>
+        structuredModel.invoke([
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT + configurationPrompt(options, true),
+          },
+          {
+            role: 'user',
+            content: createUserPrompt(input, promptDataFormat),
+          },
+        ]),
+      );
     },
   };
 }
 
 export async function createLangChainRuleAssessorFromEnv(
   environment: RuleAssessmentEnvironment = process.env,
+  options: RuleAssessmentPromptOptions = {},
 ): Promise<RuleAssessor> {
   const modelId = environment[MODEL_ENVIRONMENT_VARIABLE]?.trim();
   if (!modelId) {
@@ -125,9 +142,13 @@ export async function createLangChainRuleAssessorFromEnv(
   const promptDataFormat = parsePromptDataFormat(
     environment[PROMPT_DATA_FORMAT_ENVIRONMENT_VARIABLE],
   );
-  return createLangChainRuleAssessor(await initChatModel(modelId), {
-    promptDataFormat,
-  });
+  return createLangChainRuleAssessor(
+    await initChatModel(modelId, configuredModelOptions(options, environment)),
+    {
+      ...options,
+      promptDataFormat,
+    },
+  );
 }
 
 function createUserPrompt(

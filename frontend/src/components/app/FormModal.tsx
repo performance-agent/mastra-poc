@@ -40,6 +40,7 @@ export function FormModal({
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             void onSubmit();
           }}
           className="space-y-4"

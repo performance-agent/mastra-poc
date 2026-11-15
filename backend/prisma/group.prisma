@@ -3,6 +3,7 @@ model Group {
   name        String
   description String?
   photoUrl    String?
+  evaluationSequence Int @default(0)
 
   evaluationEmphasis GroupEvaluationEmphasis[] @default([])
   evaluationNotes    String?
@@ -15,6 +16,7 @@ model Group {
   memberships         Membership[]
   resourceAssignments PluginInstallationResourceAssignment[]
   performanceReports  PerformanceReport[]
+  evaluationEvidenceCache EvaluationEvidenceCache[]
   invitations         Invitation[]
 
   @@index([workspaceId])

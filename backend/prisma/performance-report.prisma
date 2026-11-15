@@ -11,6 +11,7 @@ model PerformanceReport {
   group   Group?  @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   type PerformanceReportType
+  evaluationVersion Int?
 
   data Json
 
@@ -22,6 +23,7 @@ model PerformanceReport {
   @@index([groupId])
   @@index([type])
   @@index([createdAt])
+  @@unique([groupId, evaluationVersion])
 }
 
 enum PerformanceReportType {

@@ -21,6 +21,7 @@ export type ResourceSelector = {
 };
 
 export type ResourceSelectionFailureCode =
+  | 'ai_quota_exhausted'
   | 'selection_failed'
   | 'invalid_selection'
   | 'unknown_resource'

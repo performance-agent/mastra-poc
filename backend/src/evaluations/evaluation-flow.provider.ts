@@ -1,4 +1,8 @@
-import type { CompiledEvaluationFlow, ResourceExecutionNode } from '@pa/agent';
+import type {
+  CompiledEvaluationFlow,
+  ResourceExecutionNode,
+  ConfiguredEvaluationOptions,
+} from '@pa/agent';
 import { PluginRegistryService } from '../plugins/plugin-registry.service';
 import { ResourcesService } from '../resources/resources.service';
 
@@ -6,6 +10,7 @@ export const EVALUATION_FLOW_FACTORY = Symbol('EVALUATION_FLOW_FACTORY');
 
 export type EvaluationFlowFactory = (
   groupId?: string,
+  options?: ConfiguredEvaluationOptions & { model: string },
 ) => Promise<CompiledEvaluationFlow>;
 
 export function createEvaluationFlowFactory(
@@ -13,12 +18,19 @@ export function createEvaluationFlowFactory(
   pluginRegistry: PluginRegistryService,
   resourceExecutionNode: ResourceExecutionNode,
 ): EvaluationFlowFactory {
-  return async (groupId) => {
+  return async (groupId, options) => {
     const agent = await import('@pa/agent');
+    const environment = options
+      ? {
+          ...process.env,
+          RULE_UNDERSTANDING_MODEL: options.model,
+          RULE_SUMMARY_MODEL: options.model,
+        }
+      : undefined;
     const [interpreter, selector, assessor] = await Promise.all([
-      agent.createLangChainRuleInterpreterFromEnv(),
-      agent.createLangChainResourceSelectorFromEnv(),
-      agent.createLangChainRuleAssessorFromEnv(),
+      agent.createLangChainRuleInterpreterFromEnv(environment, options),
+      agent.createLangChainResourceSelectorFromEnv(environment, options),
+      agent.createLangChainRuleAssessorFromEnv(environment, options),
     ]);
     const resourceCatalogAdapter = agent.createBackendResourceCatalogAdapter({
       resourcesService: createEvaluationCatalogResourcesService(

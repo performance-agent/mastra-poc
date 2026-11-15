@@ -28,7 +28,7 @@ const verdictSchema = z.enum([
   'not_evaluable',
 ]);
 
-export const ruleAssessmentAiOutputSchema = z
+const ruleAssessmentBaseSchema = z
   .object({
     overview: nonEmptyText,
     evidence: z.array(compactEvidenceSchema),
@@ -52,56 +52,69 @@ export const ruleAssessmentAiOutputSchema = z
     verdict: verdictSchema,
     limitations: z.array(nonEmptyText),
   })
-  .strict()
-  .superRefine((value, context) => {
-    const evidenceIds = new Set<string>();
-    value.evidence.forEach((evidence, index) => {
-      if (evidenceIds.has(evidence.id)) {
+  .strict();
+
+const validateEvidence: Parameters<
+  typeof ruleAssessmentBaseSchema.superRefine
+>[0] = (value, context) => {
+  const evidenceIds = new Set<string>();
+  value.evidence.forEach((evidence, index) => {
+    if (evidenceIds.has(evidence.id)) {
+      context.addIssue({
+        code: 'custom',
+        message: `Duplicate evidence id: ${evidence.id}`,
+        path: ['evidence', index, 'id'],
+      });
+    }
+    evidenceIds.add(evidence.id);
+  });
+
+  const validateReferences = (ids: string[], path: (string | number)[]) => {
+    ids.forEach((id, index) => {
+      if (!evidenceIds.has(id)) {
         context.addIssue({
           code: 'custom',
-          message: `Duplicate evidence id: ${evidence.id}`,
-          path: ['evidence', index, 'id'],
+          message: `Unknown evidence id: ${id}`,
+          path: [...path, index],
         });
       }
-      evidenceIds.add(evidence.id);
     });
+  };
 
-    const validateReferences = (ids: string[], path: (string | number)[]) => {
-      ids.forEach((id, index) => {
-        if (!evidenceIds.has(id)) {
-          context.addIssue({
-            code: 'custom',
-            message: `Unknown evidence id: ${id}`,
-            path: [...path, index],
-          });
-        }
-      });
-    };
-
-    value.criteria.forEach((criterion, index) =>
+  value.criteria.forEach((criterion, index) =>
+    validateReferences(criterion.evidenceIds, [
+      'criteria',
+      index,
+      'evidenceIds',
+    ]),
+  );
+  value.memberAssessments.forEach((member, memberIndex) => {
+    validateReferences(member.evidenceIds, [
+      'memberAssessments',
+      memberIndex,
+      'evidenceIds',
+    ]);
+    member.criteria.forEach((criterion, criterionIndex) =>
       validateReferences(criterion.evidenceIds, [
+        'memberAssessments',
+        memberIndex,
         'criteria',
-        index,
+        criterionIndex,
         'evidenceIds',
       ]),
     );
-    value.memberAssessments.forEach((member, memberIndex) => {
-      validateReferences(member.evidenceIds, [
-        'memberAssessments',
-        memberIndex,
-        'evidenceIds',
-      ]);
-      member.criteria.forEach((criterion, criterionIndex) =>
-        validateReferences(criterion.evidenceIds, [
-          'memberAssessments',
-          memberIndex,
-          'criteria',
-          criterionIndex,
-          'evidenceIds',
-        ]),
-      );
-    });
   });
+};
+
+export const ruleAssessmentAiOutputSchema =
+  ruleAssessmentBaseSchema.superRefine(validateEvidence);
+export const configuredRuleAssessmentAiOutputSchema = ruleAssessmentBaseSchema
+  .extend({
+    workPerformed: nonEmptyText,
+    addedValue: nonEmptyText,
+    qualitativeSummary: nonEmptyText,
+  })
+  .superRefine(validateEvidence);
 
 export type RuleAssessmentAiOutput = z.infer<
   typeof ruleAssessmentAiOutputSchema

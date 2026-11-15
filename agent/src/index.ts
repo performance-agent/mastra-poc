@@ -14,3 +14,6 @@ export * from './evaluationPlan/index.js';
 export * from './resourceExecution/index.js';
 export * from './ruleAssessment/index.js';
 export * from './evaluationFlow/index.js';
+
+export * from './evaluationFlow/configuration.js';
+export * from './reportEvaluation/index.js';

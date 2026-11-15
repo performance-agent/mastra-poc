@@ -12,11 +12,27 @@ import {
 import { EvaluationsService } from './evaluations.service';
 import { RulePackagesController } from './rule-packages.controller';
 import { RulePackagesService } from './rule-packages.service';
+import { EvaluationModelsController } from './evaluation-models.controller';
+import { ReportEvaluationsService } from './report-evaluations.service';
+import { ReportEvidenceService } from './report-evidence.service';
+import {
+  REPORT_BATCH_FACTORY,
+  REPORT_ANALYSIS_ENGINE,
+  createReportBatchFactory,
+} from './report-evaluation.provider';
 
 @Module({
   imports: [PluginsModule, ResourcesModule],
-  controllers: [EvaluationsController, RulePackagesController],
+  controllers: [
+    EvaluationsController,
+    RulePackagesController,
+    EvaluationModelsController,
+  ],
   providers: [
+    ReportEvaluationsService,
+    ReportEvidenceService,
+    { provide: REPORT_BATCH_FACTORY, useValue: createReportBatchFactory },
+    { provide: REPORT_ANALYSIS_ENGINE, useFactory: () => import('@pa/agent') },
     EvaluationsService,
     RulePackagesService,
     {

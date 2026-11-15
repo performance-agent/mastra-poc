@@ -16,11 +16,12 @@ import type {
   GroupReport,
   Role,
   EvaluationRequest,
-  EvaluationReport,
   SavedEvaluation,
   EvaluationHistoryPage,
   RulePackage,
   RulePackageInput,
+  EvaluationModel,
+  AnyEvaluationReport,
 } from "./types";
 import { getFirebaseAuth } from "./firebase";
 
@@ -224,7 +225,7 @@ export const api = {
   unassignWorkspaceResource: (workspaceId: string, resourceId: string) =>
     request<unknown>(`/workspaces/${workspaceId}/resources/${resourceId}`, { method: "DELETE" }),
   evaluateWorkspace: (workspaceId: string, body: EvaluationRequest, view: "report" | "full") =>
-    request<EvaluationReport | Record<string, unknown>>(
+    request<AnyEvaluationReport | Record<string, unknown>>(
       `/workspaces/${workspaceId}/evaluations?view=${view}`,
       { method: "POST", body: JSON.stringify(body) },
     ),
@@ -235,6 +236,8 @@ export const api = {
   },
   getEvaluation: (workspaceId: string, evaluationId: string) =>
     request<SavedEvaluation>(`/workspaces/${workspaceId}/evaluations/${evaluationId}`),
+  listEvaluationModels: (workspaceId: string) =>
+    request<EvaluationModel[]>(`/workspaces/${workspaceId}/evaluation-models`),
   listRulePackages: (workspaceId: string) =>
     request<RulePackage[]>(`/workspaces/${workspaceId}/rule-packages`),
   createRulePackage: (workspaceId: string, body: RulePackageInput) =>

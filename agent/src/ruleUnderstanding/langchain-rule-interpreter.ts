@@ -1,3 +1,9 @@
+import {
+  configurationPrompt,
+  invokeWithEvaluationRuntime,
+  configuredModelOptions,
+  type ConfiguredEvaluationOptions,
+} from '../evaluationFlow/configuration.js';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { initChatModel } from 'langchain/chat_models/universal';
 import {
@@ -43,6 +49,7 @@ export type RuleUnderstandingEnvironment = Readonly<
 
 export function createLangChainRuleInterpreter(
   model: BaseChatModel,
+  options: ConfiguredEvaluationOptions = {},
 ): RuleInterpreter {
   const structuredModel = model.withStructuredOutput(
     ruleUnderstandingProviderOutputSchema,
@@ -50,10 +57,15 @@ export function createLangChainRuleInterpreter(
 
   return {
     async interpret(input) {
-      const output = await structuredModel.invoke([
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: createUserPrompt(input) },
-      ]);
+      const output = await invokeWithEvaluationRuntime(options.runtime, () =>
+        structuredModel.invoke([
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT + configurationPrompt(options),
+          },
+          { role: 'user', content: createUserPrompt(input) },
+        ]),
+      );
       return normalizeProviderOutput(output);
     },
   };
@@ -61,6 +73,7 @@ export function createLangChainRuleInterpreter(
 
 export async function createLangChainRuleInterpreterFromEnv(
   environment: RuleUnderstandingEnvironment = process.env,
+  options: ConfiguredEvaluationOptions = {},
 ): Promise<RuleInterpreter> {
   const modelId = environment[MODEL_ENVIRONMENT_VARIABLE]?.trim();
   if (!modelId) {
@@ -69,8 +82,11 @@ export async function createLangChainRuleInterpreterFromEnv(
     );
   }
 
-  const model = await initChatModel(modelId);
-  return createLangChainRuleInterpreter(model);
+  const model = await initChatModel(
+    modelId,
+    configuredModelOptions(options, environment),
+  );
+  return createLangChainRuleInterpreter(model, options);
 }
 
 function normalizeProviderOutput(

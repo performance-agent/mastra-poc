@@ -1,3 +1,7 @@
+import {
+  isQuotaError,
+  QUOTA_MESSAGE,
+} from '../evaluationFlow/configuration.js';
 import type { PreparedRuleInput } from '../ruleInput/types.js';
 import type { ResourceCatalogNodeResult } from '../resourceCatalog/types.js';
 import { ZodError } from 'zod';
@@ -61,8 +65,10 @@ async function interpretRule(
     }
     return failedOutcome(
       preparedRule,
-      'ai_generation_failed',
-      'The AI model could not interpret this rule.',
+      isQuotaError(error) ? 'ai_quota_exhausted' : 'ai_generation_failed',
+      isQuotaError(error)
+        ? QUOTA_MESSAGE
+        : 'The AI model could not interpret this rule.',
     );
   }
 

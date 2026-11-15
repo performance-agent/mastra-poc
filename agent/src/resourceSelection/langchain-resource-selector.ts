@@ -1,3 +1,9 @@
+import {
+  configurationPrompt,
+  invokeWithEvaluationRuntime,
+  configuredModelOptions,
+  type ConfiguredEvaluationOptions,
+} from '../evaluationFlow/configuration.js';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { initChatModel } from 'langchain/chat_models/universal';
 import { resourceSelectionAiOutputSchema } from './schemas.js';
@@ -22,22 +28,29 @@ export type ResourceSelectionEnvironment = Readonly<
 
 export function createLangChainResourceSelector(
   model: BaseChatModel,
+  options: ConfiguredEvaluationOptions = {},
 ): ResourceSelector {
   const structuredModel = model.withStructuredOutput(
     resourceSelectionAiOutputSchema,
   );
   return {
     async select(input) {
-      return structuredModel.invoke([
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: createUserPrompt(input) },
-      ]);
+      return invokeWithEvaluationRuntime(options.runtime, () =>
+        structuredModel.invoke([
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT + configurationPrompt(options),
+          },
+          { role: 'user', content: createUserPrompt(input) },
+        ]),
+      );
     },
   };
 }
 
 export async function createLangChainResourceSelectorFromEnv(
   environment: ResourceSelectionEnvironment = process.env,
+  options: ConfiguredEvaluationOptions = {},
 ): Promise<ResourceSelector> {
   const modelId = environment[MODEL_ENVIRONMENT_VARIABLE]?.trim();
   if (!modelId) {
@@ -45,7 +58,10 @@ export async function createLangChainResourceSelectorFromEnv(
       `${MODEL_ENVIRONMENT_VARIABLE} must contain a LangChain provider:model identifier.`,
     );
   }
-  return createLangChainResourceSelector(await initChatModel(modelId));
+  return createLangChainResourceSelector(
+    await initChatModel(modelId, configuredModelOptions(options, environment)),
+    options,
+  );
 }
 
 function createUserPrompt(input: ResourceSelectionInput): string {

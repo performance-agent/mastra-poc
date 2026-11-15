@@ -1,14 +1,17 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsInt,
   IsOptional,
   IsString,
+  IsIn,
   Matches,
   Max,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 
 const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -40,11 +43,26 @@ export class EvaluationPeriodDto {
 }
 
 export class CreateEvaluationDto {
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @Matches(/\S/, { each: true })
+  sourceReportIds?: string[];
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => EvaluationRuleDto)
   rules!: EvaluationRuleDto[];
+
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsIn(['brief', 'medium', 'complete'])
+  reportLength?: 'brief' | 'medium' | 'complete';
+
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsIn(['economical', 'balanced', 'advanced'])
+  modelKey?: string;
 
   @IsOptional()
   @IsString()

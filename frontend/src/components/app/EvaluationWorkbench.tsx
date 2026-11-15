@@ -1,9 +1,9 @@
 import {
   createContext,
   use,
-  useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -12,7 +12,6 @@ import {
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
-  ArrowRight,
   Check,
   ChevronDown,
   CircleDashed,
@@ -34,6 +33,9 @@ import type {
   AssessmentCriterion,
   AssessmentVerdict,
   EvaluationReport,
+  AnyEvaluationReport,
+  EvaluationAgentInput,
+  ReportLength,
   RulePackage,
   RulePackageInput,
   RuleAssessment,
@@ -51,6 +53,8 @@ import { SearchInput } from "@/components/app/SearchInput";
 
 type EvaluationRule = { id: string; name: string; description: string; valuation: number };
 type WorkbenchState = {
+  sourceReportIds: string[];
+  setSourceReportIds: Dispatch<SetStateAction<string[]>>;
   workspaceId: string;
   groupId: string;
   selectedEvaluationId?: string;
@@ -67,9 +71,13 @@ type WorkbenchState = {
   setFrom: (value: string) => void;
   to: string;
   setTo: (value: string) => void;
-  report?: EvaluationReport;
+  report?: AnyEvaluationReport;
   error?: string;
   isRunning: boolean;
+  reportLength: ReportLength;
+  setReportLength: Dispatch<SetStateAction<ReportLength>>;
+  modelKey: string;
+  setModelKey: Dispatch<SetStateAction<string>>;
   run: () => Promise<void>;
 };
 
@@ -97,6 +105,7 @@ function EvaluationProvider({
 }) {
   const queryClient = useQueryClient();
   const [selectedEvaluationId, setSelectedEvaluationId] = useState<string>();
+  const [sourceReportIds, setSourceReportIds] = useState<string[]>([]);
   const packagesQ = useQuery({
     queryKey: ["workspace", workspaceId, "rule-packages"],
     queryFn: () => api.listRulePackages(workspaceId),
@@ -105,7 +114,10 @@ function EvaluationProvider({
   const [selectedPackageId, setSelectedPackageId] = useState<string>();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [report, setReport] = useState<EvaluationReport>();
+  const [report, setReport] = useState<AnyEvaluationReport>();
+  const [reportLength, setReportLength] = useState<ReportLength>("medium");
+  const [modelKey, setModelKey] = useState("balanced");
+  const runningRef = useRef(false);
   const [error, setError] = useState<string>();
   const [isRunning, setIsRunning] = useState(false);
   const selectedPackage = packagesQ.data?.find((value) => value.id === selectedPackageId);
@@ -114,15 +126,6 @@ function EvaluationProvider({
     setSelectedPackageId(value.id);
     setRules(value.rules.map((rule) => newRule(rule.name, rule.description ?? "", rule.valuation)));
   };
-
-  useEffect(() => {
-    if (selectedPackageId || !packagesQ.data?.length) return;
-    const initial = packagesQ.data.find((value) => value.scope === "PUBLIC") ?? packagesQ.data[0];
-    setSelectedPackageId(initial.id);
-    setRules(
-      initial.rules.map((rule) => newRule(rule.name, rule.description ?? "", rule.valuation)),
-    );
-  }, [packagesQ.data, selectedPackageId]);
 
   const packageDirty = Boolean(
     selectedPackage &&
@@ -139,12 +142,31 @@ function EvaluationProvider({
   );
 
   const run = async () => {
+    if (runningRef.current) return;
+    if (!sourceReportIds.length) {
+      setError("Seleccioná al menos un reporte del grupo para analizar.");
+      return;
+    }
+    if (
+      !rules.length ||
+      rules.some(
+        (rule) =>
+          !rule.name.trim() ||
+          !Number.isInteger(rule.valuation) ||
+          rule.valuation < 1 ||
+          rule.valuation > 10,
+      )
+    ) {
+      setError("Agregá al menos una regla válida con ponderación de 1 a 10.");
+      return;
+    }
     const invalidPeriod = Boolean(from) !== Boolean(to) || (from && to && from > to);
     if (invalidPeriod) {
       setError("Choose both dates and make sure the end date is after the start date.");
       return;
     }
 
+    runningRef.current = true;
     setIsRunning(true);
     setSelectedEvaluationId(undefined);
     setError(undefined);
@@ -152,33 +174,33 @@ function EvaluationProvider({
       const response = await api.evaluateWorkspace(
         workspaceId,
         {
-          rules: rules.map(({ name, description, valuation }) => ({
-            name: name.trim(),
-            description: description.trim() || undefined,
-            valuation,
-          })),
+          rules: packageRulesInput(rules),
+          sourceReportIds,
+          reportLength,
+          modelKey,
           period: from && to ? { from, to } : undefined,
           groupId,
         },
         "report",
       );
-      setReport(response as EvaluationReport);
+      setReport(response as AnyEvaluationReport);
       void queryClient.invalidateQueries({
         queryKey: ["workspace", workspaceId, "evaluations", groupId],
       });
-      toast.success("Evaluation saved");
+      toast.success("Evaluación guardada");
     } catch (caught) {
       const message = errorMessage(caught);
-      setError(
-        `${message}. Check your workspace access and the group's active resources, then try again.`,
-      );
+      setError(message);
       toast.error("Evaluation could not be completed");
     } finally {
+      runningRef.current = false;
       setIsRunning(false);
     }
   };
 
   const value = {
+    sourceReportIds,
+    setSourceReportIds,
     workspaceId,
     groupId,
     selectedEvaluationId,
@@ -196,6 +218,10 @@ function EvaluationProvider({
     to,
     setTo,
     report,
+    reportLength,
+    setReportLength,
+    modelKey,
+    setModelKey,
     error,
     isRunning,
     run,
@@ -233,11 +259,11 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
             <Sparkles aria-hidden="true" className="h-3.5 w-3.5" /> Agent Evaluation Desk
           </div>
           <h2 className="text-balance font-serif text-3xl font-semibold leading-tight sm:text-4xl">
-            Turn team signals into a defensible report.
+            Analizá cómo evoluciona la colaboración.
           </h2>
           <p className="mt-2 max-w-xl text-pretty text-sm leading-6 text-[#496676] dark:text-slate-300">
-            Define what matters for {groupName}. The agent finds relevant group evidence, tests each
-            rule, and explains what supports its conclusion.
+            Compará los reportes de {groupName} con tus reglas para entender los cambios, las
+            mejoras y los aspectos que necesitan atención.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 rounded-full border border-[#99b7c7] bg-white/55 px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider dark:border-slate-600 dark:bg-black/15">
@@ -249,7 +275,235 @@ function WorkbenchHeader({ groupName }: { groupName: string }) {
   );
 }
 
+const evaluatorFields = [
+  ["language", "Idioma"],
+  ["tone", "Tono"],
+  ["communicationStyle", "Estilo de comunicación"],
+] as const;
+
 function EvaluationSetup() {
+  const {
+    groupId,
+    sourceReportIds,
+    setSourceReportIds,
+    workspaceId,
+    rules,
+    from,
+    setFrom,
+    to,
+    setTo,
+    reportLength,
+    setReportLength,
+    modelKey,
+    setModelKey,
+    isRunning,
+    run,
+    error,
+  } = useWorkbench();
+  const reportsQ = useQuery({
+    queryKey: ["group", groupId, "reports"],
+    queryFn: () => api.listGroupReports(groupId),
+  });
+  const availableReports = reportsQ.data?.filter((report) => report.type === "GROUP_REPORT") ?? [];
+  const staleReports = sourceReportIds.some(
+    (id) => !availableReports.some((report) => report.id === id),
+  );
+  const modelsQ = useQuery({
+    queryKey: ["workspace", workspaceId, "evaluation-models"],
+    queryFn: () => api.listEvaluationModels(workspaceId),
+  });
+  return (
+    <section
+      aria-labelledby="evaluation-setup-title"
+      className="min-w-0 space-y-5 border-b p-5 sm:p-7 lg:border-b-0 lg:border-r"
+    >
+      <h3 id="evaluation-setup-title" className="text-lg font-semibold">
+        Preparar análisis
+      </h3>
+      <p className="text-sm text-muted-foreground">
+        Seleccioná las reglas y los reportes del equipo para analizar su colaboración y evolución.
+      </p>
+      <fieldset disabled={isRunning}>
+        <EvaluationRuleLibrary />
+      </fieldset>
+      <fieldset disabled={isRunning} className="space-y-3 rounded-xl border p-4">
+        <legend className="px-1 font-medium">Reportes para comparar</legend>
+        <p className="text-xs text-muted-foreground">
+          Son snapshots del historial disponible. Sus fechas de generación no delimitan sprints y su
+          cobertura puede superponerse.
+        </p>
+        {reportsQ.isPending ? <p role="status">Cargando reportes…</p> : null}
+        {reportsQ.isError ? (
+          <div role="alert">
+            <p>{errorMessage(reportsQ.error)}</p>
+            <Button type="button" variant="outline" onClick={() => void reportsQ.refetch()}>
+              Reintentar reportes
+            </Button>
+          </div>
+        ) : null}
+        {reportsQ.isSuccess && !availableReports.length ? (
+          <p className="text-sm">Generá primero un reporte para este grupo.</p>
+        ) : null}
+        <div className="max-h-64 space-y-2 overflow-y-auto">
+          {availableReports.map((report) => (
+            <label key={report.id} className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={sourceReportIds.includes(report.id)}
+                onChange={(event) =>
+                  setSourceReportIds((current) =>
+                    event.target.checked
+                      ? [...current, report.id]
+                      : current.filter((id) => id !== report.id),
+                  )
+                }
+              />
+              <span>
+                <span className="block font-medium">
+                  {report.createdAt ? new Date(report.createdAt).toLocaleString() : report.id}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {"summary" in report.data ? report.data.summary : "Reporte de grupo"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {sourceReportIds.length === 1 ? (
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Un solo reporte permite un diagnóstico; seleccioná dos o más para analizar evolución.
+          </p>
+        ) : null}
+        {staleReports ? (
+          <p role="alert">Un reporte seleccionado ya no está disponible. Actualizá la selección.</p>
+        ) : null}
+      </fieldset>
+      <fieldset disabled={isRunning} className="space-y-3">
+        <legend className="font-medium">Fechas opcionales para datos complementarios</legend>
+        <p className="text-xs text-muted-foreground">
+          Se aplican a las consultas complementarias. Los reportes se comparan completos, según la
+          selección anterior.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <DateField label="From" value={from} onChange={setFrom} />
+          <DateField label="To" value={to} onChange={setTo} min={from || undefined} />
+        </div>
+        <label className="block space-y-1">
+          <span>Extensión del reporte</span>
+          <select
+            className="w-full rounded-md border bg-background p-2"
+            value={reportLength}
+            onChange={(event) => setReportLength(event.target.value as ReportLength)}
+          >
+            <option value="brief">Breve</option>
+            <option value="medium">Media</option>
+            <option value="complete">Completa</option>
+          </select>
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Cambia el desarrollo del texto; se mantienen los criterios, los recursos y la evidencia
+          requerida.
+        </p>
+        <label className="block space-y-1">
+          <span>Modelo de Gemini</span>
+          <select
+            className="w-full rounded-md border bg-background p-2"
+            disabled={!modelsQ.data?.length}
+            value={modelKey}
+            onChange={(event) => setModelKey(event.target.value)}
+          >
+            {modelsQ.data?.map((model) => (
+              <option key={model.key} value={model.key}>
+                {model.label}
+                {model.recommended ? " · recomendado inicial" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        {modelsQ.isPending ? <p role="status">Cargando modelos…</p> : null}
+        {modelsQ.isError ? (
+          <div role="alert">
+            <p>{errorMessage(modelsQ.error)}</p>
+            <Button type="button" variant="outline" onClick={() => void modelsQ.refetch()}>
+              Reintentar modelos
+            </Button>
+          </div>
+        ) : null}
+      </fieldset>
+      {error ? (
+        <p role="alert" className="rounded-md border border-destructive p-3 text-sm">
+          {error}
+        </p>
+      ) : null}
+      <Button
+        className="w-full"
+        disabled={
+          isRunning ||
+          !rules.length ||
+          rules.some(
+            (rule) =>
+              !rule.name.trim() ||
+              !Number.isInteger(rule.valuation) ||
+              rule.valuation < 1 ||
+              rule.valuation > 10,
+          ) ||
+          !sourceReportIds.length ||
+          reportsQ.isPending ||
+          reportsQ.isError ||
+          staleReports ||
+          !modelsQ.data?.some((model) => model.key === modelKey) ||
+          modelsQ.isError
+        }
+        onClick={() => void run()}
+      >
+        {isRunning ? "Analizando reportes…" : "Analizar evolución"}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Los resultados, las reglas y los reportes utilizados se guardan en el historial.
+      </p>
+    </section>
+  );
+}
+
+function EvaluatorSnapshot({ evaluator }: { evaluator: EvaluationAgentInput }) {
+  return (
+    <div className="mt-3 space-y-3 text-sm">
+      <dl className="space-y-2">
+        {evaluatorFields.map(([field, label]) => (
+          <div key={field}>
+            <dt className="font-medium">{label}</dt>
+            <dd className="whitespace-pre-wrap break-words text-muted-foreground">
+              {evaluator[field]}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <dl className="space-y-2">
+        <div>
+          <dt className="font-medium">Criterios concretos</dt>
+          <dd className="whitespace-pre-wrap break-words">{evaluator.criteria}</dd>
+        </div>
+        <div>
+          <dt className="font-medium">Cómo resolver conclusiones</dt>
+          <dd className="whitespace-pre-wrap break-words">{evaluator.decisionGuidance}</dd>
+        </div>
+      </dl>
+      <ul className="space-y-2">
+        {evaluator.rules.map((rule, index) => (
+          <li key={index}>
+            <span className="font-medium">{rule.name}</span> · Ponderación {rule.valuation}/10
+            {rule.description ? (
+              <p className="whitespace-pre-wrap break-words">{rule.description}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EvaluationRuleLibrary() {
   const {
     workspaceId,
     rules,
@@ -260,13 +514,6 @@ function EvaluationSetup() {
     selectedPackage,
     selectPackage,
     packageDirty,
-    from,
-    setFrom,
-    to,
-    setTo,
-    isRunning,
-    run,
-    error,
   } = useWorkbench();
   const queryClient = useQueryClient();
   const [packageSearch, setPackageSearch] = useState("");
@@ -296,7 +543,7 @@ function EvaluationSetup() {
   };
 
   const choosePackage = (value: RulePackage) => {
-    if (value.id === selectedPackage?.id) return;
+    if (value.id === selectedPackage?.id && !packageDirty) return;
     if (packageDirty) setPendingPackage(value);
     else selectPackage(value);
   };
@@ -343,17 +590,14 @@ function EvaluationSetup() {
   };
 
   return (
-    <section
-      aria-labelledby="evaluation-brief-title"
-      className="border-b border-slate-200 p-5 sm:p-7 lg:border-b-0 lg:border-r dark:border-slate-700"
-    >
+    <section aria-labelledby="evaluation-brief-title" className="min-w-0 space-y-4">
       <div className="mb-6 border-b border-slate-200 pb-6 dark:border-slate-700">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#607988]">
               Rule Package Library
             </p>
-            <h3 className="mt-1 text-lg font-semibold">Choose an evaluation package</h3>
+            <h3 className="mt-1 text-lg font-semibold">Elegí un paquete de reglas</h3>
           </div>
           <Button type="button" size="sm" onClick={() => setEditor({ mode: "create" })}>
             <Plus aria-hidden="true" /> New
@@ -427,7 +671,7 @@ function EvaluationSetup() {
             Evaluation Brief
           </p>
           <h3 id="evaluation-brief-title" className="mt-1 text-lg font-semibold text-balance">
-            What should the agent assess?
+            ¿Qué querés analizar?
           </h3>
         </div>
         <Badge variant="outline" className="shrink-0 font-mono tabular-nums">
@@ -506,44 +750,6 @@ function EvaluationSetup() {
               : "Save Changes to Package"}
         </Button>
       ) : null}
-
-      <fieldset className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-700">
-        <legend className="px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#607988]">
-          Evidence Window · Optional
-        </legend>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-          <DateField label="From" value={from} onChange={setFrom} />
-          <DateField label="To" value={to} onChange={setTo} min={from || undefined} />
-        </div>
-      </fieldset>
-
-      {error ? (
-        <p
-          role="alert"
-          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
-        >
-          {error}
-        </p>
-      ) : null}
-
-      <Button
-        type="button"
-        size="lg"
-        className="mt-5 h-12 w-full bg-[#173d52] text-white shadow-[0_8px_24px_-10px_rgba(23,61,82,0.9)] hover:bg-[#24566e] dark:bg-sky-200 dark:text-slate-950 dark:hover:bg-sky-100"
-        disabled={isRunning || !canRun}
-        onClick={run}
-      >
-        {isRunning ? (
-          <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
-        ) : (
-          <SearchCheck aria-hidden="true" />
-        )}
-        {isRunning ? "Evaluating Workspace…" : "Generate Evaluation Report"}
-        {!isRunning ? <ArrowRight aria-hidden="true" className="ml-auto" /> : null}
-      </Button>
-      <p className="mt-2 text-center text-[11px] leading-4 text-muted-foreground">
-        Packages are saved. Generated results are not.
-      </p>
 
       <ConfirmDialog
         open={Boolean(pendingPackage)}
@@ -898,7 +1104,7 @@ function EvaluationOutput() {
             Agent Findings
           </p>
           <h3 id="evaluation-report-title" className="mt-1 text-lg font-semibold">
-            Evidence Report
+            Evolución de la colaboración
           </h3>
         </div>
         {report ? <StatusMark status={report.status} /> : null}
@@ -914,7 +1120,7 @@ function EvaluationOutput() {
               : "No period specified"}
           </p>
           <ul className="mt-3 space-y-2">
-            {saved.data.rules.map((rule, index) => (
+            {(saved.data.schemaVersion === 1 ? saved.data.rules : []).map((rule, index) => (
               <li key={index}>
                 <span className="font-medium">{rule.name}</span> · Importance {rule.valuation}/10
                 {rule.description ? (
@@ -939,7 +1145,7 @@ function EvaluationOutput() {
       ) : isRunning ? (
         <EvaluationLoading />
       ) : report ? (
-        <ReportView report={report} />
+        <EvaluationReportDisplay report={report} />
       ) : (
         <ReportEmpty />
       )}
@@ -1002,6 +1208,7 @@ function EvaluationHistory() {
             >
               <span>
                 <span className="block font-medium">
+                  {item.evaluationVersion ? `V${item.evaluationVersion} · ` : ""}
                   {new Date(item.createdAt).toLocaleString()}
                 </span>
                 <span className="text-muted-foreground">
@@ -1065,6 +1272,112 @@ function EvaluationLoading() {
         />
       ))}
       <span className="sr-only">Generating evaluation report…</span>
+    </div>
+  );
+}
+
+function EvaluationReportDisplay({ report }: { report: AnyEvaluationReport }) {
+  if (!("results" in report)) return <ReportView report={report} />;
+  return (
+    <div className="space-y-6">
+      {report.group ? (
+        <div className="space-y-2 rounded-xl border p-4 text-sm">
+          <p className="font-semibold">
+            {report.group.name}
+            {report.evaluationVersion ? ` · V${report.evaluationVersion}` : ""}
+          </p>
+          {report.analysisDates ? (
+            <p>
+              Snapshots analizados: {new Date(report.analysisDates.from).toLocaleString()} –{" "}
+              {new Date(report.analysisDates.to).toLocaleString()}
+            </p>
+          ) : null}
+          <details>
+            <summary className="cursor-pointer">
+              Reportes utilizados ({report.sourceReports?.length ?? 0})
+            </summary>
+            <ul className="mt-2 space-y-1">
+              {report.sourceReports?.map((source) => (
+                <li key={source.id}>
+                  {new Date(source.createdAt).toLocaleString()} ·{" "}
+                  <span className="break-all font-mono text-xs">{source.id}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      ) : null}
+      <p className="text-sm text-muted-foreground">
+        {report.model.label} · {report.model.model} · Extensión{" "}
+        {report.reportLength === "brief"
+          ? "breve"
+          : report.reportLength === "complete"
+            ? "completa"
+            : "media"}
+      </p>
+      {report.results.map((result) => (
+        <section key={result.evaluator.id} className="space-y-4 rounded-xl border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-lg font-semibold">{result.evaluator.name}</h4>
+            <Badge variant="outline">
+              {
+                {
+                  completed: "Completado",
+                  partial: "Parcial",
+                  failed: "Falló",
+                  not_executed: "No ejecutado",
+                }[result.status]
+              }
+            </Badge>
+          </div>
+          <p className="whitespace-pre-wrap break-words text-sm">{result.evaluator.criteria}</p>
+          {result.evaluator.id === "custom" ? (
+            <details className="text-sm">
+              <summary className="cursor-pointer">Reglas utilizadas</summary>
+              <ul className="mt-2 space-y-2">
+                {result.evaluator.rules.map((rule, index) => (
+                  <li key={index}>
+                    <span className="font-medium">{rule.name}</span> · Ponderación {rule.valuation}
+                    /10
+                    {rule.description ? (
+                      <p className="whitespace-pre-wrap">{rule.description}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : (
+            <details className="text-sm">
+              <summary className="cursor-pointer">Configuración histórica utilizada</summary>
+              <EvaluatorSnapshot evaluator={result.evaluator} />
+            </details>
+          )}
+          {result.metrics ? (
+            <p className="text-xs text-muted-foreground">
+              Gemini: {result.metrics.llmCalls} llamadas · {result.metrics.batches} lotes · Tokens
+              informados:{" "}
+              {result.usage.length
+                ? result.usage
+                    .reduce(
+                      (sum, entry) =>
+                        sum +
+                        (entry.totalTokens ?? (entry.inputTokens ?? 0) + (entry.outputTokens ?? 0)),
+                      0,
+                    )
+                    .toLocaleString()
+                : "no disponibles"}{" "}
+              · Complementos: {result.metrics.databaseHits} desde base de datos,{" "}
+              {result.metrics.apiCalls} desde APIs
+            </p>
+          ) : null}
+          {result.error ? (
+            <p role="alert" className="rounded-md border border-amber-400 p-3 text-sm">
+              {result.error.message}
+            </p>
+          ) : null}
+          {result.report ? <ReportView report={result.report} /> : null}
+        </section>
+      ))}
     </div>
   );
 }
@@ -1153,6 +1466,55 @@ function AssessmentCard({ assessment }: { assessment: RuleAssessment }) {
               {config.label}
             </span>
           </div>
+          {assessment.evolution ? (
+            <div className="mt-4 space-y-3 text-sm">
+              <h5 className="font-semibold">Evolución observada</h5>
+              <p className="whitespace-pre-wrap">{assessment.evolution.summary}</p>
+              {(
+                [
+                  ["Mejoras", assessment.evolution.improvements],
+                  ["Aspectos que se mantienen", assessment.evolution.unchanged],
+                  ["Retrocesos", assessment.evolution.regressions],
+                  ["Sin evidencia suficiente", assessment.evolution.unknowns],
+                  ["Próximos pasos", assessment.evolution.recommendations],
+                ] as const
+              ).map(([title, notes]) =>
+                notes.length ? (
+                  <ReportNotes key={title} title={title} notes={notes} compact />
+                ) : null,
+              )}
+              {assessment.memberAssessments.length ? (
+                <div className="space-y-2">
+                  <h5 className="font-semibold">Evolución por integrante</h5>
+                  {assessment.memberAssessments.map((member) => (
+                    <div key={member.memberIdentifier} className="rounded-lg border p-3">
+                      <p className="font-medium">{member.memberName}</p>
+                      <p className="whitespace-pre-wrap">{member.summary}</p>
+                      <p className="mt-1 text-muted-foreground">{member.rationale}</p>
+                      {member.limitations.length ? (
+                        <ReportNotes title="Limitaciones" notes={member.limitations} compact />
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : assessment.workPerformed ? (
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <h5 className="font-semibold">Trabajo realizado</h5>
+                <p className="whitespace-pre-wrap">{assessment.workPerformed}</p>
+              </div>
+              <div>
+                <h5 className="font-semibold">Valor aportado al proyecto</h5>
+                <p className="whitespace-pre-wrap">{assessment.addedValue}</p>
+              </div>
+              <div>
+                <h5 className="font-semibold">Valoración cualitativa</h5>
+                <p className="whitespace-pre-wrap">{assessment.qualitativeSummary}</p>
+              </div>
+            </div>
+          ) : null}
           {assessment.criteria.length ? (
             <div className="mt-5 space-y-2">
               <h5 className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">

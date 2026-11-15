@@ -16,12 +16,12 @@ import { langSmithRunnerTag } from './langsmith-runner';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Prisma } from '../../generated/prisma/client';
 import { ListEvaluationsDto } from './dto/list-evaluations.dto';
+import { ReportEvaluationsService } from './report-evaluations.service';
 
 type SavedEvaluationData = {
-  schemaVersion: 1;
-  rules: CreateEvaluationDto['rules'];
+  schemaVersion: 1 | 2 | 3;
   period: EvaluationPeriod | null;
-  report: ReturnType<typeof toReportResponse>;
+  report: { status: string };
 };
 
 @Injectable()
@@ -35,6 +35,7 @@ export class EvaluationsService {
     @Inject(EVALUATION_FLOW_FACTORY)
     private readonly flowFactory: EvaluationFlowFactory,
     private readonly prisma: PrismaService,
+    private readonly reportEvaluations?: ReportEvaluationsService,
   ) {}
 
   async evaluate(
@@ -42,6 +43,10 @@ export class EvaluationsService {
     dto: CreateEvaluationDto,
     view: EvaluationView = EvaluationView.REPORT,
   ) {
+    // Nest injects the report analyzer for every HTTP execution. The original
+    // flow remains available to internal integrations constructed explicitly.
+    if (this.reportEvaluations)
+      return this.reportEvaluations.evaluate(workspaceId, dto, view);
     const period = validatePeriod(dto.period);
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: workspaceId },
@@ -143,7 +148,13 @@ export class EvaluationsService {
       where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 21,
-      select: { id: true, createdAt: true, groupId: true, data: true },
+      select: {
+        id: true,
+        createdAt: true,
+        groupId: true,
+        evaluationVersion: true,
+        data: true,
+      },
     });
     const items = rows.slice(0, 20).map(({ data, ...row }) => {
       const saved = data as unknown as SavedEvaluationData;
